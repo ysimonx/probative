@@ -121,13 +121,12 @@ def grade_position(claims: CaptureClaims, att: AttestationOutcome) -> PropertyRe
 
     # Sur iOS, l'absence d'indicateur de mock est structurelle. On ne la
     # compte pas comme une lacune, mais on exige la corroboration inertielle.
-    if claims.posture.platform is Platform.IOS:
-        if "motion-present" not in r.evidence:
-            r.grade = min(r.grade, Grade.C, key=_grade_rank)
-            r.notes.append(
-                "iOS sans corroboration inertielle : aucun contrepoids à l'absence "
-                "d'indicateur de position simulée"
-            )
+    if claims.posture.platform is Platform.IOS and "motion-present" not in r.evidence:
+        r.grade = min(r.grade, Grade.C, key=_grade_rank)
+        r.notes.append(
+            "iOS sans corroboration inertielle : aucun contrepoids à l'absence "
+            "d'indicateur de position simulée"
+        )
 
     return r
 

@@ -8,7 +8,7 @@ version = "0.1.0.dev0"
 description = "Vérificateur serveur d'enveloppes de capture photo géolocalisée attestée"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 dependencies = [
     "cbor2>=5.6",
     "cryptography>=42.0",

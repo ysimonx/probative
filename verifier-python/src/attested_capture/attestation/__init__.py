@@ -1,9 +1,9 @@
-from .base import AttestationVerifier, AttestationOutcome, DeviceIntegrity
+from .base import AttestationOutcome, AttestationVerifier, DeviceIntegrity
 from .null import NullAttestationVerifier
 
 __all__ = [
-    "AttestationVerifier",
     "AttestationOutcome",
+    "AttestationVerifier",
     "DeviceIntegrity",
     "NullAttestationVerifier",
 ]

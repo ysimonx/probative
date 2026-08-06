@@ -27,8 +27,6 @@ from .model import (
     SPEC_SUPPORTED,
     CaptureClaims,
     Freshness,
-    Grade,
-    Level,
     Platform,
     Property,
     PropertyResult,

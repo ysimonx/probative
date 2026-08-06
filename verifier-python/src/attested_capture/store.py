@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from cryptography.hazmat.primitives.asymmetric import ec
 

@@ -18,7 +18,8 @@ import time
 
 import cbor2
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec, utils as asym_utils
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import utils as asym_utils
 
 SPEC = "ac/0.1"
 DEPLOYMENT = "test-deployment"

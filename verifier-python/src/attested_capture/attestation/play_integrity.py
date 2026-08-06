@@ -17,5 +17,12 @@ from .base import AttestationOutcome, AttestationVerifier
 
 
 class PlayIntegrityVerifier(AttestationVerifier):
-    def verify(self, **kwargs) -> AttestationOutcome:  # noqa: D102
+    def verify(
+        self,
+        *,
+        platform: str,
+        token: bytes,
+        expected_challenge: bytes,
+        key_id: bytes,
+    ) -> AttestationOutcome:
         raise NotImplementedError("à implémenter après le spike Android")
