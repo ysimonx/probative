@@ -120,13 +120,25 @@ pas de bibliothèque généraliste).
 
 ### A3 — Clé matérielle et enrôlement
 
+*Code écrit à l'aveugle le 2026-08-06 (`core/keys/`), compile, tests instrumentés
+prêts. Les cases restantes se cochent à la première exécution sur appareil réel.*
+
 - [ ] Génération ES256 Keystore, `setAttestationChallenge(nonce)`, StrongBox si
       disponible avec repli documenté, `setUserAuthenticationRequired(false)`.
-- [ ] Export de la clé publique X9.62 non compressée, `kid` = SHA-256.
+      *(code prêt : `KeystoreKeys.generate`, repli TEE sur
+      `StrongBoxUnavailableException` et `ProviderException` — certains appareils
+      signalent l'absence de StrongBox par la seconde.)*
+- [x] Export de la clé publique X9.62 non compressée, `kid` = SHA-256 — validé
+      sur l'hôte JVM contre le couple (clé, kid) du manifest des vecteurs, plus
+      cadrage des coordonnées courtes sur 64 clés aléatoires.
 - [ ] Appel `POST /enroll` du serveur de dev, chaîne de certificats transmise
-      (validée en phase B seulement).
+      (validée en phase B seulement). *(test instrumenté prêt :*
+      `./gradlew :core:connectedDebugAndroidTest`
+      `-Pandroid.testInstrumentationRunnerArguments.ac.devserver=http://IP:8765`
+      *avec le serveur lancé en `--host 0.0.0.0`.)*
 - [ ] Test instrumenté sur appareil : la clé est bien `hardware-backed`
-      (`KeyInfo.securityLevel`).
+      (`KeyInfo.securityLevel`). *(écrit : `KeystoreKeysDeviceTest`, avec
+      vérification croisée de la signature et du kid côté serveur.)*
 
 ### A4 — Capture et collecte
 
@@ -217,8 +229,13 @@ Package SwiftPM produisant un XCFramework, plus une application de démonstratio
 
 - [ ] `DCAppAttestService.generateKey()`, attestation initiale transmise à
       `POST /enroll` (validée en phase D), `kid` cohérent avec le `keyId` stocké.
-- [ ] Clé de signature d'enveloppe Secure Enclave, export public X9.62, même `kid`
-      que la convention Android.
+      *(enveloppe mince `AppAttest` écrite et compilée pour iOS ; test conditionnel
+      prêt, sauté hors appareil — App Attest exige un App ID provisionné.)*
+- [x] Clé de signature d'enveloppe Secure Enclave, export public X9.62, même `kid`
+      que la convention Android — **validé sur l'enclave réelle du Mac hôte**
+      (Apple Silicon, même API que l'appareil) : création, export, signature
+      vérifiée par CryptoKit ; convention kid confirmée contre le manifest des
+      vecteurs, aller-retour Security exact.
 
 ### C4 — Capture et collecte
 
@@ -308,3 +325,12 @@ XCFramework autonome.
   (aucune dépendance framework), archive saine ; le pipeline rejette proprement
   un CBOR illisible via HTTP (`MALFORMED_ENVELOPE`, jamais de 500). Docs
   rafraîchies (51 tests, états des cœurs).
+- 2026-08-06 : **A3 et C3 écrites à l'aveugle, validées autant que l'hôte le
+  permet.** Android : `EcPublicKeys` (X9.62/kid, validé contre le manifest) et
+  `KeystoreKeys` (StrongBox→TEE, attestation, signature DER→r‖s) ; tests
+  instrumentés prêts, APK de test compilé — 15 tests unitaires au vert. iOS :
+  `SigningKey` et `AppAttest` ; 17 tests dont la **Secure Enclave réelle du Mac
+  hôte** (création, signature vérifiée par CryptoKit) — seul App Attest se
+  saute hors appareil. XCFramework reconstruit (1,0 Mo). Le jour du matériel :
+  `connectedDebugAndroidTest` côté Android ; côté iOS, App Attest attendra
+  l'application de démonstration provisionnée (C4).

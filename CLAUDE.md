@@ -83,7 +83,7 @@ mypy src
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 40 tests au vert |
 | `PlayIntegrityVerifier`, `AppAttestVerifier` | Interfaces posées, `NotImplementedError` |
-| Cœurs natifs Android / iOS | Encodeurs CBOR/COSE validés contre les vecteurs d'or (A1–A2, C1–C2) |
+| Cœurs natifs Android / iOS | Encodeurs et clés au vert hors appareil (A1–A3, C1–C3) ; validations sur matériel en attente |
 | Liaisons Flutter / React Native | Non commencées |
 | Banc de triche | Non commencé |
 
