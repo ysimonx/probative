@@ -78,6 +78,24 @@ final class SigningKeyTests: XCTestCase {
         }
     }
 
+    func testPersistanceParEtiquette() throws {
+        // C4 rechargera la clé par étiquette à chaque capture : ce
+        // chemin ne doit pas rester non testé jusqu'au jour de l'appareil.
+        let created: SigningKey
+        do {
+            created = try SigningKey.create(tag: tag, secureEnclave: false, permanent: true)
+        } catch {
+            throw XCTSkip("trousseau inaccessible dans cet environnement : \(error)")
+        }
+
+        let loaded = try SigningKey.load(tag: tag)
+        XCTAssertEqual(try loaded.publicKeyX962(), try created.publicKeyX962())
+        XCTAssertFalse(loaded.secureEnclave)
+
+        SigningKey.delete(tag: tag)
+        XCTAssertThrowsError(try SigningKey.load(tag: tag))
+    }
+
     func testCleSecureEnclaveSiDisponible() throws {
         let key: SigningKey
         do {

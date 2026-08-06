@@ -69,6 +69,9 @@ public struct SigningKey {
     public static func load(tag: Data) throws -> SigningKey {
         let query: [String: Any] = [
             kSecClass as String: kSecClassKey,
+            // Seule la clé privée est persistée, mais le filtre explicite
+            // évite qu'un élément public homonyme réponde à sa place.
+            kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
             kSecAttrApplicationTag as String: tag,
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
             kSecReturnRef as String: true,

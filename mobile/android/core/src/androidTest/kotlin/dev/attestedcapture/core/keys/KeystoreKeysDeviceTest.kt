@@ -10,7 +10,6 @@ import java.security.SecureRandom
 import java.security.Signature
 import org.json.JSONObject
 import org.junit.After
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue

@@ -334,3 +334,13 @@ XCFramework autonome.
   saute hors appareil. XCFramework reconstruit (1,0 Mo). Le jour du matériel :
   `connectedDebugAndroidTest` côté Android ; côté iOS, App Attest attendra
   l'application de démonstration provisionnée (C4).
+- 2026-08-06 : **second audit (A3/C3).** La reconstruction raw→DER du test
+  instrumenté — code qui n'avait jamais tourné — est prouvée par réplique exacte
+  en Python : 500 signatures + cas limites, octet à octet identique au DER
+  canonique de `cryptography` ; le risque de brûler la première session
+  d'appareil sur ce point est écarté. Trous de couverture comblés : persistance
+  trousseau iOS testée (`load`/`delete`, aller-retour exact — 18 tests Swift),
+  cas « coordonnée courte » rendu déterministe côté JVM, requête `load` filtrée
+  sur `kSecAttrKeyClassPrivate`. À traiter en C4 : `create` sous une étiquette
+  déjà occupée duplique l'entrée de trousseau — il faudra un
+  « créer-si-absent ».

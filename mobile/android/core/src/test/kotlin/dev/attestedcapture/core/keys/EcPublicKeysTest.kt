@@ -13,6 +13,7 @@ import java.security.spec.ECPoint
 import java.security.spec.ECPublicKeySpec
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -54,18 +55,26 @@ class EcPublicKeysTest {
 
     @Test
     fun `cadrage des coordonnees courtes`() {
-        // Sur un grand nombre de clés, certaines coordonnées commencent
-        // par des octets nuls : le cadrage à 32 octets doit les restituer.
+        // Une coordonnée sur 256 commence par un octet nul : la boucle
+        // cherche jusqu'à en tenir une (64 clés attendues, borne large —
+        // la probabilité d'échec est de l'ordre de 1e-7), et vérifie que
+        // le cadrage à 32 octets la restitue exactement.
         val generator = KeyPairGenerator.getInstance("EC").apply {
             initialize(ECGenParameterSpec("secp256r1"))
         }
-        repeat(64) {
+        var shortSeen = false
+        for (attempt in 1..2_000) {
             val key = generator.generateKeyPair().public as ECPublicKey
             val encoded = EcPublicKeys.x962Uncompressed(key)
             assertEquals(65, encoded.size)
             assertEquals(4.toByte(), encoded[0])
             // L'aller-retour par le point doit être exact.
             assertArrayEquals(encoded, EcPublicKeys.x962Uncompressed(publicKeyFromX962(encoded)))
+            if (encoded[1] == 0.toByte() || encoded[33] == 0.toByte()) {
+                shortSeen = true
+                break
+            }
         }
+        assertTrue("aucune coordonnée courte rencontrée : cas non exercé", shortSeen)
     }
 }
