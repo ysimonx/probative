@@ -59,7 +59,7 @@ bindings/         Liaisons minces : plugin Flutter fédéré, module React Nativ
 cd verifier-python
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest              # 40 tests doivent passer
+pytest              # 50 tests doivent passer
 ruff check .
 mypy src
 ```
