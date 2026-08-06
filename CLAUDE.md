@@ -48,8 +48,9 @@ docs/             Modèle de menace, spec d'enveloppe, ADR, vue d'ensemble
 spec/             Schéma CDDL normatif (généré)
 tools/            Génération des figures de la documentation
 verifier-python/  Vérificateur serveur
-mobile/android/   Client Kotlin natif — non commencé
-mobile/ios/       Client Swift natif — non commencé
+mobile/android/   Cœur natif Kotlin (AAR) — non commencé
+mobile/ios/       Cœur natif Swift (XCFramework) — non commencé
+bindings/         Liaisons minces : plugin Flutter fédéré, module React Native — non commencées
 ```
 
 ## Commandes
@@ -82,8 +83,8 @@ mypy src
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 40 tests au vert |
 | `PlayIntegrityVerifier`, `AppAttestVerifier` | Interfaces posées, `NotImplementedError` |
-| Clients natifs Android / iOS | Non commencés |
-| Plugin Flutter fédéré | Non commencé |
+| Cœurs natifs Android / iOS | Non commencés |
+| Liaisons Flutter / React Native | Non commencées |
 | Banc de triche | Non commencé |
 
 ## Prochaine étape
@@ -92,6 +93,11 @@ mypy src
 une enveloppe que `pytest` accepte. `verifier-python/tests/factory.py` est
 l'implémentation de référence — si le natif produit une enveloppe que la fabrique ne
 saurait pas produire, c'est le natif qui s'écarte de la spécification.
+
+Les cœurs du spike doivent être livrés comme artefacts autonomes (AAR, XCFramework),
+sans dépendance à un framework : c'est la condition de la stratégie multi-frameworks
+Flutter + React Native (ADR-0003). Tout le chemin critique reste natif ; le pont
+Dart/JS ne reçoit que l'enveloppe signée, opaque.
 
 Deux inconnues à lever pendant le spike, susceptibles de forcer une révision de la spec :
 

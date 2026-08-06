@@ -4,8 +4,8 @@ Preuve de présence photographique : une bibliothèque mobile et un vérificateu
 permettant d'établir qu'une image donnée a été prise **par ce capteur, à cet endroit, à
 cet instant**, sur un appareil non compromis.
 
-> **Nom provisoire.** `attested-capture` est un nom de travail. À vérifier sur pub.dev et
-> PyPI simultanément avant publication. Voir `docs/envelope-spec.md` §9.
+> **Nom provisoire.** `attested-capture` est un nom de travail. À vérifier sur pub.dev,
+> npm et PyPI simultanément avant publication. Voir `docs/envelope-spec.md` §9.
 
 ---
 
@@ -40,7 +40,8 @@ sur l'appareil, et l'API publique n'expose jamais de booléen de confiance.
 | Vérificateur Python | Fonctionnel, 40 tests au vert |
 | Validation Play Integrity | Interface posée, implémentation à faire |
 | Validation App Attest | Interface posée, implémentation à faire |
-| Plugin Flutter | Non commencé |
+| Plugin Flutter (liaison mince) | Non commencé |
+| Module React Native (liaison mince) | Non commencé |
 | Banc de triche | Non commencé |
 
 ## Structure
@@ -50,7 +51,9 @@ docs/           Modèle de menace, spécification d'enveloppe, décisions d'arch
 spec/           Schéma CDDL normatif
 tools/          Génération des figures de la documentation
 verifier-python/  Vérificateur serveur
-mobile/         Clients Android et iOS natifs, puis plugin Flutter fédéré
+mobile/android/   Cœur natif Kotlin, publié en AAR
+mobile/ios/       Cœur natif Swift, publié en XCFramework
+bindings/         Liaisons minces au-dessus des cœurs : Flutter fédéré, React Native
 ```
 
 Pour une vue d'ensemble du mécanisme — frontière de confiance, anatomie de l'enveloppe,
