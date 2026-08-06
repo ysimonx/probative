@@ -239,7 +239,8 @@
   .faq-q { font-family: var(--font-display); font-size: 1.2rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.005em; text-wrap: balance; color: var(--ink); }
   .faq-a { display: flex; flex-direction: column; gap: 0.7rem; color: var(--ink-2); font-size: 0.97rem; }
   .faq-a strong { color: var(--ink); }
-  .faq-note { border-left: 2px solid var(--accent); padding: 0.1rem 0 0.1rem 0.9rem; font-size: 0.9rem; }
+  .faq-note, .note { border-left: 2px solid var(--accent); padding: 0.1rem 0 0.1rem 0.9rem; font-size: 0.9rem; }
+  .note { color: var(--ink-2); max-width: 68ch; display: flex; flex-direction: column; gap: 0.5rem; }
 
   .formula { font-family: var(--font-mono); font-size: clamp(0.85rem, 0.7rem + 0.6vw, 1.05rem); background: var(--surface); border: 1px solid var(--rule-strong); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; padding: 0.9rem 1.2rem; overflow-x: auto; color: var(--ink); }
 
@@ -1444,8 +1445,13 @@
         <span class="chip done">rédigé</span>
       </div>
       <div class="repo-row">
-        <span class="path">docs/screen-capture-detection.html</span>
+        <span class="path"><a href="screen-capture-detection.html">docs/screen-capture-detection.html</a></span>
         <span class="what">L'inventaire des techniques envisageables contre la photographie d'écran, et ce qui les contourne. Document exploratoire : il recense des options, il n'en acte aucune.</span>
+        <span class="chip wip">à arbitrer</span>
+      </div>
+      <div class="repo-row">
+        <span class="path"><a href="frame-injection.html">docs/frame-injection.html</a></span>
+        <span class="what">Les quatre couches opposables à l'injection de trames caméra — l'attaque qui met en échec toute analyse de scène. Document exploratoire lui aussi.</span>
         <span class="chip wip">à arbitrer</span>
       </div>
       <div class="repo-row">
@@ -1487,6 +1493,148 @@
         <li>la latence réelle entre capture et signature sur des appareils d'entrée de gamme, qui décide si ce champ est exploitable comme signal de détection ou seulement décoratif.</li>
       </ul>
     </div>
+  </section>
+
+  <!-- 10 ----------------------------------------------------------- -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">L'horizon</div>
+      <h2>Évolutions possibles</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Rien de ce qui suit n'est décidé. Ce sont des pistes instruites, avec ce qu'elles
+        apportent et ce qu'elles coûtent, à trancher quand le spike natif aura livré ses mesures.
+      </p>
+    </div>
+
+    <h3>Opposabilité : faire horodater par un tiers</h3>
+
+    <div class="prose">
+      <p>
+        La propriété <em>instant</em> est déjà solidement établie par le nonce, et il faut voir
+        pourquoi avant de chercher à l'améliorer. Le nonce donne un <strong>encadrement
+        bilatéral</strong> : la charge utile le contient et il est imprévisible, donc la capture
+        est postérieure à son émission ; le serveur l'a reçue avant son expiration, donc la capture
+        lui est antérieure.
+      </p>
+      <p>
+        Un serveur d'horodatage — la RFC 3161 — ne resserre aucune de ces deux bornes. Il ne
+        prouve qu'une chose : cette donnée existait au plus tard à tel instant. En sécurité pure,
+        il n'ajoute donc rien.
+      </p>
+      <p>
+        Ce qu'il apporte est sur <strong>un autre axe</strong>. L'encadrement du nonce repose sur
+        l'horloge et les journaux de votre propre serveur — une preuve que vous vous fabriquez à
+        vous-même. Un jeton délivré par un tiers accrédité se vérifie sans avoir à vous faire
+        confiance. C'est une propriété probatoire, pas sécuritaire, et les deux ne doivent pas être
+        confondues.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 1000 280" role="img" aria-label="Le nonce encadre la capture entre son émission et la réception de l'enveloppe ; faire horodater ces deux instants par un tiers rend l'intervalle vérifiable sans avoir à faire confiance au serveur.">
+          <text class="d-t-mono" x="200" y="42" text-anchor="middle">T₀</text>
+          <text class="d-t" x="200" y="62" text-anchor="middle">Émission du nonce</text>
+          <text class="d-t-mono" x="740" y="42" text-anchor="middle">T₁</text>
+          <text class="d-t" x="740" y="62" text-anchor="middle">Réception de l'enveloppe</text>
+
+          <rect class="d-box-accent" x="200" y="78" width="540" height="42" rx="4" />
+          <text class="d-sub" x="470" y="104" text-anchor="middle">la capture a nécessairement eu lieu dans cet intervalle</text>
+
+          <line class="d-line" x1="90" y1="150" x2="882" y2="150" />
+          <polygon class="d-fill-line" points="890,150 882,145.5 882,154.5" />
+          <text class="d-sub" x="90" y="138">temps</text>
+
+          <line class="d-line" x1="200" y1="132" x2="200" y2="168" />
+          <line class="d-line" x1="740" y1="132" x2="740" y2="168" />
+
+          <line class="d-acc-line" x1="200" y1="196" x2="200" y2="177" />
+          <polygon class="d-acc-fill" points="200,168 195.5,177 204.5,177" />
+          <rect class="d-box" x="138" y="196" width="124" height="46" rx="5" />
+          <text class="d-t" x="200" y="217" text-anchor="middle">Horodatage</text>
+          <text class="d-sub" x="200" y="234" text-anchor="middle">du lot de nonces</text>
+
+          <line class="d-acc-line" x1="740" y1="196" x2="740" y2="177" />
+          <polygon class="d-acc-fill" points="740,168 735.5,177 744.5,177" />
+          <rect class="d-box" x="678" y="196" width="124" height="46" rx="5" />
+          <text class="d-t" x="740" y="217" text-anchor="middle">Horodatage</text>
+          <text class="d-sub" x="740" y="234" text-anchor="middle">de l'enveloppe</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>L'usage courant n'horodate que la fin de la chaîne — or c'est le couple qui compte.</b>
+        Sans horodatage, l'intervalle est attesté par votre seul serveur. Horodater aussi le lot de
+        nonces à son émission suffit à rendre <em>les deux bornes</em> opposables à un tiers : un
+        jeton pour un lot entier ne coûte presque rien, et transforme un encadrement interne en
+        encadrement probatoire.
+      </figcaption>
+    </figure>
+
+    <div class="prose">
+      <p>
+        Un troisième usage, moins évident : la <strong>conservation longue</strong>. Si une
+        enveloppe doit rester vérifiable pendant des années, la clé qui l'a signée aura expiré.
+        L'horodatage est le mécanisme standard pour établir qu'une signature existait alors que son
+        certificat était encore valide.
+      </p>
+      <p>
+        Sur le placement, un point ne souffre pas de discussion : <strong>l'horodatage est demandé
+        par le serveur à la réception, jamais par l'appareil</strong>. Le client est hostile, son
+        jeton ne serait qu'une déclaration de plus ; et un aller-retour supplémentaire pendant la
+        capture aggraverait la latence, déjà en tension avec son usage comme discriminant
+        d'origine.
+      </p>
+      <p>
+        La conséquence est heureuse : <strong>aucun changement du format</strong>. Le jeton porte
+        sur l'empreinte de l'enveloppe complète, donc après signature — il ne peut pas être à
+        l'intérieur, et n'a pas à y être. C'est du stockage de preuve côté serveur, une politique de
+        déploiement, pas une évolution de <span class="m">ac/0.1</span>.
+      </p>
+      <div class="note">
+        <p>
+          <strong>Ne pas laisser cela déplacer les grades.</strong> L'horodatage ne resserre aucune
+          borne temporelle : il ne rend pas la propriété <em>instant</em> plus forte, il la rend
+          vérifiable par quelqu'un d'autre.
+        </p>
+        <p>
+          Tout au plus une mention dans les preuves du résultat, sans effet sur la note. Confondre
+          force de la garantie et valeur probatoire conduirait à surévaluer des captures.
+        </p>
+      </div>
+      <p>
+        Pour un rapport destiné à être lu par un humain, le format PDF/A-3 autorise les pièces
+        jointes embarquées : le document reste lisible, l'enveloppe vérifiable par machine y est
+        attachée, et l'horodatage couvre l'ensemble. Les trois couches cohabitent dans un fichier
+        unique sans qu'aucune n'affaiblisse les autres.
+      </p>
+    </div>
+
+    <h3>Les autres pistes ouvertes</h3>
+
+    <ul class="plain">
+      <li>
+        <strong>Détection de la photographie d'écran</strong> — la seule chose qui empêche
+        aujourd'hui d'atteindre le niveau le plus élevé. Techniques envisageables et ce qui les
+        contourne dans <a href="screen-capture-detection.html">Détecter la photographie d'un écran</a>.
+      </li>
+      <li>
+        <strong>Résistance à l'injection de trames</strong> — l'étage au-dessus, qui met en échec
+        toute analyse de scène. Les quatre couches opposables dans
+        <a href="frame-injection.html">Contrer l'injection de trames caméra</a>.
+      </li>
+      <li>
+        <strong>Réclamations radio en v0.2</strong> — bornes Wi-Fi et antennes environnantes,
+        hachées avec un sel propre à chaque déploiement. Le mécanisme de réclamations typées est
+        déjà en place, l'ajout ne cassera aucun vérificateur déployé.
+      </li>
+      <li>
+        <strong>Alignement sur les formats de provenance</strong> — l'horizon v0.3, et la seule
+        voie qui règlerait vraiment le problème de fond : un capteur qui signerait ses propres
+        images en matériel.
+      </li>
+    </ul>
   </section>
 
   <footer>
