@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Inventaire des techniques envisageables pour detecter la photographie d'un ecran, et ce qui les contourne.">
+<title>attested-capture — détecter la photographie d'un écran</title>
+
+<style>
+
+  /* --- reset minimal ------------------------------------------------ */
+  *, *::before, *::after { box-sizing: border-box; }
+  * { margin: 0; padding: 0; }
+  img, svg { max-width: 100%; }
+  ul, ol { list-style: none; }
+
+  /* Jetons identiques à docs/architecture.html : les deux pages forment
+     un même ensemble. Volontairement dupliqués plutôt que partagés, pour
+     que chaque page reste un fichier unique et autonome. */
+  :root {
+    color-scheme: light dark;
+    --ground: #F4F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #EAEFF4;
+    --ink: #11161C;
+    --ink-2: #4E5964;
+    --ink-3: #79838F;
+    --rule: #D6DDE5;
+    --rule-strong: #B4C0CC;
+    --accent: #1D4E89;
+    --accent-soft: #E3ECF7;
+    --alarm: #A3301F;
+    --alarm-soft: #F8E8E5;
+    --ok: #256B4E;
+    --warn: #855C0D;
+
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --font-body: "Avenir Next", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1117;
+      --surface: #151B23;
+      --surface-2: #1C242E;
+      --ink: #E5EBF2;
+      --ink-2: #9BA8B6;
+      --ink-3: #6E7B89;
+      --rule: #262F3A;
+      --rule-strong: #3B4653;
+      --accent: #74A8E4;
+      --accent-soft: #16263A;
+      --alarm: #E4796A;
+      --alarm-soft: #33201D;
+      --ok: #63BE95;
+      --warn: #D3A44A;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0D1117;
+    --surface: #151B23;
+    --surface-2: #1C242E;
+    --ink: #E5EBF2;
+    --ink-2: #9BA8B6;
+    --ink-3: #6E7B89;
+    --rule: #262F3A;
+    --rule-strong: #3B4653;
+    --accent: #74A8E4;
+    --accent-soft: #16263A;
+    --alarm: #E4796A;
+    --alarm-soft: #33201D;
+    --ok: #63BE95;
+    --warn: #D3A44A;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: clamp(2.5rem, 1.5rem + 4vw, 5rem) clamp(1.1rem, 0.6rem + 2.2vw, 2.5rem) 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(3rem, 2rem + 3vw, 4.5rem);
+  }
+
+  .prose { max-width: 66ch; display: flex; flex-direction: column; gap: 1.1rem; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-3);
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(2.1rem, 1.4rem + 2.6vw, 3.25rem);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  h2 {
+    font-family: var(--font-display);
+    font-size: clamp(1.45rem, 1.2rem + 0.9vw, 1.85rem);
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  h3 { font-size: 0.98rem; font-weight: 650; }
+
+  .lead { font-size: clamp(1.08rem, 1rem + 0.35vw, 1.22rem); color: var(--ink-2); line-height: 1.55; }
+
+  header.masthead { display: flex; flex-direction: column; gap: 1.1rem; max-width: 44ch; }
+  header.masthead .lead { max-width: 64ch; }
+
+  .backlink { font-family: var(--font-mono); font-size: 0.78rem; color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; }
+  .backlink:hover { border-bottom-color: var(--accent); }
+
+  section { display: flex; flex-direction: column; gap: 1.4rem; }
+  .sec-head { display: flex; flex-direction: column; gap: 0.55rem; border-top: 1px solid var(--rule); padding-top: 1.3rem; }
+
+  strong { font-weight: 650; color: var(--ink); }
+  em { font-style: italic; }
+  code, .m { font-family: var(--font-mono); font-size: 0.88em; }
+  a { color: var(--accent); }
+
+  figure { display: flex; flex-direction: column; gap: 0.85rem; margin: 0.4rem 0 0; }
+  .fig-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 1.4rem 1.2rem; }
+  .fig-scroll svg { display: block; width: 100%; min-width: 660px; height: auto; }
+  figcaption { font-size: 0.9rem; color: var(--ink-2); max-width: 72ch; line-height: 1.55; }
+  figcaption b { color: var(--ink); font-weight: 650; }
+
+  /* --- primitives de dessin ---------------------------------------- */
+  .d-box { fill: var(--surface); stroke: var(--rule-strong); stroke-width: 1; }
+  .d-box-2 { fill: var(--surface-2); stroke: var(--rule-strong); stroke-width: 1; }
+  .d-box-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4; }
+  .d-box-dash { fill: var(--surface); stroke: var(--rule-strong); stroke-width: 1; stroke-dasharray: 5 4; }
+  .d-t { fill: var(--ink); font-family: var(--font-body); font-size: 12.5px; }
+  .d-sub { fill: var(--ink-2); font-family: var(--font-body); font-size: 11.5px; }
+  .d-title { fill: var(--ink); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.11em; text-transform: uppercase; }
+  .d-phase { fill: var(--ink-2); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+  .d-line { stroke: var(--ink-3); stroke-width: 1.3; fill: none; }
+  .d-fill-line { fill: var(--ink-3); }
+  .d-thin { stroke: var(--ink-3); stroke-width: 1; fill: none; }
+  .d-dash { stroke: var(--ink-3); stroke-width: 1.2; fill: none; stroke-dasharray: 5 4; }
+  .d-acc-line { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+  .d-acc-fill { fill: var(--accent); }
+  .d-acc-t { fill: var(--accent); font-family: var(--font-mono); font-size: 11px; }
+  .d-acc-dash { stroke: var(--accent); stroke-width: 1.5; fill: none; stroke-dasharray: 6 5; }
+  .d-grid { stroke: var(--rule); stroke-width: 1; }
+  .d-obj { fill: var(--ink-3); stroke: none; }
+  .d-screen { fill: var(--surface-2); stroke: var(--accent); stroke-width: 1.4; }
+
+  /* --- listes ------------------------------------------------------- */
+  ul.plain { display: flex; flex-direction: column; gap: 0.6rem; max-width: 66ch; }
+  ul.plain > li { position: relative; padding-left: 1.5rem; }
+  ul.plain > li::before { content: "—"; position: absolute; left: 0; top: 0; color: var(--ink-3); }
+
+  /* L'ordre est ici une information : c'est une priorité de mise en œuvre. */
+  ol.rank { display: flex; flex-direction: column; gap: 1rem; counter-reset: r; max-width: 70ch; }
+  ol.rank > li { position: relative; padding-left: 2.6rem; counter-increment: r; }
+  ol.rank > li::before {
+    content: counter(r, decimal-leading-zero);
+    position: absolute; left: 0; top: 0.1rem;
+    font-family: var(--font-mono); font-size: 0.78rem; color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- tableaux de techniques --------------------------------------- */
+  .tech-wrap { border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); overflow: hidden; }
+  .tech-scroll { overflow-x: auto; }
+  table.tech { width: 100%; border-collapse: collapse; font-size: 0.92rem; min-width: 40rem; }
+  table.tech th {
+    text-align: left; font-family: var(--font-mono); font-size: 0.68rem;
+    text-transform: uppercase; letter-spacing: 0.11em; color: var(--ink-2);
+    font-weight: 400; padding: 0.65rem 0.95rem;
+    background: var(--surface-2); border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  table.tech td { padding: 0.75rem 0.95rem; border-bottom: 1px solid var(--rule); vertical-align: top; color: var(--ink-2); }
+  table.tech tr:last-child td { border-bottom: 0; }
+  table.tech td.name { color: var(--ink); font-weight: 650; }
+  table.tech td.na { color: var(--ink-3); }
+
+  .chip { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.18rem 0.45rem; border-radius: 3px; white-space: nowrap; border: 1px solid; }
+  .chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+  .chip.mid { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .chip.no { color: var(--alarm); border-color: color-mix(in srgb, var(--alarm) 40%, transparent); background: color-mix(in srgb, var(--alarm) 10%, transparent); }
+
+  /* --- encadrés ------------------------------------------------------ */
+  .callout { border-left: 3px solid var(--alarm); background: var(--alarm-soft); padding: 1.1rem 1.3rem; border-radius: 0 6px 6px 0; display: flex; flex-direction: column; gap: 0.6rem; max-width: 70ch; }
+  .callout .eyebrow { color: var(--alarm); }
+  .callout p { font-size: 0.96rem; }
+
+  .note { border-left: 2px solid var(--accent); padding: 0.15rem 0 0.15rem 0.95rem; font-size: 0.92rem; color: var(--ink-2); max-width: 68ch; display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .rules { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+  .rule-card { border: 1px solid var(--rule); background: var(--surface); border-radius: 8px; padding: 1.1rem 1.3rem; display: flex; flex-direction: column; gap: 0.45rem; }
+  .rule-card .rid { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.09em; color: var(--accent); text-transform: uppercase; }
+  .rule-card p { font-size: 0.92rem; color: var(--ink-2); }
+
+  footer { border-top: 1px solid var(--rule); padding-top: 1.3rem; font-size: 0.88rem; color: var(--ink-3); max-width: 70ch; display: flex; flex-direction: column; gap: 0.6rem; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">attested-capture · piste v0.3 · document exploratoire</div>
+    <h1>Détecter la photographie d'un écran</h1>
+    <p class="lead">
+      C'est le principal angle mort de la v0.1, et la seule chose qui empêche la propriété
+      <em>origine</em> de dépasser le grade B. Cet inventaire recense les techniques
+      envisageables, ce que chacune coûte, et surtout ce qui les contourne.
+    </p>
+    <a class="backlink" href="architecture.html">← retour à la vue d'ensemble</a>
+  </header>
+
+  <!-- 1 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Le principe</div>
+      <h2>Ce qu'on cherche réellement à détecter</h2>
+    </div>
+    <div class="prose">
+      <p>
+        L'attaque est déconcertante parce que tout y est authentique sauf le sujet. La position
+        est vraie, l'appareil est sain, l'attestation est valide, la signature est bonne. On
+        photographie simplement un écran qui affiche autre chose.
+      </p>
+      <p>
+        Aucun signal de <em>position</em> ne peut révéler ça — d'où l'inutilité d'empiler des
+        sources de géolocalisation supplémentaires. Ce qu'il faut interroger, c'est la scène
+        elle-même. Deux propriétés physiques trahissent un écran, et elles sont indépendantes du
+        contenu affiché :
+      </p>
+      <ul class="plain">
+        <li><strong>la scène est plane</strong> — un écran n'a pas de relief ;</li>
+        <li><strong>la scène est émissive</strong> — un écran produit sa propre lumière au lieu de réfléchir celle de l'environnement.</li>
+      </ul>
+      <p>
+        Tout ce qui suit exploite l'une ou l'autre. Rien d'autre n'est exploitable de façon
+        robuste.
+      </p>
+    </div>
+  </section>
+
+  <!-- 2 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Le cadre</div>
+      <h2>Deux contraintes qui éliminent des options d'emblée</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Avant d'évaluer quoi que ce soit, deux invariants du projet restreignent le champ. Une
+        technique qui les viole est hors sujet, aussi efficace soit-elle.
+      </p>
+    </div>
+    <div class="rules">
+      <div class="rule-card">
+        <div class="rid">Le client mesure, il ne conclut pas</div>
+        <p>
+          Aucune décision de validité sur l'appareil. Une profondeur, une rafale, un
+          différentiel de flash sont des <em>données</em> ; c'est le serveur qui en tire une
+          conclusion. Un modèle embarqué qui répondrait « ce n'est pas un écran » serait une
+          décision prise sur du matériel contrôlé par l'attaquant.
+        </p>
+      </div>
+      <div class="rule-card">
+        <div class="rid">Aucun champ obligatoire propre à une plateforme</div>
+        <p>
+          Un appareil sans capteur de profondeur ne doit pas être rejeté pour autant. Un signal
+          indisponible doit <strong>plafonner</strong> le grade, jamais le faire tomber. C'est ce
+          qui distingue un format qui raisonne en propriétés d'un format qui raisonne en
+          plateformes.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Famille 1</div>
+      <h2>Géométrie et profondeur — la plus solide</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Un écran est plan. C'est une propriété que le contenu affiché ne peut pas masquer, et
+        deux méthodes très bon marché la révèlent sans aucun capteur spécialisé.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 1000 560" role="img" aria-label="Comparaison entre une scène réelle et la photographie d'un écran : au flash, les objets d'une scène réelle reçoivent des éclairements très différents selon leur distance alors qu'un plan reçoit un éclairement lisse ; lors d'un micro-mouvement, les objets d'une scène réelle se déplacent différemment selon leur distance alors que tous les points d'un plan suivent une seule transformation.">
+          <text class="d-title" x="270" y="24" text-anchor="middle">Scène réelle</text>
+          <text class="d-title" x="740" y="24" text-anchor="middle">Photo d'un écran</text>
+          <line class="d-grid" x1="505" y1="36" x2="505" y2="540" />
+
+          <!-- ligne 1 : eclairement -->
+          <text class="d-phase" x="40" y="62">Éclairement au flash · la lumière décroît en 1/d²</text>
+          <line class="d-grid" x1="40" y1="72" x2="960" y2="72" />
+
+          <rect class="d-box-2" x="60" y="158" width="34" height="26" rx="3" />
+          <text class="d-sub" x="77" y="202" text-anchor="middle">appareil</text>
+          <line class="d-thin" x1="94" y1="171" x2="176" y2="142" />
+          <line class="d-thin" x1="94" y1="171" x2="286" y2="176" />
+          <line class="d-thin" x1="94" y1="171" x2="396" y2="206" />
+          <circle class="d-obj" cx="192" cy="140" r="15" fill-opacity="0.95" />
+          <circle class="d-obj" cx="302" cy="177" r="15" fill-opacity="0.55" />
+          <circle class="d-obj" cx="412" cy="208" r="15" fill-opacity="0.25" />
+          <text class="d-acc-t" x="192" y="114" text-anchor="middle">1×</text>
+          <text class="d-acc-t" x="302" y="151" text-anchor="middle">1/4</text>
+          <text class="d-acc-t" x="412" y="182" text-anchor="middle">1/9</text>
+          <text class="d-sub" x="265" y="248" text-anchor="middle">chaque objet reçoit une lumière différente : le relief se lit</text>
+
+          <rect class="d-box-2" x="545" y="158" width="34" height="26" rx="3" />
+          <text class="d-sub" x="562" y="202" text-anchor="middle">appareil</text>
+          <line class="d-thin" x1="579" y1="171" x2="822" y2="118" />
+          <line class="d-thin" x1="579" y1="171" x2="822" y2="171" />
+          <line class="d-thin" x1="579" y1="171" x2="822" y2="226" />
+          <rect class="d-screen" x="824" y="110" width="9" height="124" rx="2" />
+          <text class="d-acc-t" x="845" y="176">écran</text>
+          <text class="d-sub" x="740" y="248" text-anchor="middle">l'éclairement varie de façon lisse : aucun relief à lire</text>
+
+          <!-- ligne 2 : parallaxe -->
+          <text class="d-phase" x="40" y="308">Parallaxe · deux prises séparées par le tremblement de la main</text>
+          <line class="d-grid" x1="40" y1="318" x2="960" y2="318" />
+
+          <rect class="d-box-2" x="60" y="372" width="30" height="22" rx="3" />
+          <rect class="d-box-dash" x="60" y="410" width="30" height="22" rx="3" />
+          <text class="d-sub" x="75" y="454" text-anchor="middle">deux prises</text>
+          <line class="d-thin" x1="90" y1="383" x2="186" y2="392" />
+          <line class="d-dash" x1="90" y1="421" x2="186" y2="400" />
+          <line class="d-thin" x1="90" y1="383" x2="406" y2="404" />
+          <line class="d-dash" x1="90" y1="421" x2="406" y2="410" />
+          <circle class="d-obj" cx="200" cy="396" r="14" />
+          <circle class="d-obj" cx="420" cy="407" r="14" />
+          <text class="d-acc-t" x="200" y="358" text-anchor="middle">grand écart</text>
+          <text class="d-acc-t" x="420" y="358" text-anchor="middle">petit écart</text>
+          <text class="d-sub" x="265" y="496" text-anchor="middle">le déplacement apparent dépend de la distance</text>
+
+          <rect class="d-box-2" x="545" y="372" width="30" height="22" rx="3" />
+          <rect class="d-box-dash" x="545" y="410" width="30" height="22" rx="3" />
+          <text class="d-sub" x="560" y="454" text-anchor="middle">deux prises</text>
+          <line class="d-thin" x1="575" y1="383" x2="822" y2="352" />
+          <line class="d-thin" x1="575" y1="383" x2="822" y2="452" />
+          <line class="d-dash" x1="575" y1="421" x2="822" y2="360" />
+          <line class="d-dash" x1="575" y1="421" x2="822" y2="460" />
+          <rect class="d-screen" x="824" y="344" width="9" height="124" rx="2" />
+          <text class="d-acc-t" x="845" y="410">écran</text>
+          <text class="d-sub" x="740" y="496" text-anchor="middle">tous les points suivent une seule et même transformation</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>Les deux colonnes ne diffèrent que par la présence de relief.</b> C'est ce qui rend
+        cette famille robuste : elle ne dépend ni du contenu affiché, ni de la qualité de l'écran,
+        ni des réglages du photographe. Les deux méthodes illustrées ici fonctionnent avec
+        <strong>un seul capteur</strong>, donc sur l'intégralité du parc — ce qui les rend
+        éligibles à un grade, contrairement aux techniques réservées au haut de gamme.
+      </figcaption>
+    </figure>
+
+    <div class="tech-wrap"><div class="tech-scroll">
+      <table class="tech">
+        <thead>
+          <tr><th>Technique</th><th>Comment</th><th>Disponibilité</th><th>Ce qui la contourne</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="name">Différentiel de flash</td>
+            <td>Deux prises, flash allumé puis éteint. L'image de rapport révèle la décroissance en carré inverse</td>
+            <td>Tout le parc</td>
+            <td>Injection dans le pipeline caméra</td>
+          </tr>
+          <tr>
+            <td class="name">Parallaxe de micro-mouvement</td>
+            <td>Rafale courte et flot optique. Un plan produit une homographie pure, une scène réelle une parallaxe non planaire</td>
+            <td>Tout le parc</td>
+            <td>Synthèse d'une rafale cohérente</td>
+          </tr>
+          <tr>
+            <td class="name">Balayage de mise au point</td>
+            <td>Deux ou trois images à distances de netteté différentes : un plan entre et sort du flou d'un seul bloc</td>
+            <td>Tout le parc</td>
+            <td>Difficile sans injection</td>
+          </tr>
+          <tr>
+            <td class="name">Carte de profondeur</td>
+            <td><span class="m">AVDepthData</span>, <span class="m">DEPTH16</span>, ARCore Depth. On ajuste un plan et on mesure le résidu</td>
+            <td>Double capteur, ou ARCore par mouvement</td>
+            <td>Falsification de la carte si l'appareil est compromis</td>
+          </tr>
+          <tr>
+            <td class="name">LiDAR ou temps de vol</td>
+            <td>Profondeur métrique directe</td>
+            <td class="na">Haut de gamme uniquement</td>
+            <td>Idem</td>
+          </tr>
+        </tbody>
+      </table>
+    </div></div>
+  </section>
+
+  <!-- 4 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Famille 2</div>
+      <h2>Artefacts optiques propres aux écrans</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Ces signaux ont un avantage décisif sur tous les autres : <strong>ils s'analysent côté
+        serveur sur l'image déjà transmise</strong>. Aucun changement de format, aucun code natif,
+        aucune latence ajoutée sur l'appareil. C'est ce qui en fait le point de départ naturel.
+      </p>
+    </div>
+
+    <div class="tech-wrap"><div class="tech-scroll">
+      <table class="tech">
+        <thead>
+          <tr><th>Signal</th><th>Force</th><th>Faiblesse</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="name">Moiré</td>
+            <td>Battement entre la grille de pixels et la matrice du capteur, très net par analyse fréquentielle</td>
+            <td>S'évite : écran haute densité, léger défocus, distance, angle</td>
+          </tr>
+          <tr>
+            <td class="name">Bandes de balayage</td>
+            <td>Obturateur déroulant contre rafraîchissement d'écran, et modulation d'intensité des OLED. Presque impossible à éviter sur un écran réel</td>
+            <td>Absente si les fréquences s'accordent par hasard</td>
+          </tr>
+          <tr>
+            <td class="name">Niveau de noir et gamut</td>
+            <td>Un écran ne produit pas de vrai noir, et son spectre est étroit. Purement statistique, donc gratuit</td>
+            <td>Faible isolément, utile en faisceau</td>
+          </tr>
+          <tr>
+            <td class="name">Reflet spéculaire</td>
+            <td>Tache caractéristique sur une surface vitrée, souvent accompagnée de la silhouette du photographe</td>
+            <td>Angle choisi, écran mat</td>
+          </tr>
+          <tr>
+            <td class="name">Double compression</td>
+            <td>Les artefacts de blocs du fichier d'origine survivent au ré-encodage</td>
+            <td>Disparaît si l'écran affiche un rendu non compressé</td>
+          </tr>
+          <tr>
+            <td class="name">Cadre et bordure</td>
+            <td>Rectangle sombre, lignes droites, coins nets</td>
+            <td class="na">Trivial à contourner, n'attrape que le plus négligent</td>
+          </tr>
+        </tbody>
+      </table>
+    </div></div>
+  </section>
+
+  <!-- 5 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Famille 3</div>
+      <h2>L'apprentissage automatique, et où il doit tourner</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Un classifieur entraîné sur des paires réel / re-photographié est l'approche standard du
+        domaine, et elle fonctionne bien à l'intérieur de sa distribution d'entraînement.
+      </p>
+      <p>
+        Le point structurant n'est pas le modèle, c'est son emplacement. <strong>Il tourne sur le
+        serveur, jamais sur l'appareil.</strong> Ce n'est pas une préférence d'architecture : un
+        modèle embarqué produirait une décision de validité sur du matériel contrôlé par
+        l'attaquant, ce que le premier invariant interdit. Deux bénéfices s'ensuivent — le modèle
+        se met à jour sans publier de version applicative, et il ne peut pas être étudié hors ligne
+        par qui cherche à le tromper.
+      </p>
+      <p>
+        Sa faiblesse réelle est la généralisation. Un modèle entraîné sur les écrans d'aujourd'hui
+        vieillit avec eux. Il doit donc rester <strong>un signal parmi d'autres, jamais l'unique
+        porte</strong> — sinon on remplace un angle mort documenté par une dépendance opaque, ce
+        qui est un mauvais échange.
+      </p>
+      <div class="note">
+        <p>
+          <strong>Une technique voisine qui ne répond pas à cette menace.</strong> Le bruit de
+          motif propre à chaque capteur — enrôlable comme une empreinte — prouve <em>quel
+          capteur</em> a formé l'image. C'est excellent contre une caméra virtuelle, et inutile
+          ici : une photo d'écran est bel et bien prise par le vrai capteur.
+        </p>
+        <p>
+          À ne pas confondre, donc, même si les deux relèvent de l'analyse d'image et servent la
+          même propriété.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Famille 4</div>
+      <h2>Cohérence inertielle</h2>
+    </div>
+    <div class="prose">
+      <p>
+        L'appareil sait comment il bougeait pendant la prise. L'image doit en porter la trace.
+      </p>
+    </div>
+
+    <div class="tech-wrap"><div class="tech-scroll">
+      <table class="tech">
+        <thead>
+          <tr><th>Technique</th><th>Ce qu'elle compare</th><th>Remarque</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="name">Flou de bougé contre gyroscope</td>
+            <td>Le gyroscope pendant l'exposition prédit le noyau de flou attendu</td>
+            <td>Sous-estimée. Un désaccord signifie que l'image n'a pas été formée par ce mouvement — difficile à falsifier sans synthèse complète</td>
+          </tr>
+          <tr>
+            <td class="name">Gravité contre géométrie</td>
+            <td>L'accéléromètre donne la verticale ; l'horizon et les lignes de fuite doivent s'y accorder</td>
+            <td>Faible isolément, bon recoupement</td>
+          </tr>
+          <tr>
+            <td class="name">Trajectoire de pose</td>
+            <td>La pose six axes fournie par ARKit ou ARCore, combinée à la rafale</td>
+            <td>Donne une profondeur métrique sans capteur dédié</td>
+          </tr>
+        </tbody>
+      </table>
+    </div></div>
+
+    <div class="prose">
+      <p>
+        La première ligne mérite un essai précoce : elle est presque gratuite si la fenêtre
+        inertielle de dix secondes est déjà relevée, ce qui est le cas dans la spécification
+        actuelle.
+      </p>
+    </div>
+  </section>
+
+  <!-- 7 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Famille 5</div>
+      <h2>Le défi actif — le plus fort, et le plus cher</h2>
+    </div>
+    <div class="prose">
+      <p>
+        L'appareil affiche une séquence de couleurs ou d'intensités, et capture pendant qu'elle
+        éclaire la scène. Le reflet sur une scène en relief varie avec la géométrie ; sur une
+        surface plane et vitrée, c'est un lavis uniforme accompagné d'une tache spéculaire.
+      </p>
+      <p>
+        C'est le procédé qu'emploient les dispositifs de vérification d'identité, et il s'emboîte
+        remarquablement bien ici : <strong>la séquence est dérivée du nonce</strong>. Le nonce
+        existe déjà, il vient du serveur, il est à usage unique — le défi est donc non rejouable
+        sans qu'il faille inventer quoi que ce soit.
+      </p>
+      <p>
+        Le coût est ailleurs : expérience utilisateur, durée de capture, et une latence qui entre
+        en conflit direct avec l'usage du champ de latence comme discriminant d'origine. Les deux
+        idées se marchent dessus et il faudra trancher.
+      </p>
+    </div>
+  </section>
+
+  <!-- 8 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Conséquences</div>
+      <h2>Ce que ça change dans le format</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Les réclamations de corroboration absorbent la plupart de ces signaux sans rien casser —
+        c'est exactement ce pour quoi elles ont été conçues, et un vérificateur ancien ignorera
+        silencieusement ce qu'il ne connaît pas. Deux points demandent en revanche une décision.
+      </p>
+      <p>
+        Le premier : <strong>plusieurs images par capture</strong>. Aujourd'hui le média est une
+        map unique. Une rafale, un couple flash allumé / éteint ou une carte de profondeur
+        imposent soit une liste, soit une réclamation portant des médias auxiliaires.
+      </p>
+      <p>
+        Le second, et c'est le piège : <strong>chaque image supplémentaire doit être liée par
+        R1</strong>. Son empreinte doit entrer dans la charge utile avant le figement, sinon elle
+        n'est rattachée à rien et rouvre exactement la faille que R1 ferme.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 1020 320" role="img" aria-label="Les empreintes de toutes les images supplémentaires doivent entrer dans la charge utile avant son figement ; passé ce point, le défi R1 est calculé, le jeton obtenu et la signature produite, et plus rien ne peut être ajouté.">
+          <text class="d-phase" x="40" y="30">Avant le figement</text>
+          <text class="d-phase" x="670" y="30">Après</text>
+
+          <rect class="d-box" x="40" y="52" width="180" height="46" rx="5" />
+          <text class="d-t" x="58" y="80">Image principale</text>
+
+          <rect class="d-box" x="40" y="112" width="180" height="46" rx="5" />
+          <text class="d-t" x="58" y="140">Image au flash</text>
+
+          <rect class="d-box-dash" x="40" y="172" width="180" height="46" rx="5" />
+          <text class="d-t" x="58" y="194">Rafale, profondeur…</text>
+          <text class="d-sub" x="58" y="211">optionnelles</text>
+
+          <line class="d-line" x1="224" y1="75" x2="286" y2="112" />
+          <line class="d-line" x1="224" y1="135" x2="286" y2="135" />
+          <line class="d-line" x1="224" y1="195" x2="286" y2="158" />
+          <polygon class="d-fill-line" points="295,135 286,130.5 286,139.5" />
+
+          <rect class="d-box-accent" x="295" y="52" width="185" height="166" rx="5" />
+          <text class="d-t" x="313" y="80">Charge utile</text>
+          <text class="d-sub" x="313" y="104">empreinte de chaque image</text>
+          <text class="d-sub" x="313" y="124">position, temps, posture</text>
+          <text class="d-sub" x="313" y="144">corroboration</text>
+          <line class="d-grid" x1="313" y1="162" x2="462" y2="162" />
+          <text class="d-sub" x="313" y="186">tout doit être entré</text>
+          <text class="d-sub" x="313" y="204">avant la ligne</text>
+
+          <line class="d-acc-dash" x1="530" y1="44" x2="530" y2="284" />
+          <text class="d-acc-t" x="530" y="36" text-anchor="middle">figement — R1</text>
+
+          <line class="d-line" x1="484" y1="135" x2="521" y2="135" />
+          <line class="d-line" x1="539" y1="135" x2="571" y2="135" />
+          <polygon class="d-fill-line" points="580,135 571,130.5 571,139.5" />
+
+          <rect class="d-box" x="580" y="112" width="120" height="46" rx="5" />
+          <text class="d-t" x="598" y="140">Défi R1</text>
+
+          <line class="d-line" x1="704" y1="135" x2="736" y2="135" />
+          <polygon class="d-fill-line" points="745,135 736,130.5 736,139.5" />
+
+          <rect class="d-box" x="745" y="112" width="130" height="46" rx="5" />
+          <text class="d-t" x="763" y="140">Attestation</text>
+
+          <line class="d-line" x1="879" y1="135" x2="911" y2="135" />
+          <polygon class="d-fill-line" points="920,135 911,130.5 911,139.5" />
+
+          <rect class="d-box" x="920" y="112" width="80" height="46" rx="5" />
+          <text class="d-t" x="938" y="140">Signature</text>
+
+          <text class="d-sub" x="580" y="264">Une image dont l'empreinte n'est pas entrée avant la ligne</text>
+          <text class="d-sub" x="580" y="282">n'est liée à rien, et ne prouve donc rien.</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>C'est la même contrainte que pour l'image principale, appliquée à tout le reste.</b>
+        Un couple flash allumé / éteint dont seule la première image serait empreintée laisserait
+        un attaquant substituer la seconde à volonté — et donc fabriquer le différentiel qui
+        prouve le relief. La règle est sans exception : ce qui n'est pas dans la charge utile au
+        moment du figement ne fait pas partie de la preuve.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 9 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Mise en œuvre</div>
+      <h2>Ordre suggéré, par rapport effet sur coût</h2>
+    </div>
+    <div class="prose">
+      <p>
+        L'ordre encode une priorité réelle : chaque étape est utilisable seule, et chacune informe
+        la suivante en donnant une mesure du taux de base sur données réelles.
+      </p>
+    </div>
+    <ol class="rank">
+      <li>
+        <strong>Analyse serveur de l'image déjà transmise</strong> — moiré, bandes de balayage,
+        niveau de noir, spéculaire. <em>Zéro changement de format, zéro code natif.</em> À faire en
+        premier ne serait-ce que pour mesurer combien de captures honnêtes déclencheraient à tort.
+      </li>
+      <li>
+        <strong>Différentiel de flash</strong> — une image de plus, tout le parc, signal physique
+        difficile à contrefaire sans injection.
+      </li>
+      <li>
+        <strong>Parallaxe de rafale</strong> — même famille, même universalité, coût en octets un
+        peu plus élevé.
+      </li>
+      <li>
+        <strong>Cohérence gyroscope contre flou</strong> — presque gratuit si la fenêtre inertielle
+        est déjà relevée.
+      </li>
+      <li>
+        <strong>Carte de profondeur quand elle existe</strong> — quasi parfait là où elle est
+        disponible, mais ne peut que <em>rehausser</em> un grade, jamais être exigée.
+      </li>
+      <li>
+        <strong>Défi actif dérivé du nonce</strong> — le plus solide, à garder pour quand le reste
+        est calibré et que l'arbitrage sur la latence est tranché.
+      </li>
+    </ol>
+  </section>
+
+  <!-- 10 ----------------------------------------------------------- -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Le barème</div>
+      <h2>Comment lever le plafond sans casser les invariants</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Le plafond ne se lève pas d'un bloc. La forme qui respecte le quatrième invariant serait :
+        <strong>la propriété origine atteint A lorsqu'au moins un signal fort de relief est présent
+        et cohérent</strong>, et reste à B sinon.
+      </p>
+      <p>
+        Un appareil dépourvu de profondeur n'est alors pas puni — il plafonne, ce qui est le
+        comportement correct. Et comme le niveau global suit la propriété la plus faible, ce seul
+        changement suffirait à rendre le niveau le plus élevé atteignable.
+      </p>
+      <p>
+        Le seuil correspondant a sa place dans les constantes en tête du module de notation, avec
+        les autres, puisqu'il sera recalibré sur données réelles.
+      </p>
+    </div>
+  </section>
+
+  <!-- 11 ----------------------------------------------------------- -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Lucidité</div>
+      <h2>Quel attaquant chaque famille arrête réellement</h2>
+    </div>
+
+    <div class="tech-wrap"><div class="tech-scroll">
+      <table class="tech">
+        <thead>
+          <tr><th>Famille</th><th>A1 opportuniste</th><th>A2 technicien</th><th>A3 organisé</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="name">Artefacts optiques</td>
+            <td><span class="chip ok">bloqué</span></td>
+            <td><span class="chip mid">contournable</span></td>
+            <td><span class="chip no">inefficace</span></td>
+          </tr>
+          <tr>
+            <td class="name">Géométrie et profondeur</td>
+            <td><span class="chip ok">bloqué</span></td>
+            <td><span class="chip ok">bloqué</span></td>
+            <td><span class="chip no">inefficace</span></td>
+          </tr>
+          <tr>
+            <td class="name">Cohérence inertielle</td>
+            <td><span class="chip ok">bloqué</span></td>
+            <td><span class="chip ok">bloqué</span></td>
+            <td><span class="chip no">inefficace</span></td>
+          </tr>
+          <tr>
+            <td class="name">Défi actif</td>
+            <td><span class="chip ok">bloqué</span></td>
+            <td><span class="chip ok">bloqué</span></td>
+            <td><span class="chip no">inefficace</span></td>
+          </tr>
+          <tr>
+            <td class="name">Attestation de plateforme</td>
+            <td><span class="chip ok">bloqué</span></td>
+            <td><span class="chip ok">détecté</span></td>
+            <td><span class="chip mid">coûteux</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div></div>
+
+    <div class="callout">
+      <div class="eyebrow">La colonne qui compte</div>
+      <p>
+        Contre un attaquant capable d'<strong>injecter des trames dans le pipeline caméra</strong>,
+        rien de cette page ne tient. Il peut synthétiser une carte de profondeur cohérente, un
+        différentiel de flash plausible, un flou accordé au gyroscope. Tout ce qui est mesuré sur
+        l'appareil devient alors fabriqué sur l'appareil.
+      </p>
+      <p>
+        Ce niveau-là est traité par l'attestation, pas par la détection de scène. Les deux moitiés
+        sont complémentaires et <strong>aucune ne remplace l'autre</strong> : la détection de scène
+        rend l'attaque bon marché impraticable, l'attestation rend l'attaque coûteuse détectable.
+        Confondre les deux conduirait à surestimer ce que cette page apporte.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Document exploratoire : il recense des options, il n'en acte aucune. Toute technique retenue
+      devra être rattachée à une menace du modèle de menace et faire l'objet d'une décision
+      d'architecture avant implémentation.
+    </p>
+    <p><a class="backlink" href="architecture.html">← retour à la vue d'ensemble</a></p>
+  </footer>
+
+</div>
+</body>
+</html>
