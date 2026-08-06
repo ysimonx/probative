@@ -15,7 +15,8 @@ from typing import Any
 import cbor2
 from cryptography.exceptions import InvalidSignature as _CryptoInvalidSignature
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec, utils as asym_utils
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import utils as asym_utils
 
 from .errors import InvalidSignature, MalformedEnvelope
 
@@ -32,8 +33,8 @@ HDR_FRESHNESS = 200
 @dataclass(frozen=True)
 class Sign1:
     protected_bytes: bytes
-    protected: Mapping
-    unprotected: Mapping
+    protected: Mapping[int, Any]
+    unprotected: Mapping[int, Any]
     payload_bytes: bytes
     signature: bytes
 
@@ -56,14 +57,20 @@ class Sign1:
         return self.protected.get(HDR_DEPLOYMENT)
 
     def payload(self) -> Any:
-        return cbor2.loads(self.payload_bytes)
+        try:
+            return cbor2.loads(self.payload_bytes)
+        except Exception as exc:
+            # Entrée hostile : une charge utile illisible est un rejet
+            # motivé, pas une exception qui remonte au serveur appelant.
+            raise MalformedEnvelope(f"charge utile illisible : {exc}") from exc
 
 
 def decode(envelope: bytes) -> Sign1:
     """Décode une enveloppe étiquetée sans en vérifier la signature."""
     try:
         obj = cbor2.loads(envelope)
-    except Exception as exc:  # noqa: BLE001 - entrée hostile
+    except Exception as exc:
+        # Entrée hostile : tout échec de décodage, quel qu'il soit, est un rejet.
         raise MalformedEnvelope(f"CBOR illisible : {exc}") from exc
 
     if isinstance(obj, cbor2.CBORTag):
@@ -88,7 +95,7 @@ def decode(envelope: bytes) -> Sign1:
 
     try:
         protected = cbor2.loads(protected_bytes) if protected_bytes else {}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise MalformedEnvelope(f"en-tête protégé illisible : {exc}") from exc
 
     if not isinstance(protected, Mapping):

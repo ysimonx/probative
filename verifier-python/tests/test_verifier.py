@@ -14,6 +14,7 @@ import time
 
 import cbor2
 import pytest
+from factory import kid_for, make_payload, new_key, sign_envelope
 
 from attested_capture.attestation import DeviceIntegrity, NullAttestationVerifier
 from attested_capture.model import Grade, Level, Property
@@ -23,8 +24,6 @@ from attested_capture.store import (
     InMemoryNonceStore,
 )
 from attested_capture.verifier import Verifier
-
-from factory import kid_for, make_payload, new_key, sign_envelope
 
 MEDIA = b"image-de-test"
 MEDIA_DIGEST = hashlib.sha256(MEDIA).digest()
@@ -388,6 +387,79 @@ def test_s4_integrite_appareil_en_echec(nonces, devices, key):
 
 def test_entree_illisible_rejetee(verifier):
     assert verifier.verify(b"\x00\x01\x02pas du cbor").level is Level.REJECTED
+
+
+def test_charge_utile_illisible_rejetee(verifier, key):
+    """Une enveloppe bien formée dont la charge utile n'est pas du CBOR.
+
+    Le décodage de la charge utile précède la vérification de signature :
+    c'est donc une porte d'entrée atteignable sans aucune clé.
+    """
+    protected = cbor2.dumps(
+        {1: -7, 4: kid_for(key), 100: "ac/0.1", 101: "test-deployment"}, canonical=True
+    )
+    env = cbor2.dumps(
+        cbor2.CBORTag(
+            18,
+            [
+                protected,
+                {200: {1: "play-integrity", 2: b"jeton"}},
+                b"\xff\xff\xff",
+                b"\x00" * 64,
+            ],
+        ),
+        canonical=True,
+    )
+    res = verifier.verify(env)
+
+    assert res.level is Level.REJECTED
+    assert res.flags == ["MALFORMED_ENVELOPE"]
+
+
+# Chemin dans la charge utile, puis valeur du mauvais type. Chaque cas est
+# du CBOR parfaitement valide : seule la conformité au schéma est violée.
+CHAMPS_MAL_TYPES = [
+    ((2,), "pas-une-map"),          # media n'est pas une map
+    ((2,), 42),
+    ((3,), [1, 2, 3]),              # position n'est pas une map
+    ((5,), b"octets"),              # posture n'est pas une map
+    ((6,), 7),                      # corroboration n'est pas un tableau
+    ((5, 8), 3),                    # paquets suspects n'est pas un tableau
+    ((5, 8), [1, 2]),               # ...et ses éléments doivent être des chaînes
+    ((3, 1), "48.29"),              # latitude en chaîne
+    ((3, 3), "huit"),               # précision horizontale en chaîne
+    ((3, 7), -1),                   # âge du point négatif
+    ((2, 6), "lente"),              # latence en chaîne
+    ((2, 5), [4032]),               # dimensions incomplètes
+    ((4, 1), "hier"),               # horloge murale en chaîne
+    ((5, 4), "non"),                # débogueur non booléen
+    ((1,), "nonce-en-clair"),       # nonce en chaîne au lieu d'octets
+]
+
+
+@pytest.mark.parametrize(("chemin", "valeur"), CHAMPS_MAL_TYPES)
+def test_s4_champ_mal_type_rejete(verifier, nonces, key, chemin, valeur):
+    """Une charge utile conforme au CBOR mais pas au schéma est rejetée.
+
+    Le point n'est pas seulement qu'elle soit refusée, c'est qu'elle le
+    soit par un rejet motivé. Une exception qui remonterait au serveur
+    appelant transformerait une enveloppe malformée en incident, et un
+    champ mal typé qui traverserait le calcul des grades sans être
+    remarqué serait pire encore.
+    """
+    nonce = _issue(nonces)
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
+
+    cible = payload
+    for k in chemin[:-1]:
+        cible = cible[k]
+    cible[chemin[-1]] = valeur
+
+    res = verifier.verify(sign_envelope(key, payload, nonce=nonce), media_bytes=MEDIA)
+
+    assert res.level is Level.REJECTED
+    assert res.flags == ["MALFORMED_ENVELOPE"]
+    assert res.level_reason, "un rejet doit toujours porter son motif"
 
 
 def test_algorithme_non_es256_refuse(verifier):
