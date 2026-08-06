@@ -89,8 +89,9 @@ mypy src
 
 ## Prochaine étape
 
-**Spike d'attestation natif**, Kotlin et Swift en parallèle. Cible précise : produire
-une enveloppe que `pytest` accepte. `verifier-python/tests/factory.py` est
+**Spike d'attestation natif** — plan détaillé et phases dans
+`docs/spike-attestation.md`. Cible précise : produire une enveloppe qu'un appareil
+réel fait accepter par le vérificateur. `verifier-python/tests/factory.py` est
 l'implémentation de référence — si le natif produit une enveloppe que la fabrique ne
 saurait pas produire, c'est le natif qui s'écarte de la spécification.
 
