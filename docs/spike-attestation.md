@@ -91,25 +91,31 @@ module `:demo`, application minimale qui consomme l'AAR et parle au serveur de d
 
 ### A1 — Squelette du projet
 
-- [ ] `settings.gradle.kts`, `:core` (bibliothèque Android, Kotlin pur autant que
-      possible), `:demo` (application).
-- [ ] Fixer `minSdk` (proposition : 26 — StrongBox et Play Integrity standard le
-      requièrent de fait ; à confirmer et noter ici).
-- [ ] `./gradlew :core:assembleRelease` produit un AAR consommable seul — c'est la
-      condition ADR-0003, elle se vérifie dès le squelette.
+- [x] `settings.gradle.kts`, `:core` (bibliothèque Android, Kotlin pur). Le module
+      ~~`:demo` (application)~~ est différé à A4 : rien à démontrer avant la
+      capture, et un module vide n'aurait fait qu'alourdir le build.
+- [x] `minSdk` fixé à 26. Outillage retenu : Gradle 8.14.3 (wrapper officiel),
+      AGP 8.10.1, Kotlin 2.1.21, JDK 17, compileSdk 36. `local.properties` non
+      versionné (chemin SDK propre à la machine).
+- [x] `./gradlew :core:assembleRelease` produit un AAR consommable seul (12 Ko,
+      aucune dépendance d'exécution) — condition ADR-0003 vérifiée dès le squelette.
 
 ### A2 — Encodeur CBOR canonique + COSE_Sign1 en Kotlin
 
 Strict nécessaire, dans l'esprit de `cose.py` serveur (ADR-0001 : surface minimale,
 pas de bibliothèque généraliste).
 
-- [ ] Encodeur CBOR : uint/nint, bstr, tstr, tableau, map (ordre canonique
-      RFC 8949 §4.2.1), bool, float32/float64 en forme la plus courte, tag 18.
-- [ ] Structure `Sig_structure` (`["Signature1", protected, "", payload]`) et
-      assemblage `COSE_Sign1`.
-- [ ] Conversion signature DER → brute `r‖s` 64 octets.
-- [ ] Tests unitaires contre les vecteurs d'or, octet à octet, jeux android et ios
-      (l'encodeur ne connaît pas la plateforme, il doit produire les deux).
+- [x] Encodeur CBOR (`core/cbor/Cbor.kt`) : uint/nint, bstr, tstr, tableau, map
+      (ordre canonique RFC 8949 §4.2.1), bool, **float16**/float32/float64 en forme
+      la plus courte, tag 18. Types hors format rejetés bruyamment ; conformité
+      vérifiée sur les exemples normatifs de la RFC (annexe A).
+- [x] `Sig_structure` et assemblage `COSE_Sign1` (`core/cose/Cose.kt`).
+- [x] Conversion signature DER → brute `r‖s` 64 octets, validée par croisement
+      avec le fournisseur JCA `SHA256withECDSAinP1363Format`.
+- [x] Tests unitaires contre les vecteurs d'or, octet à octet, jeux android et ios
+      — lus directement dans `verifier-python/tests/vectors/` (source unique,
+      chemin injecté par Gradle). 13 tests, dont l'enveloppe complète recomposée
+      autour de la signature prélevée du vecteur.
 
 ### A3 — Clé matérielle et enrôlement
 
@@ -267,3 +273,8 @@ XCFramework autonome.
   nouvelle). 50 tests au vert. Trouvaille utile pour A2/C2 : les vecteurs
   contiennent du float16, du float32 et du float64 — la demi-précision CBOR est
   incontournable côté natif. Prochaine étape : phase A (squelette Gradle A1).
+- 2026-08-06 : **A1 et A2 terminées.** `mobile/android/` : module `:core` (AAR
+  autonome, 12 Ko), encodeur CBOR canonique et couche COSE en Kotlin pur, 13 tests
+  au vert — les vecteurs d'or sont reproduits octet à octet du premier coup, demi-
+  précision comprise. `:demo` différé à A4. Prochaine étape : A3 (clé Keystore et
+  enrôlement), qui demande un appareil réel pour ses tests instrumentés.
