@@ -17,6 +17,8 @@ mobile/**/build/
 mobile/**/.gradle/
 mobile/**/.kotlin/
 mobile/**/local.properties
+mobile/**/.build/
+mobile/**/.swiftpm/
 mobile/**/Pods/
 mobile/**/*.xcuserdatad/
 # Ne jamais versionner de materiel cryptographique reel

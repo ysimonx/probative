@@ -195,12 +195,22 @@ Package SwiftPM produisant un XCFramework, plus une application de démonstratio
 
 ### C1 — Squelette
 
-- [ ] `Package.swift`, cible bibliothèque sans dépendance framework, script de
-      production du XCFramework, application de démonstration à part.
+- [x] `Package.swift` (iOS 15+, macOS 12 déclaré pour exécuter les tests sur
+      l'hôte), cible bibliothèque sans dépendance framework. Le script
+      `scripts/make_xcframework.sh` est validé de bout en bout (712 Ko, tranches
+      appareil et simulateur, `.swiftinterface` embarquées). Recette notable :
+      l'archivage xcodebuild d'un package SwiftPM ne produit aucun framework —
+      on assemble `.o` → `libtool` → `-create-xcframework`, le swiftmodule posé
+      à côté de la `.a` étant embarqué automatiquement. L'application de
+      démonstration est différée à C4, comme `:demo` côté Android.
 
 ### C2 — Encodeur CBOR canonique + COSE_Sign1 en Swift
 
-- [ ] Mêmes exigences qu'en A2, validé contre les **mêmes vecteurs d'or**.
+- [x] Mêmes exigences qu'en A2, validé contre les **mêmes vecteurs d'or** :
+      13 tests au vert du premier coup. Modèle `CborValue` typé (maps à clés
+      entières figées dans le type), demi-précision portable par manipulation de
+      bits, conversion DER → `r‖s` croisée avec CryptoKit (`derRepresentation`
+      contre `rawRepresentation` d'une même signature).
 
 ### C3 — Clé et enrôlement App Attest
 
@@ -278,3 +288,9 @@ XCFramework autonome.
   au vert — les vecteurs d'or sont reproduits octet à octet du premier coup, demi-
   précision comprise. `:demo` différé à A4. Prochaine étape : A3 (clé Keystore et
   enrôlement), qui demande un appareil réel pour ses tests instrumentés.
+- 2026-08-06 : **C1 et C2 terminées.** `mobile/ios/` : package SwiftPM
+  `AttestedCaptureCore`, encodeur CBOR canonique et couche COSE en Swift, 13 tests
+  au vert contre les mêmes vecteurs d'or, XCFramework produit et validé par
+  script (712 Ko). Les deux cœurs sont désormais au même point : tout ce qui se
+  valide sans matériel est fait. Restent A3–A7 (appareil Android + Play Console)
+  et C3–C5 (appareil iOS + compte développeur Apple).
