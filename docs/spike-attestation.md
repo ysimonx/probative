@@ -97,8 +97,9 @@ module `:demo`, application minimale qui consomme l'AAR et parle au serveur de d
 - [x] `minSdk` fixé à 26. Outillage retenu : Gradle 8.14.3 (wrapper officiel),
       AGP 8.10.1, Kotlin 2.1.21, JDK 17, compileSdk 36. `local.properties` non
       versionné (chemin SDK propre à la machine).
-- [x] `./gradlew :core:assembleRelease` produit un AAR consommable seul (12 Ko,
-      aucune dépendance d'exécution) — condition ADR-0003 vérifiée dès le squelette.
+- [x] `./gradlew :core:assembleRelease` produit un AAR consommable seul (12 Ko ;
+      seule dépendance d'exécution : kotlin-stdlib, aucune dépendance framework) —
+      condition ADR-0003 vérifiée dès le squelette.
 
 ### A2 — Encodeur CBOR canonique + COSE_Sign1 en Kotlin
 
@@ -294,3 +295,16 @@ XCFramework autonome.
   script (712 Ko). Les deux cœurs sont désormais au même point : tout ce qui se
   valide sans matériel est fait. Restent A3–A7 (appareil Android + Play Console)
   et C3–C5 (appareil iOS + compte développeur Apple).
+- 2026-08-06 : **audit complet.** Les trois suites relancées d'un état propre
+  (51 + 13 + 13, ruff et mypy au vert). Contre-épreuves cbor2 : les flottants
+  limites (sous-normaux half, NaN, bornes float32) sont identiques entre cbor2,
+  Kotlin, Swift et la RFC 8949 ; en revanche, divergence latente confirmée sur
+  l'ordre des clés de map — cbor2 trie « longueur d'abord » (RFC 7049), les
+  natifs « octets d'abord » (RFC 8949) ; les deux coïncident uniquement pour des
+  clés non signées → contrainte rendue **normative** dans la spec §7. Corrigé :
+  le serveur de dev fermait la connexion sur un corps non-UTF-8
+  (`UnicodeDecodeError` non attrapée) ; durci : l'anti-dérive des vecteurs
+  ignore les fichiers cachés. Vérifié : l'AAR ne dépend que de kotlin-stdlib
+  (aucune dépendance framework), archive saine ; le pipeline rejette proprement
+  un CBOR illisible via HTTP (`MALFORMED_ENVELOPE`, jamais de 500). Docs
+  rafraîchies (51 tests, états des cœurs).

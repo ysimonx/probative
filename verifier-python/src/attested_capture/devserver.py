@@ -145,7 +145,10 @@ def make_server(
                 raw = self.rfile.read(length)
                 body = _require_map(json.loads(raw) if raw else {})
                 result = route(body)
-            except (BadRequest, json.JSONDecodeError) as exc:
+            except (BadRequest, ValueError) as exc:
+                # ValueError couvre JSONDecodeError mais aussi
+                # UnicodeDecodeError : un corps non-UTF-8 sans BOM échoue
+                # au décodage avant même l'analyse JSON.
                 self._reply(400, {"error": str(exc)})
                 return
             self._reply(200, result)

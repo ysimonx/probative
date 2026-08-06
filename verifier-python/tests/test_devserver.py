@@ -146,13 +146,23 @@ def test_erreurs_de_transport(server_url):
     status, body = _post(server_url, "/inconnue", None)
     assert status == 404
 
-    req = urllib.request.Request(
-        server_url + "/verify", data=b"pas du json", method="POST"
-    )
-    with pytest.raises(urllib.error.HTTPError) as exc_info:
-        urllib.request.urlopen(req)
-    assert exc_info.value.code == 400
+    for hostile in (b"pas du json", b"\x80{}"):
+        # Le second cas est de l'UTF-8 invalide sans BOM : il échoue en
+        # UnicodeDecodeError, pas en JSONDecodeError — le serveur doit
+        # répondre 400, jamais fermer la connexion sur une trace.
+        req = urllib.request.Request(server_url + "/verify", data=hostile, method="POST")
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req)
+        assert exc_info.value.code == 400, hostile
 
     status, body = _post(server_url, "/verify", {})
     assert status == 400
     assert "envelope_b64" in body["error"]
+
+
+def test_enveloppe_charabia_rejetee_proprement(server_url):
+    """Un CBOR illisible traverse le pipeline comme rejet motivé, pas comme 500."""
+    status, result = _post(server_url, "/verify", {"envelope_b64": _b64(b"pas du cbor")})
+    assert status == 200
+    assert result["level"] == "REJECTED"
+    assert "MALFORMED_ENVELOPE" in result["flags"]

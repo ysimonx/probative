@@ -37,7 +37,11 @@ Deux jeux : `android` (chaînage `payload[7]`, posture 6/7/8) et `ios`
 - **Ordre canonique des clés de map** (RFC 8949 §4.2.1) : tri par octets
   d'encodage croissants. Pour les clés entières positives du format,
   cela coïncide avec l'ordre numérique — mais c'est bien l'encodage qui
-  fait foi, pas la valeur.
+  fait foi, pas la valeur. Attention : cbor2 trie « longueur d'abord »
+  (RFC 7049) ; les deux ordres divergent dès qu'une clé négative
+  apparaît (`{24, -1}` : la RFC 8949 met `24` en premier, cbor2 met
+  `-1`). La spec §7 impose donc des clés **non signées**, où les deux
+  ordres coïncident.
 - **Flottants en forme la plus courte qui préserve la valeur.** Les
   trois largeurs coexistent dans un même vecteur : `8.0` s'encode en
   **float16** (`f9 48 00`), `48.2973` en float64. Un encodeur qui émet

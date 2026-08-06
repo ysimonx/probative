@@ -37,9 +37,10 @@ sur l'appareil, et l'API publique n'expose jamais de booléen de confiance.
 |---|---|
 | Modèle de menace | Rédigé — `docs/threat-model.md` |
 | Spécification d'enveloppe `ac/0.1` | Proposée — `docs/envelope-spec.md` |
-| Vérificateur Python | Fonctionnel, 40 tests au vert |
+| Vérificateur Python | Fonctionnel, 51 tests au vert |
 | Validation Play Integrity | Interface posée, implémentation à faire |
 | Validation App Attest | Interface posée, implémentation à faire |
+| Cœurs natifs Android / iOS | Encodeurs CBOR/COSE validés contre les vecteurs d'or |
 | Plugin Flutter (liaison mince) | Non commencé |
 | Module React Native (liaison mince) | Non commencé |
 | Banc de triche | Non commencé |

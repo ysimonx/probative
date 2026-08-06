@@ -253,6 +253,8 @@ Les étapes 1 à 4 sont locales et coûtent une milliseconde. L'étape 5 est un 
 
 CBOR canonique, RFC 8949 §4.2.1, sans exception. Deux implémentations doivent produire des octets identiques pour une même charge utile — sinon la signature ne se vérifie pas.
 
+Toutes les clés de map du format sont des entiers **non signés**, et cette contrainte est normative. Pour de telles clés, l'ordre « octets d'encodage croissants » de la RFC 8949 coïncide avec l'ordre « longueur d'abord » hérité de la RFC 7049, encore répandu dans les encodeurs — dont cbor2, utilisé par le vérificateur de référence. Un label négatif ferait diverger silencieusement des implémentations aujourd'hui compatibles : en introduire un exigerait de trancher ce point explicitement, dans une version majeure.
+
 Type MIME proposé : `application/vnd.attested-capture+cose`
 Extension de fichier : `.acap`
 

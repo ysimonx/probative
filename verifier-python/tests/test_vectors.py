@@ -27,7 +27,12 @@ REGEN = "relancer tools/gen_vectors.py et examiner le diff avant de committer"
 
 def test_vecteurs_identiques_a_une_regeneration():
     files = build_vectors()
-    on_disk = {p.name for p in VECTORS_DIR.iterdir() if p.name != "README.md"}
+    # Les fichiers cachés (`.DS_Store`…) ne sont pas des vecteurs.
+    on_disk = {
+        p.name
+        for p in VECTORS_DIR.iterdir()
+        if p.name != "README.md" and not p.name.startswith(".")
+    }
     assert on_disk == set(files), f"fichiers en trop ou manquants — {REGEN}"
     for name, content in files.items():
         assert (VECTORS_DIR / name).read_bytes() == content, f"dérive sur {name} — {REGEN}"

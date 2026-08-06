@@ -48,8 +48,8 @@ docs/             Modèle de menace, spec d'enveloppe, ADR, vue d'ensemble
 spec/             Schéma CDDL normatif (généré)
 tools/            Génération des figures de la documentation
 verifier-python/  Vérificateur serveur
-mobile/android/   Cœur natif Kotlin (AAR) — non commencé
-mobile/ios/       Cœur natif Swift (XCFramework) — non commencé
+mobile/android/   Cœur natif Kotlin (AAR) — spike en cours
+mobile/ios/       Cœur natif Swift (XCFramework) — spike en cours
 bindings/         Liaisons minces : plugin Flutter fédéré, module React Native — non commencées
 ```
 
@@ -59,7 +59,7 @@ bindings/         Liaisons minces : plugin Flutter fédéré, module React Nativ
 cd verifier-python
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest              # 50 tests doivent passer
+pytest              # 51 tests doivent passer
 ruff check .
 mypy src
 ```
@@ -83,7 +83,7 @@ mypy src
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 40 tests au vert |
 | `PlayIntegrityVerifier`, `AppAttestVerifier` | Interfaces posées, `NotImplementedError` |
-| Cœurs natifs Android / iOS | Non commencés |
+| Cœurs natifs Android / iOS | Encodeurs CBOR/COSE validés contre les vecteurs d'or (A1–A2, C1–C2) |
 | Liaisons Flutter / React Native | Non commencées |
 | Banc de triche | Non commencé |
 
