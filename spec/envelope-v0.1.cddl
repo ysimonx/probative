@@ -1,0 +1,85 @@
+; Enveloppe de capture attestee -- specification ac/0.1
+; Extrait automatiquement de docs/envelope-spec.md -- ne pas editer a la main.
+; Source de verite : docs/envelope-spec.md
+
+ac-envelope = #6.18(COSE_Sign1)
+
+COSE_Sign1 = [
+  protected   : bstr .cbor header-protected,
+  unprotected : header-unprotected,
+  payload     : bstr .cbor capture-claims,
+  signature   : bstr
+]
+
+header-protected = {
+  1   => -7,            ; alg : ES256
+  4   => bstr,          ; kid : SHA-256 de la clé publique attestée
+  100 => "ac/0.1",      ; version de spécification
+  101 => tstr,          ; identifiant de déploiement (multi-tenant)
+}
+
+header-unprotected = {
+  200 => freshness
+}
+
+freshness = {
+  1 => "play-integrity" / "app-attest",
+  2 => bstr,          ; jeton d'intégrité ou assertion, opaque
+  ? 3 => uint,        ; compteur d'assertion (iOS uniquement)
+}
+
+capture-claims = {
+  1   => bstr,              ; nonce serveur, brut
+  2   => media,
+  3   => position,
+  4   => timing,
+  5   => posture,
+  ? 6 => [+ claim],         ; corroboration, extensible
+  ? 7 => bstr,              ; chaînage : SHA-256 de l'enveloppe précédente
+}
+
+media = {
+  1 => "sha-256",
+  2 => bstr,                ; empreinte des octets bruts du capteur
+  3 => tstr,                ; type MIME
+  4 => uint,                ; taille en octets
+  5 => [uint, uint],        ; largeur, hauteur
+  6 => uint,                ; latence capture → signature, en ms
+}
+
+position = {
+  1   => float64,           ; latitude WGS84
+  2   => float64,           ; longitude WGS84
+  3   => float32,           ; précision horizontale, mètres
+  ? 4 => float32,           ; altitude ellipsoïdale, mètres
+  ? 5 => float32,           ; précision verticale
+  6   => "gnss" / "fused" / "network" / "unknown",
+  7   => uint,              ; ancienneté du point au moment de la capture, ms
+  ? 8 => uint,              ; nombre de satellites utilisés (Android)
+}
+
+timing = {
+  1   => uint,              ; horloge murale, epoch ms
+  2   => uint,              ; horloge monotone depuis démarrage, ms
+  3   => int,               ; décalage UTC, minutes
+  ? 4 => bool,              ; synchronisation automatique de l'heure active
+}
+
+posture = {
+  1   => "android" / "ios",
+  2   => tstr,              ; version OS
+  3   => tstr,              ; version applicative
+  4   => bool,              ; débogueur attaché
+  5   => bool,              ; émulateur ou simulateur suspecté
+  ? 6 => bool,              ; mode développeur actif
+  ? 7 => bool,              ; indicateur de position simulée   (Android)
+  ? 8 => [* tstr],          ; paquets suspects détectés        (Android)
+  ? 9 => bool,              ; heuristiques de jailbreak         (iOS)
+}
+
+claim = {
+  1 => tstr,                ; type
+  2 => tstr,                ; identifiant du capteur ou fournisseur
+  3 => uint,                ; horodatage monotone de la mesure, ms
+  4 => any,                 ; mesure, spécifique au type
+}
