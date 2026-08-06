@@ -37,7 +37,7 @@ sur l'appareil, et l'API publique n'expose jamais de booléen de confiance.
 |---|---|
 | Modèle de menace | Rédigé — `docs/threat-model.md` |
 | Spécification d'enveloppe `ac/0.1` | Proposée — `docs/envelope-spec.md` |
-| Vérificateur Python | Fonctionnel, 24 tests au vert |
+| Vérificateur Python | Fonctionnel, 40 tests au vert |
 | Validation Play Integrity | Interface posée, implémentation à faire |
 | Validation App Attest | Interface posée, implémentation à faire |
 | Plugin Flutter | Non commencé |
@@ -48,9 +48,24 @@ sur l'appareil, et l'API publique n'expose jamais de booléen de confiance.
 ```
 docs/           Modèle de menace, spécification d'enveloppe, décisions d'architecture
 spec/           Schéma CDDL normatif
+tools/          Génération des figures de la documentation
 verifier-python/  Vérificateur serveur
 mobile/         Clients Android et iOS natifs, puis plugin Flutter fédéré
 ```
+
+Pour une vue d'ensemble du mécanisme — frontière de confiance, anatomie de l'enveloppe,
+règle R1, séquences d'enrôlement et de capture, ordre de vérification, attribution des
+grades — ouvrir `docs/architecture.html` dans un navigateur. Page autonome, sans dépendance
+externe, avec une FAQ en fin de document.
+
+Les deux diagrammes de séquence de cette page sont **générés**, pas dessinés à la main :
+
+```bash
+python tools/gen_sequences.py
+```
+
+Le script ne réécrit que ce qui se trouve entre les marqueurs `<!-- gen:… -->` du document ;
+le reste de la page est rédigé à la main et n'est jamais touché.
 
 ## Démarrage
 
@@ -95,6 +110,10 @@ Elles sont documentées, pas minimisées. Voir `docs/threat-model.md` §7.
   la position est authentique, l'attestation est valide, seul le contenu est faux.
 - Un **simulateur GNSS matériel** produit un signal indiscernable côté client.
 - Les appareils Android **sans services Google Play** ne peuvent pas être attestés.
+- Sur Android, le verdict d'authenticité du binaire signifie « correspond à ce que Google Play
+  distribue » : une **diffusion hors Play** conserve le verdict sur l'appareil mais perd celui
+  sur l'application. iOS n'a pas cette contrainte, App Attest prouvant l'App ID quel que soit
+  le canal.
 - La bibliothèque prouve l'**appareil**, jamais l'identité de la personne.
 
 ## Feuille de route

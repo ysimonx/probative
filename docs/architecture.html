@@ -1,0 +1,1482 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Architecture d'attested-capture : le mecanisme de preuve, les regles de liaison R1/R2/R3 et le pipeline de verification.">
+<title>attested-capture — l'architecture en clair</title>
+
+<style>
+
+  /* --- reset minimal ------------------------------------------------ */
+  *, *::before, *::after { box-sizing: border-box; }
+  * { margin: 0; padding: 0; }
+  img, svg { max-width: 100%; }
+  ul, ol { list-style: none; }
+  :root {
+    color-scheme: light dark;
+    --ground: #F4F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #EAEFF4;
+    --ink: #11161C;
+    --ink-2: #4E5964;
+    --ink-3: #79838F;
+    --rule: #D6DDE5;
+    --rule-strong: #B4C0CC;
+    --accent: #1D4E89;
+    --accent-soft: #E3ECF7;
+    --alarm: #A3301F;
+    --alarm-soft: #F8E8E5;
+    --ok: #256B4E;
+    --warn: #855C0D;
+
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --font-body: "Avenir Next", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1117;
+      --surface: #151B23;
+      --surface-2: #1C242E;
+      --ink: #E5EBF2;
+      --ink-2: #9BA8B6;
+      --ink-3: #6E7B89;
+      --rule: #262F3A;
+      --rule-strong: #3B4653;
+      --accent: #74A8E4;
+      --accent-soft: #16263A;
+      --alarm: #E4796A;
+      --alarm-soft: #33201D;
+      --ok: #63BE95;
+      --warn: #D3A44A;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0D1117;
+    --surface: #151B23;
+    --surface-2: #1C242E;
+    --ink: #E5EBF2;
+    --ink-2: #9BA8B6;
+    --ink-3: #6E7B89;
+    --rule: #262F3A;
+    --rule-strong: #3B4653;
+    --accent: #74A8E4;
+    --accent-soft: #16263A;
+    --alarm: #E4796A;
+    --alarm-soft: #33201D;
+    --ok: #63BE95;
+    --warn: #D3A44A;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: clamp(2.5rem, 1.5rem + 4vw, 5rem) clamp(1.1rem, 0.6rem + 2.2vw, 2.5rem) 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(3rem, 2rem + 3vw, 4.5rem);
+  }
+
+  .prose { max-width: 66ch; display: flex; flex-direction: column; gap: 1.1rem; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-3);
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(2.1rem, 1.4rem + 2.6vw, 3.25rem);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  h2 {
+    font-family: var(--font-display);
+    font-size: clamp(1.45rem, 1.2rem + 0.9vw, 1.85rem);
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-size: 0.98rem;
+    font-weight: 650;
+    letter-spacing: 0.005em;
+  }
+
+  .lead { font-size: clamp(1.08rem, 1rem + 0.35vw, 1.22rem); color: var(--ink-2); line-height: 1.55; }
+
+  header.masthead { display: flex; flex-direction: column; gap: 1.1rem; max-width: 40ch; }
+  header.masthead .lead { max-width: 62ch; }
+
+  section { display: flex; flex-direction: column; gap: 1.4rem; }
+
+  .sec-head { display: flex; flex-direction: column; gap: 0.55rem; border-top: 1px solid var(--rule); padding-top: 1.3rem; }
+
+  strong { font-weight: 650; color: var(--ink); }
+  em { font-style: italic; }
+
+  code, .m { font-family: var(--font-mono); font-size: 0.88em; }
+  p code { background: var(--surface-2); padding: 0.1em 0.34em; border-radius: 3px; }
+
+  figure { display: flex; flex-direction: column; gap: 0.85rem; margin: 0.4rem 0 0; }
+  .fig-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 1.4rem 1.2rem; }
+  .fig-scroll svg { display: block; width: 100%; min-width: 660px; height: auto; }
+  figcaption { font-size: 0.9rem; color: var(--ink-2); max-width: 72ch; line-height: 1.55; }
+  figcaption b { color: var(--ink); font-weight: 650; }
+
+  /* --- primitives de dessin --------------------------------------- */
+  .d-box { fill: var(--surface); stroke: var(--rule-strong); stroke-width: 1; }
+  .d-box-2 { fill: var(--surface-2); stroke: var(--rule-strong); stroke-width: 1; }
+  .d-box-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4; }
+  .d-box-alarm { fill: var(--alarm-soft); stroke: var(--alarm); stroke-width: 1.4; }
+  .d-t { fill: var(--ink); font-family: var(--font-body); font-size: 12.5px; }
+  .d-t-mono { fill: var(--ink); font-family: var(--font-mono); font-size: 12px; }
+  .d-sub { fill: var(--ink-2); font-family: var(--font-body); font-size: 11.5px; }
+  .d-cap { fill: var(--ink-3); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .d-title { fill: var(--ink); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.11em; text-transform: uppercase; }
+  .d-line { stroke: var(--ink-3); stroke-width: 1.3; fill: none; }
+  .d-fill-line { fill: var(--ink-3); }
+  .d-dash { stroke: var(--ink-3); stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+  .d-acc-line { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+  .d-acc-fill { fill: var(--accent); }
+  .d-acc-t { fill: var(--accent); font-family: var(--font-mono); font-size: 11px; }
+  .d-acc-dash { stroke: var(--accent); stroke-width: 1.5; fill: none; stroke-dasharray: 6 5; }
+  .d-alarm-line { stroke: var(--alarm); stroke-width: 1.5; fill: none; }
+  .d-alarm-t { fill: var(--alarm); font-family: var(--font-mono); font-size: 11px; }
+  .d-ok-t { fill: var(--ok); font-family: var(--font-mono); font-size: 11px; }
+  .d-grid { stroke: var(--rule); stroke-width: 1; }
+
+  /* --- diagrammes de séquence -------------------------------------- */
+  .d-life { stroke: var(--rule-strong); stroke-width: 1.2; fill: none; stroke-dasharray: 4 5; }
+  .d-head { fill: var(--surface-2); stroke: var(--rule-strong); stroke-width: 1; }
+  .d-head-t { fill: var(--ink); font-family: var(--font-mono); font-size: 12px; }
+  .d-head-s { fill: var(--ink-3); font-family: var(--font-body); font-size: 10.5px; }
+  .d-num { fill: var(--ink-3); font-family: var(--font-mono); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .d-phase { fill: var(--ink-2); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+  .d-band { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 5 4; }
+
+  /* --- champs enregistrés ------------------------------------------ */
+  .fields { border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--surface); }
+  .fields-group { display: flex; align-items: baseline; gap: 0.6rem; padding: 0.55rem 1.1rem; background: var(--surface-2); border-bottom: 1px solid var(--rule); font-family: var(--font-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.11em; color: var(--ink-2); }
+  .fields-group .gk { color: var(--ink-3); text-transform: none; letter-spacing: 0; margin-left: auto; }
+  .field-row { display: grid; grid-template-columns: 5rem 1fr; gap: 1rem; padding: 0.62rem 1.1rem; border-bottom: 1px solid var(--rule); align-items: baseline; }
+  .field-row:last-child { border-bottom: 0; }
+  .field-row .k { font-family: var(--font-mono); font-size: 0.78rem; color: var(--accent); }
+  .field-row .v { font-size: 0.93rem; }
+  .field-row .v .why { display: block; color: var(--ink-2); font-size: 0.87rem; margin-top: 0.12rem; }
+  @media (max-width: 560px) {
+    .field-row { grid-template-columns: 1fr; gap: 0.2rem; }
+  }
+
+  /* --- listes ------------------------------------------------------ */
+  ul.plain { list-style: none; display: flex; flex-direction: column; gap: 0.6rem; max-width: 66ch; }
+  /* Retrait par positionnement, pas par grille : une grille ferait de chaque
+     élément inline de la puce une cellule distincte, et la ligne éclaterait. */
+  ul.plain > li { position: relative; padding-left: 1.5rem; }
+  ul.plain > li::before { content: "—"; position: absolute; left: 0; top: 0; color: var(--ink-3); }
+
+  /* --- le pipeline en 10 étapes ------------------------------------ */
+  .pipeline { display: flex; flex-direction: column; gap: 0; max-width: 74ch; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); overflow: hidden; }
+  .zone { display: flex; align-items: baseline; gap: 0.7rem; padding: 0.6rem 1.1rem; background: var(--surface-2); border-bottom: 1px solid var(--rule); }
+  .zone .zl { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-2); }
+  .zone .zr { font-size: 0.84rem; color: var(--ink-3); margin-left: auto; }
+  .step { display: grid; grid-template-columns: 2.2rem 1fr; gap: 0.8rem; padding: 0.62rem 1.1rem; border-bottom: 1px solid var(--rule); align-items: baseline; font-size: 0.95rem; }
+  .step:last-child { border-bottom: 0; }
+  .step .n { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .step .out { display: block; font-size: 0.82rem; color: var(--ink-3); font-family: var(--font-mono); margin-top: 0.15rem; }
+  .step.net { background: var(--accent-soft); }
+  .step.net .n { color: var(--accent); }
+
+  /* --- carte du dépôt ---------------------------------------------- */
+  .repo { display: grid; gap: 0; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--surface); }
+  .repo-row { display: grid; grid-template-columns: minmax(9rem, 15rem) 1fr auto; gap: 0.9rem 1.1rem; padding: 0.8rem 1.1rem; border-bottom: 1px solid var(--rule); align-items: baseline; }
+  .repo-row:last-child { border-bottom: 0; }
+  .repo-row .path { font-family: var(--font-mono); font-size: 0.83rem; color: var(--ink); word-break: break-word; }
+  .repo-row .what { font-size: 0.92rem; color: var(--ink-2); }
+  @media (max-width: 640px) {
+    .repo-row { grid-template-columns: 1fr; gap: 0.3rem; }
+  }
+
+  .chip { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 3px; white-space: nowrap; border: 1px solid; }
+  .chip.done { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+  .chip.wip { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .chip.todo { color: var(--ink-3); border-color: var(--rule-strong); }
+
+  /* --- encadré --------------------------------------------------- */
+  .callout { border-left: 3px solid var(--alarm); background: var(--alarm-soft); padding: 1.1rem 1.3rem; border-radius: 0 6px 6px 0; display: flex; flex-direction: column; gap: 0.6rem; max-width: 70ch; }
+  .callout .eyebrow { color: var(--alarm); }
+  .callout p { font-size: 0.96rem; }
+
+  .rule-card { border: 1px solid var(--rule); background: var(--surface); border-radius: 8px; padding: 1.1rem 1.3rem; display: flex; flex-direction: column; gap: 0.45rem; }
+  .rules { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+  .rule-card .rid { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.1em; color: var(--accent); }
+  .rule-card p { font-size: 0.92rem; color: var(--ink-2); }
+
+  /* --- questions courantes ----------------------------------------- */
+  .faq { display: flex; flex-direction: column; }
+  .faq-item { border-top: 1px solid var(--rule); padding: 1.4rem 0; display: flex; flex-direction: column; gap: 0.7rem; max-width: 70ch; }
+  .faq-item:last-child { border-bottom: 1px solid var(--rule); }
+  .faq-q { font-family: var(--font-display); font-size: 1.2rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.005em; text-wrap: balance; color: var(--ink); }
+  .faq-a { display: flex; flex-direction: column; gap: 0.7rem; color: var(--ink-2); font-size: 0.97rem; }
+  .faq-a strong { color: var(--ink); }
+  .faq-note { border-left: 2px solid var(--accent); padding: 0.1rem 0 0.1rem 0.9rem; font-size: 0.9rem; }
+
+  .formula { font-family: var(--font-mono); font-size: clamp(0.85rem, 0.7rem + 0.6vw, 1.05rem); background: var(--surface); border: 1px solid var(--rule-strong); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; padding: 0.9rem 1.2rem; overflow-x: auto; color: var(--ink); }
+
+  footer { border-top: 1px solid var(--rule); padding-top: 1.3rem; font-size: 0.88rem; color: var(--ink-3); max-width: 66ch; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">attested-capture · spécification ac/0.1</div>
+    <h1>Prouver qu'une photo a bien été prise ici, maintenant</h1>
+    <p class="lead">
+      Une photo géolocalisée ordinaire ne prouve rien : l'EXIF s'édite, le GPS se simule
+      avec une application du magasin, une incrustation de coordonnées est décorative.
+      Ce dépôt construit la preuve qui manque — et cette page explique comment.
+    </p>
+  </header>
+
+  <!-- 1 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Le principe</div>
+      <h2>Celui qui mesure ne juge jamais</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Tout part d'une hypothèse inconfortable mais réaliste : <strong>le téléphone est entre
+        les mains de l'adversaire</strong>. Son code est décompilable, instrumentable, modifiable.
+        On ne peut donc rien lui demander de conclure.
+      </p>
+      <p>
+        L'appareil se contente de trois choses : il mesure, il signe, il envoie. Le serveur,
+        lui, refait tous les calculs de son côté et décide seul. Aucun booléen de confiance
+        ne traverse jamais la frontière dans le sens appareil → serveur.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 880 340" role="img" aria-label="L'appareil mesure et signe, le serveur recalcule et décide ; le nonce descend du serveur, l'enveloppe et l'image remontent.">
+          <text class="d-acc-t" x="440" y="26" text-anchor="middle">frontière de confiance</text>
+          <line class="d-acc-dash" x1="440" y1="40" x2="440" y2="316" />
+
+          <text class="d-title" x="20" y="62">Appareil · considéré comme hostile</text>
+          <rect class="d-box" x="20" y="76" width="300" height="200" rx="6" />
+          <text class="d-t" x="40" y="112">empreinte les octets bruts du capteur</text>
+          <text class="d-t" x="40" y="140">mesure position, temps, posture</text>
+          <text class="d-t" x="40" y="168">demande un jeton d'attestation</text>
+          <text class="d-t" x="40" y="196">signe dans la puce sécurisée</text>
+          <line class="d-line" x1="40" y1="216" x2="300" y2="216" />
+          <text class="d-sub" x="40" y="240">…et ne conclut rien.</text>
+
+          <text class="d-title" x="560" y="62">Serveur · seul juge</text>
+          <rect class="d-box" x="560" y="76" width="300" height="200" rx="6" />
+          <text class="d-t" x="580" y="112">recalcule toutes les empreintes</text>
+          <text class="d-t" x="580" y="140">revérifie la liaison au contenu</text>
+          <text class="d-t" x="580" y="168">valide le jeton (Google / Apple)</text>
+          <text class="d-t" x="580" y="196">attribue un grade par propriété</text>
+          <line class="d-line" x1="580" y1="216" x2="840" y2="216" />
+          <text class="d-sub" x="580" y="240">→ verdict structuré, avec son motif.</text>
+
+          <!-- nonce : serveur vers appareil -->
+          <text class="d-t-mono" x="440" y="106" text-anchor="middle">nonce à usage unique</text>
+          <line class="d-line" x1="556" y1="120" x2="332" y2="120" />
+          <polygon class="d-fill-line" points="324,120 332,115.5 332,124.5" />
+
+          <!-- enveloppe : appareil vers serveur -->
+          <text class="d-t-mono" x="440" y="166" text-anchor="middle">enveloppe signée</text>
+          <line class="d-line" x1="324" y1="180" x2="548" y2="180" />
+          <polygon class="d-fill-line" points="556,180 548,175.5 548,184.5" />
+
+          <!-- image : transfert separe -->
+          <text class="d-sub" x="440" y="226" text-anchor="middle">image, transférée à part</text>
+          <line class="d-dash" x1="324" y1="240" x2="548" y2="240" />
+          <polygon class="d-fill-line" points="556,240 548,235.5 548,244.5" />
+        </svg>
+      </div>
+      <figcaption>
+        <b>Le serveur ouvre l'échange, pas l'appareil.</b> Chaque capture répond à un nonce que le
+        serveur vient d'émettre — c'est ce qui rend une enveloppe non rejouable. L'image circule
+        séparément de son enveloppe, ce qui permet de rejeter une capture <em>avant</em> d'avoir
+        dépensé la bande passante du transfert.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 2 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Les deux échanges</div>
+      <h2>Enrôlement et capture : ne pas les confondre</h2>
+    </div>
+    <div class="prose">
+      <p>
+        C'est l'erreur classique, et la spécification la signale explicitement. Il y a deux
+        moments, qui ne prouvent pas la même chose.
+      </p>
+      <p>
+        À l'<strong>enrôlement</strong>, une fois par installation, le téléphone fabrique une paire
+        de clés à l'intérieur de sa puce sécurisée. La puce sait produire une preuve que cette clé
+        y a bien été fabriquée et qu'elle ne peut pas en sortir. Le serveur range la clé publique.
+      </p>
+      <p>
+        À la <strong>capture</strong>, à chaque photo, le téléphone signe ses mesures avec cette clé.
+        Le serveur retrouve la clé publique correspondante et vérifie.
+      </p>
+      <p>
+        Dit autrement : <em>l'enrôlement dit à qui appartient la clé, la capture dit que cette clé
+        a signé ce contenu précis, maintenant.</em>
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 880 300" role="img" aria-label="L'enrôlement dépose une clé publique chez le serveur ; chaque capture est ensuite vérifiée sous cette même clé.">
+          <text class="d-title" x="20" y="30">Enrôlement · une fois par installation</text>
+
+          <rect class="d-box" x="20" y="44" width="245" height="74" rx="6" />
+          <text class="d-t" x="38" y="72">Paire de clés générée</text>
+          <text class="d-t" x="38" y="92">dans la puce sécurisée</text>
+
+          <line class="d-line" x1="269" y1="81" x2="297" y2="81" />
+          <polygon class="d-fill-line" points="305,81 297,76.5 297,85.5" />
+
+          <rect class="d-box" x="305" y="44" width="245" height="74" rx="6" />
+          <text class="d-t" x="323" y="72">Preuve que la clé y réside</text>
+          <text class="d-t" x="323" y="92">et n'en sortira pas</text>
+
+          <line class="d-line" x1="554" y1="81" x2="582" y2="81" />
+          <polygon class="d-fill-line" points="590,81 582,76.5 582,85.5" />
+
+          <rect class="d-box-accent" x="590" y="44" width="245" height="74" rx="6" />
+          <text class="d-t" x="608" y="72">Le serveur enregistre</text>
+          <text class="d-t" x="608" y="92">la clé publique</text>
+
+          <!-- lien vertical -->
+          <line class="d-acc-line" x1="712" y1="118" x2="712" y2="182" />
+          <polygon class="d-acc-fill" points="712,190 707.5,182 716.5,182" />
+          <text class="d-acc-t" x="726" y="158">la même clé, ensuite</text>
+
+          <text class="d-title" x="20" y="176">Capture · à chaque photo</text>
+
+          <rect class="d-box" x="20" y="190" width="245" height="74" rx="6" />
+          <text class="d-t" x="38" y="218">Mesure, puis signe</text>
+          <text class="d-t" x="38" y="238">avec cette clé</text>
+
+          <line class="d-line" x1="269" y1="227" x2="297" y2="227" />
+          <polygon class="d-fill-line" points="305,227 297,222.5 297,231.5" />
+
+          <rect class="d-box" x="305" y="190" width="245" height="74" rx="6" />
+          <text class="d-t" x="323" y="218">Envoie l'enveloppe</text>
+          <text class="d-t" x="323" y="238">au serveur</text>
+
+          <line class="d-line" x1="554" y1="227" x2="582" y2="227" />
+          <polygon class="d-fill-line" points="590,227 582,222.5 582,231.5" />
+
+          <rect class="d-box-accent" x="590" y="190" width="245" height="74" rx="6" />
+          <text class="d-t" x="608" y="218">Signature vérifiée sous</text>
+          <text class="d-t" x="608" y="238">la clé enrôlée</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>La clé publique déposée à l'enrôlement est le seul point d'ancrage.</b> Aucune clé
+        transportée dans une enveloppe n'est acceptée — c'est la règle R2. Le serveur retrouve la
+        bonne clé grâce au <span class="m">kid</span> inscrit dans l'en-tête signé.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 3 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Le format</div>
+      <h2>Ce que contient l'enveloppe — et ce qu'elle ne contient pas</h2>
+    </div>
+    <div class="prose">
+      <p>
+        L'enveloppe est un <span class="m">COSE_Sign1</span> : une structure standard en quatre
+        parties, sérialisée en CBOR canonique. Deux implémentations doivent produire des octets
+        strictement identiques pour une même charge utile, sinon la signature ne se vérifie pas.
+      </p>
+      <p>
+        Le détail à comprendre : <strong>l'en-tête qui porte le jeton de fraîcheur n'est pas
+        signé</strong>. Ce n'est pas une faiblesse — c'est le sujet de la section suivante.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 900 470" role="img" aria-label="Structure COSE_Sign1 en quatre parties ; le jeton de fraîcheur, non signé, se lie au contenu par le condensat SHA-256 de la charge utile et du nonce.">
+          <text class="d-title" x="60" y="46">Enveloppe COSE_Sign1</text>
+
+          <!-- en-tete protege -->
+          <rect class="d-box" x="60" y="60" width="420" height="64" rx="5" />
+          <text class="d-t-mono" x="78" y="86">En-tête protégé</text>
+          <text class="d-sub" x="78" y="106">ES256 · kid · « ac/0.1 » · déploiement</text>
+          <text class="d-cap" x="462" y="86" text-anchor="end">signé</text>
+
+          <!-- en-tete non protege -->
+          <rect class="d-box-accent" x="60" y="136" width="420" height="64" rx="5" />
+          <text class="d-t-mono" x="78" y="162">En-tête non protégé</text>
+          <text class="d-sub" x="78" y="182">jeton Play Integrity / App Attest</text>
+          <text class="d-cap" x="462" y="162" text-anchor="end">non signé</text>
+
+          <!-- charge utile -->
+          <rect class="d-box" x="60" y="212" width="420" height="124" rx="5" />
+          <text class="d-t-mono" x="78" y="238">Charge utile</text>
+          <text class="d-sub" x="78" y="260">nonce · empreinte de l'image · dimensions</text>
+          <text class="d-sub" x="78" y="280">position, précision, âge du point GPS</text>
+          <text class="d-sub" x="78" y="300">horloges · posture de l'appareil</text>
+          <text class="d-sub" x="78" y="320">corroboration : baromètre, mouvement, pas</text>
+          <text class="d-cap" x="462" y="238" text-anchor="end">signé</text>
+
+          <!-- signature -->
+          <rect class="d-box-2" x="60" y="348" width="420" height="48" rx="5" />
+          <text class="d-t-mono" x="78" y="378">Signature ES256</text>
+
+          <!-- R1 -->
+          <line class="d-acc-line" x1="484" y1="274" x2="537" y2="274" />
+          <polygon class="d-acc-fill" points="545,274 537,269.5 537,278.5" />
+
+          <rect class="d-box-accent" x="545" y="248" width="320" height="52" rx="5" />
+          <text class="d-t-mono" x="705" y="279" text-anchor="middle">SHA-256( charge utile ‖ nonce )</text>
+
+          <path class="d-acc-line" d="M 705 248 L 705 208 L 496 208" />
+          <polygon class="d-acc-fill" points="488,208 496,203.5 496,212.5" />
+          <text class="d-acc-t" x="600" y="198" text-anchor="middle">devient le défi d'attestation</text>
+
+          <text class="d-sub" x="545" y="328">Le jeton renvoyé par Google ou Apple</text>
+          <text class="d-sub" x="545" y="348">n'est alors valide que pour cette</text>
+          <text class="d-sub" x="545" y="368">charge utile — et aucune autre.</text>
+
+          <line class="d-grid" x1="60" y1="418" x2="865" y2="418" />
+          <text class="d-sub" x="60" y="442">Pas d'image, pas de vocabulaire métier, pas d'identité d'utilisateur, pas de score.</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>L'image n'est pas dans l'enveloppe</b> — seule son empreinte SHA-256 y figure, calculée
+        en natif sur les octets bruts du capteur avant tout passage par du code applicatif. Sont
+        également absents par décision de conception : toute référence métier (le contexte est lié
+        au nonce, côté serveur), toute identité d'utilisateur, et tout indice de confiance calculé
+        par le client.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- 4 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">La clé de voûte</div>
+      <h2>R1 : le jeton est collé au contenu</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Google et Apple savent certifier qu'un appareil est sain et que l'application qui tourne
+        dessus est authentique. Mais ce certificat, seul, ne dit rien de la photo : il dit
+        seulement <em>« un appareil sain existe quelque part »</em>.
+      </p>
+      <p>
+        R1 corrige cela. Au moment de demander le certificat, l'appareil doit fournir en défi
+        exactement le condensat de ce qu'il s'apprête à signer :
+      </p>
+    </div>
+
+    <div class="formula">défi = SHA-256( charge utile ‖ nonce )</div>
+
+    <div class="prose">
+      <p>
+        Sur Android c'est le <span class="m">requestHash</span> de Play Integrity, sur iOS le
+        <span class="m">clientDataHash</span> de <span class="m">generateAssertion</span>. Le jeton
+        qui revient porte ce défi. Le serveur le recalcule à partir des octets qu'il a réellement
+        reçus et compare. Si un seul octet de la charge utile a bougé, les deux valeurs divergent.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 900 360" role="img" aria-label="Sans R1 un jeton authentique peut être recollé sur une charge utile forgée ; avec R1 le serveur recalcule le condensat et la fraude est rejetée.">
+          <text class="d-alarm-t" x="20" y="28">SANS R1</text>
+          <rect class="d-box" x="20" y="40" width="410" height="290" rx="6" />
+
+          <rect class="d-box-2" x="44" y="66" width="362" height="52" rx="4" />
+          <text class="d-t" x="62" y="88">Jeton d'intégrité authentique,</text>
+          <text class="d-t" x="62" y="108">obtenu sur un appareil sain</text>
+
+          <line class="d-line" x1="225" y1="118" x2="225" y2="140" />
+          <polygon class="d-fill-line" points="225,148 220.5,140 229.5,140" />
+
+          <rect class="d-box-2" x="44" y="148" width="362" height="52" rx="4" />
+          <text class="d-t" x="62" y="170">recollé sur une charge utile</text>
+          <text class="d-t" x="62" y="190">entièrement forgée</text>
+
+          <line class="d-line" x1="225" y1="200" x2="225" y2="222" />
+          <polygon class="d-fill-line" points="225,230 220.5,222 229.5,222" />
+
+          <rect class="d-box-alarm" x="44" y="230" width="362" height="72" rx="4" />
+          <text class="d-t" x="62" y="256">Le serveur n'a rien à comparer.</text>
+          <text class="d-t-mono" x="62" y="284">→ accepté à tort</text>
+
+          <text class="d-ok-t" x="470" y="28">AVEC R1</text>
+          <rect class="d-box" x="470" y="40" width="410" height="290" rx="6" />
+
+          <rect class="d-box-2" x="494" y="66" width="362" height="52" rx="4" />
+          <text class="d-t" x="512" y="88">Le jeton porte le condensat</text>
+          <text class="d-t" x="512" y="108">de la charge utile d'origine</text>
+
+          <line class="d-line" x1="675" y1="118" x2="675" y2="140" />
+          <polygon class="d-fill-line" points="675,148 670.5,140 679.5,140" />
+
+          <rect class="d-box-2" x="494" y="148" width="362" height="52" rx="4" />
+          <text class="d-t" x="512" y="170">Le serveur recalcule le condensat</text>
+          <text class="d-t" x="512" y="190">sur les octets qu'il a reçus</text>
+
+          <line class="d-acc-line" x1="675" y1="200" x2="675" y2="222" />
+          <polygon class="d-acc-fill" points="675,230 670.5,222 679.5,222" />
+
+          <rect class="d-box-accent" x="494" y="230" width="362" height="72" rx="4" />
+          <text class="d-t" x="512" y="256">Les deux valeurs divergent.</text>
+          <text class="d-t-mono" x="512" y="284">→ rejeté</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>La seule différence entre les deux colonnes est l'étape de recalcul.</b> C'est elle qui
+        transforme un certificat générique en preuve portant sur un contenu précis. Sans R1,
+        l'enveloppe atteste qu'un appareil sain existe quelque part — ce qui ne prouve rien.
+      </figcaption>
+    </figure>
+
+    <div class="rules">
+      <div class="rule-card">
+        <div class="rid">R1 — liaison au contenu</div>
+        <p>Le défi d'attestation vaut exactement <span class="m">SHA-256(charge utile ‖ nonce)</span>. Ne s'assouplit jamais.</p>
+      </div>
+      <div class="rule-card">
+        <div class="rid">R2 — liaison à la clé</div>
+        <p>La signature se vérifie sous la clé publique enrôlée, désignée par le <span class="m">kid</span>. Aucune clé transportée dans l'enveloppe.</p>
+      </div>
+      <div class="rule-card">
+        <div class="rid">R3 — unicité du nonce</div>
+        <p>Nonce émis par le serveur, à usage unique, à durée de validité explicite. Un nonce consommé est refusé définitivement.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Les séquences</div>
+      <h2>Le déroulé complet, message par message</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Les schémas précédents montrent les pièces. Ceux-ci montrent l'ordre dans lequel elles
+        s'assemblent — qui parle à qui, dans quel sens, et à quel moment chaque donnée est
+        figée. Le temps s'écoule vers le bas.
+      </p>
+    </div>
+
+    <h3>Enrôlement — une fois par installation</h3>
+
+    <figure>
+      <div class="fig-scroll">
+        <!-- Figure générée par tools/gen_sequences.py — ne pas éditer à la main -->
+        <!-- gen:sequence-enrolement -->
+        <svg viewBox="0 0 1040 664" role="img" aria-label="Séquence d'enrôlement : le serveur émet un défi, la puce sécurisée génère une paire de clés liée à ce défi, la preuve d'origine est validée jusqu'à la racine du constructeur, puis le serveur enregistre la clé publique.">
+          <rect class="d-band" x="52" y="298" width="978" height="132" rx="5" fill-opacity="0.45" />
+          <line class="d-life" x1="150" y1="70" x2="150" y2="640" />
+          <line class="d-life" x1="455" y1="70" x2="455" y2="640" />
+          <line class="d-life" x1="690" y1="70" x2="690" y2="640" />
+          <line class="d-life" x1="905" y1="70" x2="905" y2="640" />
+          <rect class="d-head" x="55" y="24" width="190" height="46" rx="5" />
+          <text class="d-head-t" x="150" y="46" text-anchor="middle">Application</text>
+          <text class="d-head-s" x="150" y="61" text-anchor="middle">code considéré hostile</text>
+          <rect class="d-head" x="360" y="24" width="190" height="46" rx="5" />
+          <text class="d-head-t" x="455" y="46" text-anchor="middle">Puce sécurisée</text>
+          <text class="d-head-s" x="455" y="61" text-anchor="middle">Keystore · Secure Enclave</text>
+          <rect class="d-head" x="600" y="24" width="180" height="46" rx="5" />
+          <text class="d-head-t" x="690" y="46" text-anchor="middle">Attestation</text>
+          <text class="d-head-s" x="690" y="61" text-anchor="middle">Google · Apple</text>
+          <rect class="d-head" x="820" y="24" width="170" height="46" rx="5" />
+          <text class="d-head-t" x="905" y="46" text-anchor="middle">Serveur</text>
+          <text class="d-head-s" x="905" y="61" text-anchor="middle">seul juge</text>
+          <text class="d-num" x="38" y="95" text-anchor="end">01</text>
+          <line class="d-line" x1="150" y1="120" x2="896" y2="120" />
+          <polygon class="d-fill-line" points="905,120 896,115.5 896,124.5" />
+          <text class="d-t" x="160" y="95">Demande l'enrôlement</text>
+          <text class="d-sub" x="160" y="110">à la première ouverture de l'application</text>
+          <text class="d-num" x="38" y="147" text-anchor="end">02</text>
+          <line class="d-line" x1="905" y1="172" x2="159" y2="172" />
+          <polygon class="d-fill-line" points="150,172 159,167.5 159,176.5" />
+          <text class="d-t" x="160" y="147">Défi d'enrôlement</text>
+          <text class="d-sub" x="160" y="162">aléa serveur, à usage unique</text>
+          <text class="d-num" x="38" y="199" text-anchor="end">03</text>
+          <line class="d-line" x1="150" y1="224" x2="446" y2="224" />
+          <polygon class="d-fill-line" points="455,224 446,219.5 446,228.5" />
+          <text class="d-t" x="160" y="199">Génère une paire de clés, défi lié</text>
+          <text class="d-sub" x="160" y="214">setAttestationChallenge · generateKey</text>
+          <text class="d-num" x="38" y="251" text-anchor="end">04</text>
+          <line class="d-line" x1="455" y1="276" x2="159" y2="276" />
+          <polygon class="d-fill-line" points="150,276 159,271.5 159,280.5" />
+          <text class="d-t" x="160" y="251">Clé publique + preuve d'origine</text>
+          <text class="d-sub" x="160" y="266">la clé privée ne sort jamais de la puce</text>
+          <text class="d-phase" x="64" y="310">iOS uniquement — sur Android la preuve est déjà la chaîne X.509 de l'étape 04</text>
+          <text class="d-num" x="38" y="333" text-anchor="end">05</text>
+          <line class="d-acc-line" x1="150" y1="358" x2="681" y2="358" />
+          <polygon class="d-acc-fill" points="690,358 681,353.5 681,362.5" />
+          <text class="d-t" x="160" y="333">Atteste cette clé</text>
+          <text class="d-sub" x="160" y="348">clientDataHash = défi d'enrôlement</text>
+          <text class="d-num" x="38" y="385" text-anchor="end">06</text>
+          <line class="d-acc-line" x1="690" y1="410" x2="159" y2="410" />
+          <polygon class="d-acc-fill" points="150,410 159,405.5 159,414.5" />
+          <text class="d-t" x="160" y="385">Objet d'attestation</text>
+          <text class="d-sub" x="160" y="400">vérifiable jusqu'à la racine Apple</text>
+          <text class="d-num" x="38" y="452" text-anchor="end">07</text>
+          <line class="d-line" x1="150" y1="462" x2="896" y2="462" />
+          <polygon class="d-fill-line" points="905,462 896,457.5 896,466.5" />
+          <text class="d-t" x="160" y="452">Clé publique, preuve, empreinte du binaire</text>
+          <text class="d-num" x="38" y="489" text-anchor="end">08</text>
+          <path class="d-line" d="M 905 509 L 935 509 L 935 519 L 914 519" />
+          <polygon class="d-fill-line" points="905,519 914,514.5 914,523.5" />
+          <text class="d-t" x="893" y="489" text-anchor="end">Valide jusqu'à la racine</text>
+          <text class="d-sub" x="893" y="504" text-anchor="end">racine Google ou Apple</text>
+          <text class="d-num" x="38" y="541" text-anchor="end">09</text>
+          <path class="d-line" d="M 905 561 L 935 561 L 935 571 L 914 571" />
+          <polygon class="d-fill-line" points="905,571 914,566.5 914,575.5" />
+          <text class="d-t" x="893" y="541" text-anchor="end">Enregistre l'appareil</text>
+          <text class="d-sub" x="893" y="556" text-anchor="end">kid, clé publique, niveau</text>
+          <text class="d-num" x="38" y="593" text-anchor="end">10</text>
+          <line class="d-line" x1="905" y1="618" x2="159" y2="618" />
+          <polygon class="d-fill-line" points="150,618 159,613.5 159,622.5" />
+          <text class="d-t" x="160" y="593">Enrôlé</text>
+          <text class="d-sub" x="160" y="608">aucune capture n'est possible avant ce point</text>
+          </svg>
+        <!-- /gen:sequence-enrolement -->
+      </div>
+      <figcaption>
+        <b>L'enrôlement ne transporte aucune photo : il n'établit qu'une chose, à qui appartient la
+        clé.</b> Le défi de l'étape 02 sert au même usage que le nonce d'une capture — empêcher
+        qu'une preuve d'origine obtenue ailleurs, ou plus tôt, soit rejouée. Sur Android la preuve
+        est la chaîne de certificats produite par le Keystore lui-même, validée jusqu'à la racine
+        Google Hardware Attestation ; sur iOS c'est un objet d'attestation distinct, validé jusqu'à
+        la racine Apple App Attest. Deux chemins, une même conclusion côté serveur.
+      </figcaption>
+    </figure>
+
+    <div class="prose">
+      <p>À l'issue de cette séquence, le serveur conserve cinq choses, et elles servent toutes plus tard :</p>
+      <ul class="plain">
+        <li>la <strong>clé publique</strong> et son empreinte (le <span class="m">kid</span>), seul point d'ancrage de toutes les vérifications ultérieures — règle R2 ;</li>
+        <li>le <strong>niveau de sécurité</strong> réellement obtenu — StrongBox, TEE, Secure Enclave — qui décide à lui seul du grade d'intégrité ;</li>
+        <li>l'<strong>empreinte du binaire</strong>, pour repérer la réinstallation d'une application modifiée ;</li>
+        <li>le <strong>compteur d'assertion</strong> initial sur iOS, qui interdira ensuite tout réordonnancement ;</li>
+        <li>l'emplacement du <strong>dernier condensat d'enveloppe</strong> sur Android, encore vide, qui servira au chaînage.</li>
+      </ul>
+    </div>
+
+    <h3>Capture — à chaque photo</h3>
+
+    <figure>
+      <div class="fig-scroll">
+        <!-- Figure générée par tools/gen_sequences.py — ne pas éditer à la main -->
+        <!-- gen:sequence-capture -->
+        <svg viewBox="0 0 1080 1214" role="img" aria-label="Séquence de capture : le serveur émet un nonce, l'application empreinte les octets bruts puis relève position, corroboration, horloges et posture, fige la charge utile, calcule le défi R1, obtient un jeton d'attestation, signe dans la puce, et remet l'enveloppe puis l'image au serveur.">
+          <line class="d-life" x1="145" y1="70" x2="145" y2="1190" />
+          <line class="d-life" x1="405" y1="70" x2="405" y2="1190" />
+          <line class="d-life" x1="620" y1="70" x2="620" y2="1190" />
+          <line class="d-life" x1="810" y1="70" x2="810" y2="1190" />
+          <line class="d-life" x1="995" y1="70" x2="995" y2="1190" />
+          <rect class="d-head" x="55" y="24" width="180" height="46" rx="5" />
+          <text class="d-head-t" x="145" y="46" text-anchor="middle">Application</text>
+          <text class="d-head-s" x="145" y="61" text-anchor="middle">code considéré hostile</text>
+          <rect class="d-head" x="320" y="24" width="170" height="46" rx="5" />
+          <text class="d-head-t" x="405" y="46" text-anchor="middle">Capteurs</text>
+          <text class="d-head-s" x="405" y="61" text-anchor="middle">caméra · GNSS · inertiels</text>
+          <rect class="d-head" x="540" y="24" width="160" height="46" rx="5" />
+          <text class="d-head-t" x="620" y="46" text-anchor="middle">Puce sécurisée</text>
+          <text class="d-head-s" x="620" y="61" text-anchor="middle">clé non exportable</text>
+          <rect class="d-head" x="725" y="24" width="170" height="46" rx="5" />
+          <text class="d-head-t" x="810" y="46" text-anchor="middle">Attestation</text>
+          <text class="d-head-s" x="810" y="61" text-anchor="middle">Google · Apple</text>
+          <rect class="d-head" x="915" y="24" width="160" height="46" rx="5" />
+          <text class="d-head-t" x="995" y="46" text-anchor="middle">Serveur</text>
+          <text class="d-head-s" x="995" y="61" text-anchor="middle">seul juge</text>
+          <text class="d-phase" x="52" y="96">Ouverture · le serveur ouvre l'échange</text>
+          <line class="d-grid" x1="52" y1="104" x2="1070" y2="104" />
+          <text class="d-num" x="38" y="136" text-anchor="end">01</text>
+          <line class="d-line" x1="145" y1="146" x2="986" y2="146" />
+          <polygon class="d-fill-line" points="995,146 986,141.5 986,150.5" />
+          <text class="d-t" x="155" y="136">Demande un nonce</text>
+          <text class="d-num" x="38" y="173" text-anchor="end">02</text>
+          <line class="d-line" x1="995" y1="198" x2="154" y2="198" />
+          <polygon class="d-fill-line" points="145,198 154,193.5 154,202.5" />
+          <text class="d-t" x="155" y="173">Nonce à usage unique</text>
+          <text class="d-sub" x="155" y="188">durée de validité explicite — règle R3</text>
+          <text class="d-phase" x="52" y="226">Collecte · tout est mesuré, rien n'est jugé</text>
+          <line class="d-grid" x1="52" y1="234" x2="1070" y2="234" />
+          <text class="d-num" x="38" y="266" text-anchor="end">03</text>
+          <line class="d-line" x1="145" y1="276" x2="396" y2="276" />
+          <polygon class="d-fill-line" points="405,276 396,271.5 396,280.5" />
+          <text class="d-t" x="155" y="266">Déclenche la capture</text>
+          <text class="d-num" x="38" y="304" text-anchor="end">04</text>
+          <line class="d-line" x1="405" y1="314" x2="154" y2="314" />
+          <polygon class="d-fill-line" points="145,314 154,309.5 154,318.5" />
+          <text class="d-t" x="155" y="304">Octets bruts du capteur</text>
+          <text class="d-num" x="38" y="341" text-anchor="end">05</text>
+          <path class="d-acc-line" d="M 145 361 L 175 361 L 175 371 L 154 371" />
+          <polygon class="d-acc-fill" points="145,371 154,366.5 154,375.5" />
+          <text class="d-t" x="155" y="341">SHA-256 des octets bruts, en natif</text>
+          <text class="d-sub" x="155" y="356">avant tout passage par le code applicatif</text>
+          <text class="d-num" x="38" y="394" text-anchor="end">06</text>
+          <line class="d-line" x1="145" y1="404" x2="396" y2="404" />
+          <polygon class="d-fill-line" points="405,404 396,399.5 396,408.5" />
+          <text class="d-t" x="155" y="394">Relève la position</text>
+          <text class="d-num" x="38" y="431" text-anchor="end">07</text>
+          <line class="d-line" x1="405" y1="456" x2="154" y2="456" />
+          <polygon class="d-fill-line" points="145,456 154,451.5 154,460.5" />
+          <text class="d-t" x="155" y="431">lat, lon, précision, altitude</text>
+          <text class="d-sub" x="155" y="446">source, âge du point, satellites</text>
+          <text class="d-num" x="38" y="484" text-anchor="end">08</text>
+          <line class="d-line" x1="145" y1="494" x2="396" y2="494" />
+          <polygon class="d-fill-line" points="405,494 396,489.5 396,498.5" />
+          <text class="d-t" x="155" y="484">Relève la corroboration</text>
+          <text class="d-num" x="38" y="521" text-anchor="end">09</text>
+          <line class="d-line" x1="405" y1="546" x2="154" y2="546" />
+          <polygon class="d-fill-line" points="145,546 154,541.5 154,550.5" />
+          <text class="d-t" x="155" y="521">pression, altitude barométrique</text>
+          <text class="d-sub" x="155" y="536">fenêtre inertielle 10 s, pas, activité</text>
+          <text class="d-num" x="38" y="574" text-anchor="end">10</text>
+          <path class="d-line" d="M 145 579 L 175 579 L 175 589 L 154 589" />
+          <polygon class="d-fill-line" points="145,589 154,584.5 154,593.5" />
+          <text class="d-t" x="155" y="574">Horloges et posture de l'appareil</text>
+          <text class="d-phase" x="52" y="612">Liaison · la règle R1</text>
+          <line class="d-grid" x1="52" y1="620" x2="1070" y2="620" />
+          <text class="d-num" x="38" y="651" text-anchor="end">11</text>
+          <path class="d-line" d="M 145 671 L 175 671 L 175 681 L 154 681" />
+          <polygon class="d-fill-line" points="145,681 154,676.5 154,685.5" />
+          <text class="d-t" x="155" y="651">Sérialise la charge utile en CBOR</text>
+          <text class="d-sub" x="155" y="666">la latence de capture est figée ici</text>
+          <text class="d-num" x="38" y="703" text-anchor="end">12</text>
+          <path class="d-acc-line" d="M 145 723 L 175 723 L 175 733 L 154 733" />
+          <polygon class="d-acc-fill" points="145,733 154,728.5 154,737.5" />
+          <text class="d-t" x="155" y="703">Calcule le défi R1</text>
+          <text class="d-sub" x="155" y="718">SHA-256( charge utile ‖ nonce )</text>
+          <text class="d-num" x="38" y="756" text-anchor="end">13</text>
+          <line class="d-acc-line" x1="145" y1="766" x2="801" y2="766" />
+          <polygon class="d-acc-fill" points="810,766 801,761.5 801,770.5" />
+          <text class="d-t" x="155" y="756">requestHash / clientDataHash = défi</text>
+          <text class="d-num" x="38" y="793" text-anchor="end">14</text>
+          <line class="d-acc-line" x1="810" y1="818" x2="154" y2="818" />
+          <polygon class="d-acc-fill" points="145,818 154,813.5 154,822.5" />
+          <text class="d-t" x="155" y="793">Jeton d'intégrité ou assertion</text>
+          <text class="d-sub" x="155" y="808">+ compteur d'assertion sur iOS</text>
+          <text class="d-phase" x="52" y="846">Signature</text>
+          <line class="d-grid" x1="52" y1="854" x2="1070" y2="854" />
+          <text class="d-num" x="38" y="886" text-anchor="end">15</text>
+          <line class="d-line" x1="145" y1="896" x2="611" y2="896" />
+          <polygon class="d-fill-line" points="620,896 611,891.5 611,900.5" />
+          <text class="d-t" x="155" y="886">Signe la structure Signature1</text>
+          <text class="d-num" x="38" y="923" text-anchor="end">16</text>
+          <line class="d-line" x1="620" y1="948" x2="154" y2="948" />
+          <polygon class="d-fill-line" points="145,948 154,943.5 154,952.5" />
+          <text class="d-t" x="155" y="923">Signature ES256, 64 octets</text>
+          <text class="d-sub" x="155" y="938">la clé privée n'a pas quitté la puce</text>
+          <text class="d-phase" x="52" y="976">Remise</text>
+          <line class="d-grid" x1="52" y1="984" x2="1070" y2="984" />
+          <text class="d-num" x="38" y="1016" text-anchor="end">17</text>
+          <line class="d-line" x1="145" y1="1026" x2="986" y2="1026" />
+          <polygon class="d-fill-line" points="995,1026 986,1021.5 986,1030.5" />
+          <text class="d-t" x="155" y="1016">Enveloppe COSE_Sign1</text>
+          <text class="d-num" x="38" y="1053" text-anchor="end">18</text>
+          <line class="d-dash" x1="145" y1="1078" x2="986" y2="1078" />
+          <polygon class="d-fill-line" points="995,1078 986,1073.5 986,1082.5" />
+          <text class="d-t" x="155" y="1053">Image</text>
+          <text class="d-sub" x="155" y="1068">transfert séparé de l'enveloppe</text>
+          <text class="d-num" x="38" y="1106" text-anchor="end">19</text>
+          <path class="d-line" d="M 995 1111 L 1025 1111 L 1025 1121 L 1004 1121" />
+          <polygon class="d-fill-line" points="995,1121 1004,1116.5 1004,1125.5" />
+          <text class="d-t" x="983" y="1106" text-anchor="end">Vérifie en dix étapes</text>
+          <text class="d-num" x="38" y="1143" text-anchor="end">20</text>
+          <line class="d-line" x1="995" y1="1168" x2="154" y2="1168" />
+          <polygon class="d-fill-line" points="145,1168 154,1163.5 154,1172.5" />
+          <text class="d-t" x="155" y="1143">Verdict par propriété</text>
+          <text class="d-sub" x="155" y="1158">avec son motif, obligatoire</text>
+          </svg>
+        <!-- /gen:sequence-capture -->
+      </div>
+      <figcaption>
+        <b>Les étapes 11 et 12 sont le point de bascule.</b> Tant que la charge utile n'est pas
+        sérialisée, rien n'est engagé ; une fois figée, elle détermine le défi, donc le jeton, donc
+        la signature. Tout ce qui a été mesuré aux étapes 03 à 10 devient alors immodifiable sans
+        casser la chaîne. À noter, l'ordre impose que la latence inscrite dans la charge utile se
+        referme à l'étape 11 — <em>avant</em> l'aller-retour d'attestation et avant la signature
+        réelle. C'est bien la fenêtre utile à surveiller, celle où une caméra virtuelle
+        s'intercalerait, mais l'écart avec le nom du champ (« capture → signature ») est à trancher
+        pendant le spike natif.
+      </figcaption>
+    </figure>
+
+    <div class="prose">
+      <h3>Ce qui est enregistré dans la charge utile</h3>
+      <p>
+        Tout est signé, donc tout est opposable — et rien de tout cela n'est cru sur parole. Les
+        clés entre parenthèses sont celles du schéma CDDL normatif.
+      </p>
+    </div>
+
+    <div class="fields">
+      <div class="fields-group">Média <span class="gk">clé 2</span></div>
+      <div class="field-row">
+        <span class="k">2</span>
+        <span class="v">Empreinte SHA-256 des octets bruts
+          <span class="why">Recalculée par le serveur sur l'image réellement reçue. C'est le seul lien entre l'enveloppe et la photo.</span></span>
+      </div>
+      <div class="field-row">
+        <span class="k">3 · 4 · 5</span>
+        <span class="v">Type MIME, taille en octets, largeur et hauteur</span>
+      </div>
+      <div class="field-row">
+        <span class="k">6</span>
+        <span class="v">Latence entre la capture et le figement de la charge utile
+          <span class="why">Une capture honnête se signe en quelques dizaines de millisecondes ; une injection ou une manipulation intermédiaire allonge presque toujours ce délai. Au-delà du seuil, l'origine est dégradée.</span></span>
+      </div>
+
+      <div class="fields-group">Position <span class="gk">clé 3</span></div>
+      <div class="field-row">
+        <span class="k">1 · 2</span>
+        <span class="v">Latitude et longitude WGS84</span>
+      </div>
+      <div class="field-row">
+        <span class="k">3</span>
+        <span class="v">Précision horizontale, en mètres
+          <span class="why">Dégradée dans les deux sens : trop floue, la position ne situe rien ; anormalement parfaite, c'est un marqueur classique de simulation.</span></span>
+      </div>
+      <div class="field-row">
+        <span class="k">4 · 5</span>
+        <span class="v">Altitude ellipsoïdale et précision verticale
+          <span class="why">Comparées à l'altitude barométrique — c'est de cette confrontation que vient le signal le plus rentable.</span></span>
+      </div>
+      <div class="field-row">
+        <span class="k">6</span>
+        <span class="v">Source du point : <span class="m">gnss</span>, <span class="m">fused</span>, <span class="m">network</span> ou <span class="m">unknown</span></span>
+      </div>
+      <div class="field-row">
+        <span class="k">7</span>
+        <span class="v">Ancienneté du point au moment du déclenchement
+          <span class="why">Essentiel, et souvent oublié : un point vieux de trente secondes ne prouve rien sur la position au déclenchement. Il est borné, pas seulement enregistré.</span></span>
+      </div>
+      <div class="field-row">
+        <span class="k">8</span>
+        <span class="v">Nombre de satellites utilisés <span class="why">Android uniquement.</span></span>
+      </div>
+
+      <div class="fields-group">Temps <span class="gk">clé 4</span></div>
+      <div class="field-row">
+        <span class="k">1 · 2</span>
+        <span class="v">Horloge murale et horloge monotone depuis le démarrage
+          <span class="why">L'horloge murale se règle à la main ; la monotone non. C'est leur écart qui est exploitable, pas leur valeur.</span></span>
+      </div>
+      <div class="field-row">
+        <span class="k">3 · 4</span>
+        <span class="v">Décalage UTC, synchronisation automatique de l'heure</span>
+      </div>
+
+      <div class="fields-group">Posture <span class="gk">clé 5</span></div>
+      <div class="field-row">
+        <span class="k">1 · 2 · 3</span>
+        <span class="v">Plateforme, version d'OS, version applicative</span>
+      </div>
+      <div class="field-row">
+        <span class="k">4 · 5</span>
+        <span class="v">Débogueur attaché, émulateur ou simulateur suspecté</span>
+      </div>
+      <div class="field-row">
+        <span class="k">6 · 7 · 8</span>
+        <span class="v">Mode développeur, position simulée, paquets suspects <span class="why">Android uniquement.</span></span>
+      </div>
+      <div class="field-row">
+        <span class="k">9</span>
+        <span class="v">Heuristiques de jailbreak <span class="why">iOS uniquement, et contournables — la garantie repose sur l'échec d'App Attest, pas sur cette détection.</span></span>
+      </div>
+
+      <div class="fields-group">Corroboration <span class="gk">clé 6, optionnelle et extensible</span></div>
+      <div class="field-row">
+        <span class="k">baro<br>baro-alt</span>
+        <span class="v">Pression atmosphérique et altitude barométrique
+          <span class="why">Un simulateur GPS ne falsifie jamais le baromètre. L'écart avec l'altitude GNSS est comparé à une tolérance.</span></span>
+      </div>
+      <div class="field-row">
+        <span class="k">motion<br>steps<br>activity</span>
+        <span class="v">Fenêtre inertielle de dix secondes, pas cumulés, activité détectée
+          <span class="why">Sur iOS, où aucun indicateur de position simulée n'existe, c'est cette corroboration qui tient lieu de contrepoids.</span></span>
+      </div>
+
+      <div class="fields-group">Chaînage <span class="gk">clé 7, optionnelle</span></div>
+      <div class="field-row">
+        <span class="k">7</span>
+        <span class="v">Empreinte SHA-256 de l'enveloppe précédente
+          <span class="why">Reconstruit sur Android l'ordonnancement inviolable qu'iOS obtient gratuitement par le compteur d'assertion. Le serveur détecte alors tout trou et toute réinsertion.</span></span>
+      </div>
+    </div>
+
+    <div class="prose">
+      <p>
+        Un point à ne pas perdre de vue : <strong>tous les champs de posture sont déclaratifs et
+        donc falsifiables</strong>. Ils ne prouvent rien seuls. Leur valeur tient entièrement à leur
+        incohérence avec l'attestation — un appareil qui déclare n'avoir aucun débogueur attaché
+        alors que Play Integrity échoue se contredit lui-même, et c'est cette contradiction qui est
+        exploitable.
+      </p>
+      <p>
+        Un vérificateur doit par ailleurs <strong>ignorer silencieusement toute réclamation de
+        corroboration qu'il ne connaît pas</strong>. C'est ce qui permettra d'ajouter des signaux en
+        v0.2 sans casser les vérificateurs déjà déployés.
+      </p>
+    </div>
+  </section>
+
+  <!-- 6 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Le vérificateur</div>
+      <h2>Dix étapes, dans un ordre qui compte</h2>
+    </div>
+    <div class="prose">
+      <p>
+        L'ordre n'est pas cosmétique : on écarte au plus vite et au moins cher. Les quatre
+        premières étapes sont locales et coûtent une milliseconde. La cinquième est le seul appel
+        réseau de tout le pipeline.
+      </p>
+      <p>
+        Un vérificateur qui interrogerait Google ou Apple <em>avant</em> d'avoir vérifié la
+        signature offrirait gratuitement un amplificateur de déni de service : n'importe qui
+        pourrait lui faire émettre des requêtes sortantes avec des octets aléatoires.
+      </p>
+    </div>
+
+    <div class="pipeline">
+      <div class="zone">
+        <span class="zl">Local</span>
+        <span class="zr">≈ 1 ms · écarte la quasi-totalité des rejets</span>
+      </div>
+      <div class="step"><span class="n">01</span><span>Version de spécification connue <span class="out">sinon rejeté</span></span></div>
+      <div class="step"><span class="n">02</span><span>Nonce connu, non consommé, non expiré <span class="out">sinon rejeté</span></span></div>
+      <div class="step"><span class="n">03</span><span>Signature valide sous la clé du <span class="m">kid</span> <span class="out">sinon rejeté</span></span></div>
+      <div class="step"><span class="n">04</span><span>Recalcul de R1 et comparaison au défi <span class="out">sinon rejeté</span></span></div>
+      <div class="zone">
+        <span class="zl">Réseau</span>
+        <span class="zr">le seul appel sortant</span>
+      </div>
+      <div class="step net"><span class="n">05</span><span>Validation du jeton auprès de Google ou Apple <span class="out">sinon non fiable</span></span></div>
+      <div class="zone">
+        <span class="zl">Local</span>
+        <span class="zr">ordonnancement, contenu, grades</span>
+      </div>
+      <div class="step"><span class="n">06</span><span>iOS : compteur d'assertion strictement croissant <span class="out">sinon rejeté</span></span></div>
+      <div class="step"><span class="n">07</span><span>Android : chaînage cohérent avec l'enveloppe précédente <span class="out">sinon signalé</span></span></div>
+      <div class="step"><span class="n">08</span><span>Empreinte de l'image recalculée sur les octets reçus <span class="out">sinon rejeté</span></span></div>
+      <div class="step"><span class="n">09</span><span>Cohérence de posture, position, corroboration <span class="out">détermine les grades</span></span></div>
+      <div class="step"><span class="n">10</span><span>Nonce marqué comme consommé</span></div>
+    </div>
+
+    <div class="prose">
+      <p>
+        Les étapes 6 et 7 servent le même but par deux chemins : empêcher qu'on réordonne ou
+        réinsère des captures. iOS l'obtient gratuitement avec le compteur d'assertion d'App
+        Attest, strictement croissant. Android doit le reconstruire en chaînant chaque enveloppe
+        à l'empreinte de la précédente.
+      </p>
+    </div>
+  </section>
+
+  <!-- 7 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Le résultat</div>
+      <h2>Quatre propriétés, et la plus faible l'emporte</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Le vérificateur ne rend pas un score. Il note séparément quatre propriétés —
+        <strong>origine</strong> (l'image vient bien du capteur), <strong>position</strong>,
+        <strong>instant</strong>, <strong>intégrité</strong> — puis retient le grade le plus bas.
+        Une chaîne vaut son maillon le plus faible.
+      </p>
+      <p>
+        Le serveur appelant doit pouvoir savoir <em>laquelle</em> des quatre est faible, pas
+        seulement qu'un score est bas. Et le motif du niveau est obligatoire : un rejet sans
+        raison exploitable est ingérable en support.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 880 330" role="img" aria-label="Origine plafonnée au grade B, position et intégrité en A, instant en B ; le niveau global suit la propriété la plus faible et vaut STANDARD.">
+          <text class="d-cap" x="20" y="34">grade</text>
+
+          <line class="d-grid" x1="150" y1="80" x2="700" y2="80" />
+          <line class="d-grid" x1="150" y1="140" x2="700" y2="140" />
+          <line class="d-grid" x1="150" y1="200" x2="700" y2="200" />
+          <line class="d-grid" x1="150" y1="260" x2="700" y2="260" />
+
+          <text class="d-t-mono" x="132" y="85" text-anchor="end">A</text>
+          <text class="d-t-mono" x="132" y="145" text-anchor="end">B</text>
+          <text class="d-t-mono" x="132" y="205" text-anchor="end">C</text>
+          <text class="d-t-mono" x="132" y="265" text-anchor="end">F</text>
+
+          <!-- plafond sur origine -->
+          <rect x="185" y="62" width="90" height="66" rx="3" class="d-box-alarm" fill-opacity="0.35" stroke-dasharray="5 4" />
+          <text class="d-alarm-t" x="230" y="52" text-anchor="middle">plafonné</text>
+
+          <!-- la chaine -->
+          <polyline class="d-acc-line" points="230,140 370,80 510,140 650,80" />
+
+          <circle cx="230" cy="140" r="6" class="d-acc-fill" />
+          <circle cx="370" cy="80" r="6" class="d-acc-fill" />
+          <circle cx="510" cy="140" r="6" class="d-acc-fill" />
+          <circle cx="650" cy="80" r="6" class="d-acc-fill" />
+
+          <text class="d-t-mono" x="230" y="292" text-anchor="middle">origine</text>
+          <text class="d-t-mono" x="370" y="292" text-anchor="middle">position</text>
+          <text class="d-t-mono" x="510" y="292" text-anchor="middle">instant</text>
+          <text class="d-t-mono" x="650" y="292" text-anchor="middle">intégrité</text>
+
+          <!-- niveau global -->
+          <line class="d-acc-dash" x1="150" y1="140" x2="770" y2="140" />
+          <text class="d-acc-t" x="775" y="130">niveau global</text>
+          <text class="d-t-mono" x="775" y="150">STANDARD</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>Le plafond sur l'origine est structurel, pas accidentel.</b> Tant que la photographie
+        d'un écran n'est pas détectée, l'origine ne peut pas dépasser le grade B — et comme le
+        niveau global suit la propriété la plus faible, aucune capture en v0.1 ne peut atteindre
+        <span class="m">STRONG</span>. C'est une limite assumée et inscrite dans le code, pas un
+        oubli.
+      </figcaption>
+    </figure>
+
+    <div class="callout">
+      <div class="eyebrow">L'angle mort assumé</div>
+      <p>
+        On peut photographier un écran affichant une autre photo. La position est authentique,
+        l'attestation est valide, la signature est bonne — seul le contenu est faux. Aucun signal
+        de position ne révèle cette attaque.
+      </p>
+      <p>
+        C'est pour cela que l'origine est plafonnée. Ne pas lever ce plafond sans implémenter la
+        détection.
+      </p>
+    </div>
+  </section>
+
+  <!-- 8 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Questions courantes</div>
+      <h2>Ce qu'on demande le plus souvent</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Les réponses ci-dessous sont volontairement écrites sans jargon. Quand un détail compte
+        vraiment, il renvoie à la section correspondante.
+      </p>
+    </div>
+
+    <div class="faq">
+
+      <div class="faq-item">
+        <div class="faq-q">À quoi sert l'appel à Google ou à Apple à chaque photo ?</div>
+        <div class="faq-a">
+          <p>
+            À obtenir une phrase que le téléphone serait incapable d'écrire lui-même. En substance :
+            <em>« oui, c'est un vrai appareil, dans un état que nous reconnaissons, et l'application
+            qui tourne dessus est bien celle publiée sous cette identité »</em>. Cette phrase est
+            signée par Google ou Apple, pas par l'application.
+          </p>
+          <p>
+            C'est là toute sa valeur. Tout ce que le téléphone affirme sur lui-même peut être
+            falsifié par quelqu'un qui contrôle le téléphone. Google et Apple sont les seuls à
+            pouvoir dire quelque chose qu'un appareil trafiqué ne sait pas fabriquer.
+          </p>
+          <p>
+            <strong>Et le <span class="m">requestHash</span> dans tout ça ?</strong> Au moment de
+            poser la question, l'appareil tend en plus une petite valeur de trente-deux octets.
+            Google ne la lit pas et ne cherche pas à la comprendre : il la recopie telle quelle
+            dans sa réponse signée. Comme cette valeur est l'empreinte de la photo et de toutes ses
+            mesures, la réponse ne dit plus seulement « appareil sain ». Elle dit : <strong>appareil
+            sain, qui tenait exactement ces données-là au moment où il a demandé</strong>.
+          </p>
+          <p>
+            Toute la différence est là. Sans cette valeur, on obtient un certificat recollable
+            derrière n'importe quel contenu. Avec elle, on obtient un certificat qui ne vaut que
+            pour cette photo précise, et pour aucune autre.
+          </p>
+          <div class="faq-note">
+            Une nuance que le schéma ne montre pas : sur Android, c'est réellement un aller-retour
+            vers Google. Sur iOS, la puce sécurisée fabrique la réponse elle-même, sans contacter
+            les serveurs d'Apple — c'est ensuite le serveur qui la vérifie seul, avec la clé
+            déposée à l'enrôlement. Le résultat est le même, le chemin non.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Faut-il que l'application soit distribuée par les stores officiels ?</div>
+        <div class="faq-a">
+          <p>
+            Les deux plateformes ne répondent pas pareil, et l'écart a des conséquences concrètes
+            sur le déploiement.
+          </p>
+          <p>
+            <strong>Sur iOS, non.</strong> App Attest ne s'intéresse pas au canal de distribution :
+            il prouve l'identité de l'application — l'équipe de développement et l'identifiant de
+            l'app. TestFlight, diffusion interne, ad hoc : tout fonctionne. Il faut un compte
+            développeur Apple valide et un appareil réel, le simulateur étant exclu par
+            construction.
+          </p>
+          <p>
+            <strong>Sur Android, en partie oui</strong>, et il faut distinguer deux choses.
+          </p>
+          <p>
+            L'application doit être déclarée dans la Play Console pour pouvoir utiliser l'API : le
+            numéro de projet nécessaire à l'appel vient de là. Ce n'est pas contournable, même si
+            la diffusion se fait ailleurs.
+          </p>
+          <p>
+            Et le verdict le plus fort sur l'application — celui que le vérificateur appelle
+            « binaire reconnu » — signifie très précisément : <em>ce binaire correspond à celui que
+            Google Play distribue</em>. Un paquet installé à la main, ou diffusé par vos propres
+            moyens, ne l'obtient pas. On conserve alors le verdict sur l'appareil — ni rooté, ni
+            émulé — mais on perd la moitié qui prouve l'authenticité de l'application.
+          </p>
+          <p>
+            S'y ajoute une limite déjà connue : un appareil dépourvu des services Google Play ne
+            peut pas être attesté du tout.
+          </p>
+          <div class="faq-note">
+            Conséquence directe sur le code : aujourd'hui le vérificateur met la note la plus basse
+            dès que le binaire n'est pas reconnu, ce qui revient à refuser toute diffusion hors
+            Play. C'est une politique, pas une fatalité — elle gagnerait à devenir un réglage de
+            déploiement. L'état exact du support des binaires distribués hors Play est à vérifier
+            sur appareil pendant le spike.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Google ou Apple voient-ils ma photo, ou l'endroit où elle a été prise ?</div>
+        <div class="faq-a">
+          <p>
+            Non. Ils reçoivent trente-deux octets qui, pour eux, ne veulent rien dire : le résultat
+            d'un calcul à sens unique. On ne peut pas remonter de ces octets à la photo, ni à la
+            position, ni à quoi que ce soit d'autre.
+          </p>
+          <p>
+            Ils ne se prononcent d'ailleurs jamais sur le contenu. Ils parlent de l'appareil et de
+            l'application, un point c'est tout. Juger la photo, c'est le travail de votre serveur.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Pourquoi ne pas poser la question une seule fois, à l'installation ?</div>
+        <div class="faq-a">
+          <p>
+            Pour deux raisons, et la seconde est la vraie.
+          </p>
+          <p>
+            D'abord, un téléphone sain à l'installation peut être trafiqué le mois suivant. Une
+            réponse vieille d'un mois ne dit rien de l'état d'aujourd'hui.
+          </p>
+          <p>
+            Surtout, une réponse obtenue une fois pour toutes ne serait attachée à aucune photo en
+            particulier. On pourrait la recopier derrière n'importe quel contenu forgé. C'est
+            exactement l'attaque que ferme la règle R1.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Pourquoi le serveur doit-il envoyer un nonce avant chaque photo ?</div>
+        <div class="faq-a">
+          <p>
+            Un nonce est un numéro à usage unique, tiré par le serveur, valable un court moment.
+            Il rend deux services.
+          </p>
+          <p>
+            Il empêche de renvoyer deux fois la même enveloppe : une fois le nonce consommé, il est
+            refusé définitivement.
+          </p>
+          <p>
+            Et il rattache la photo au contexte de votre application — le dossier, la demande, la
+            commande — <strong>sans que ce vocabulaire n'entre jamais dans l'enveloppe</strong>. Le
+            lien se fait côté serveur, au moment où il émet le nonce. C'est ce qui permet à la
+            bibliothèque de rester réutilisable d'un projet à l'autre.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Pourquoi ne pas simplement signer la photo et s'arrêter là ?</div>
+        <div class="faq-a">
+          <p>
+            Parce qu'une signature prouve une seule chose : que le contenu n'a pas bougé depuis
+            qu'on l'a signé. Elle ne dit rien de l'endroit d'où il vient.
+          </p>
+          <p>
+            On peut signer une image téléchargée sur internet. On peut signer une position
+            inventée. La signature sera parfaitement valide, et parfaitement inutile.
+          </p>
+          <p>
+            Ce qui fait la preuve ici, ce n'est pas la signature en elle-même. C'est que la clé qui
+            signe vit dans une puce dont on a prouvé l'origine, et que la réponse de Google ou
+            d'Apple est collée à ce contenu précis.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">C'est quoi, le « kid » ?</div>
+        <div class="faq-a">
+          <p>
+            Trois lettres pour <em>key identifier</em>, identifiant de clé. C'est une étiquette qui
+            dit au serveur <strong>quelle clé aller chercher dans son propre trousseau</strong>
+            pour vérifier la signature. Rien de plus.
+          </p>
+          <p>
+            L'image juste est celle du numéro sur un casier : le numéro ne l'ouvre pas, il indique
+            lequel ouvrir. Le serveur conserve les clés publiques déposées lors des enrôlements, et
+            le <span class="m">kid</span> lui dit laquelle sortir.
+          </p>
+          <p>
+            Concrètement, c'est l'empreinte de la clé publique. Deux avantages : les deux côtés
+            savent la calculer sans s'être mis d'accord au préalable, et elle ne révèle rien de plus
+            que la clé elle-même. Elle voyage dans l'en-tête protégé, donc couverte par la
+            signature.
+          </p>
+          <p>
+            <strong>Et si quelqu'un y met le <span class="m">kid</span> d'un autre appareil ?</strong>
+            Il n'y gagne rien. Le serveur sortira bien la clé publique désignée — mais la signature
+            devra alors se vérifier sous <em>cette</em> clé, ce qui suppose de détenir la clé privée
+            correspondante. Or elle n'a jamais quitté la puce de l'autre appareil. L'enveloppe est
+            refusée à l'étape de la signature ; un <span class="m">kid</span> inconnu du serveur est
+            refusé encore plus tôt.
+          </p>
+          <p>
+            C'est exactement ce que dit la règle R2 : la clé qui sert à vérifier vient toujours du
+            serveur, jamais de l'enveloppe.
+          </p>
+          <div class="faq-note">
+            Côté vie privée, une chose à savoir : le <span class="m">kid</span> est stable pour une
+            installation donnée. Il ne dit rien de la personne, mais il permet de relier entre elles
+            les captures d'un même appareil — ce qui est précisément ce dont on a besoin pour le
+            chaînage et le compteur. Une réinstallation produit une nouvelle clé, donc un nouveau
+            <span class="m">kid</span>.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Qu'est-ce qui empêche l'application de mentir sur la position ?</div>
+        <div class="faq-a">
+          <p>
+            Rien, directement. Et c'est assumé.
+          </p>
+          <p>
+            Tout ce que l'appareil déclare — la position, l'heure, l'absence de débogueur — est
+            falsifiable par quelqu'un qui contrôle l'appareil. Ces champs ne sont jamais crus sur
+            parole.
+          </p>
+          <p>
+            Leur intérêt est ailleurs : ils doivent être cohérents entre eux, et avec la réponse
+            d'attestation. Un appareil qui jure n'avoir aucun débogueur pendant que Google le classe
+            comme compromis <strong>se contredit tout seul</strong>, et c'est cette contradiction
+            qui le trahit. Un GPS qui annonce une altitude que le baromètre dément, c'est le même
+            principe.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Pourquoi ne pas relever aussi le Wi-Fi, les antennes téléphoniques, le Bluetooth ?</div>
+        <div class="faq-a">
+          <p>
+            C'est prévu, mais pas dans cette version. Et le mécanisme qui le permettra est
+            <strong>déjà en place</strong> : la corroboration est une liste ouverte de mesures
+            typées, et le vérificateur ignore silencieusement tout type qu'il ne connaît pas.
+            Ajouter des signaux radio ne cassera donc aucun vérificateur déjà déployé. C'est
+            exactement pour cette raison que la liste a été conçue ainsi.
+          </p>
+          <p>
+            <strong>Deux raisons de ne pas l'avoir fait tout de suite.</strong> D'abord la vie
+            privée : les identifiants des bornes Wi-Fi et des antennes autour de vous ne vous
+            appartiennent pas. Ce sont des données de tiers, et elles suffisent à retracer des
+            déplacements. La règle retenue est qu'elles n'entreront que hachées, avec un sel propre
+            à chaque déploiement — jamais en clair.
+          </p>
+          <p>
+            Ensuite l'écart entre plateformes : Android sait lister les bornes et les antennes
+            voisines, iOS ne le permet pas. Un signal disponible d'un seul côté ne peut pas servir à
+            établir un grade, seulement à corroborer.
+          </p>
+          <p>
+            Il faut enfin être lucide sur ce que ça apporte. Un relevé radio ne prouve pas une
+            position tout seul : encore faut-il savoir où se trouvent ces bornes, donc disposer
+            d'une carte. Et sur un appareil trafiqué, il se falsifie comme le reste. Sa vraie valeur
+            est statistique, à l'échelle d'une flotte — deux appareils qui déclarent le même endroit
+            devraient voir le même paysage radio.
+          </p>
+          <div class="faq-note">
+            À garder en tête : aucun signal de position supplémentaire ne referme le trou principal,
+            qui est la photo d'écran. Ce qui aiderait là, ce sont des signaux de scène — carte de
+            profondeur, écart entre deux objectifs, distance de mise au point. C'est une autre
+            piste, et elle vise la v0.3.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Et s'il n'y a pas de réseau au moment de la photo ?</div>
+        <div class="faq-a">
+          <p>
+            La capture reste possible : le serveur peut fournir à l'avance un petit lot de nonces à
+            durée de vie plus longue.
+          </p>
+          <p>
+            Mais le niveau rendu est alors plafonné à « dégradé ». La fraîcheur n'est plus garantie
+            de la même façon, et le résultat doit le dire.
+          </p>
+          <div class="faq-note">
+            Point encore ouvert : obtenir un jeton Play Integrity suppose une connexion, alors
+            qu'iOS fabrique son assertion localement. La capture hors ligne n'a donc pas la même
+            valeur sur les deux plateformes. À trancher pendant le spike natif.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Quelqu'un peut-il tricher en photographiant un écran ?</div>
+        <div class="faq-a">
+          <p>
+            Oui, et c'est le trou connu de la version actuelle. La position est vraie, l'appareil
+            est sain, la signature est bonne — seul le contenu est faux.
+          </p>
+          <p>
+            Aucun signal de position ne peut révéler ça. C'est pour cette raison que la propriété
+            « origine » est plafonnée au grade B, et donc qu'aucune capture ne peut atteindre le
+            niveau le plus élevé aujourd'hui. La limite est inscrite dans le code, pas oubliée.
+          </p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Que se passe-t-il si l'application est réinstallée, ou le téléphone changé ?</div>
+        <div class="faq-a">
+          <p>
+            L'enrôlement recommence. La clé vit dans la puce et n'en sort jamais : elle ne se
+            transporte pas, ne se sauvegarde pas, ne se restaure pas. Une nouvelle installation,
+            c'est une nouvelle clé.
+          </p>
+          <p>
+            Les captures faites auparavant restent vérifiables, puisque le serveur conserve les
+            clés publiques précédentes.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 9 ------------------------------------------------------------ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Le dépôt</div>
+      <h2>Où en est chaque morceau</h2>
+    </div>
+
+    <div class="repo">
+      <div class="repo-row">
+        <span class="path">docs/threat-model.md</span>
+        <span class="what">La spécification de référence : ce qu'on prouve, contre quels profils d'attaquant, à quel coût. Toute fonctionnalité doit y répondre à une menace identifiée.</span>
+        <span class="chip done">rédigé</span>
+      </div>
+      <div class="repo-row">
+        <span class="path">docs/envelope-spec.md</span>
+        <span class="what">Le format <span class="m">ac/0.1</span>, les règles R1/R2/R3, l'ordre de vérification.</span>
+        <span class="chip done">rédigé</span>
+      </div>
+      <div class="repo-row">
+        <span class="path">spec/envelope-v0.1.cddl</span>
+        <span class="what">Le schéma normatif, extrait de la spec. Ne pas éditer à la main.</span>
+        <span class="chip done">généré</span>
+      </div>
+      <div class="repo-row">
+        <span class="path">verifier-python/</span>
+        <span class="what">Le vérificateur serveur. Pipeline complet des dix étapes, 40 tests au vert, chaque test d'attaque référencé au modèle de menace.</span>
+        <span class="chip done">fonctionnel</span>
+      </div>
+      <div class="repo-row">
+        <span class="path">…/attestation/play_integrity.py<br>…/attestation/app_attest.py</span>
+        <span class="what">Les deux adaptateurs vers Google et Apple. Interfaces posées, corps en <span class="m">NotImplementedError</span> — l'isolement derrière une interface garde tout le reste testable hors ligne.</span>
+        <span class="chip wip">à écrire</span>
+      </div>
+      <div class="repo-row">
+        <span class="path">verifier-python/tests/factory.py</span>
+        <span class="what">La fabrique d'enveloppes de test. C'est l'implémentation de référence : si le natif produit une enveloppe que la fabrique ne saurait pas produire, c'est le natif qui s'écarte de la spécification.</span>
+        <span class="chip done">fonctionnel</span>
+      </div>
+      <div class="repo-row">
+        <span class="path">mobile/android/<br>mobile/ios/</span>
+        <span class="what">Les clients natifs Kotlin et Swift.</span>
+        <span class="chip todo">non commencé</span>
+      </div>
+    </div>
+
+    <div class="prose">
+      <h3>Prochaine étape : le spike d'attestation natif</h3>
+      <p>
+        Kotlin et Swift en parallèle, avec une cible précise et vérifiable : produire une
+        enveloppe que <span class="m">pytest</span> accepte.
+      </p>
+      <p>Deux inconnues doivent être levées, et l'une comme l'autre peut forcer une révision de la spécification :</p>
+      <ul class="plain">
+        <li>la contrainte de taille du <span class="m">requestHash</span> de Play Integrity — si le condensat de 32 octets ne passe pas tel quel, il faudra un niveau d'indirection ;</li>
+        <li>la latence réelle entre capture et signature sur des appareils d'entrée de gamme, qui décide si ce champ est exploitable comme signal de détection ou seulement décoratif.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    Projet personnel indépendant, licence Apache-2.0. Spécification <span class="m">ac/0.1</span>,
+    proposition à geler après le spike natif.
+  </footer>
+
+</div>
+</body>
+</html>
