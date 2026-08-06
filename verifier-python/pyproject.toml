@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "attested-capture"
+version = "0.1.0.dev0"
+description = "Vérificateur serveur d'enveloppes de capture photo géolocalisée attestée"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "cbor2>=5.6",
+    "cryptography>=42.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov", "ruff", "mypy"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/attested_capture"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 95
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
