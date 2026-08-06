@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- L'enrôlement de test parle au serveur de dev sur le réseau local,
+         en HTTP clair : autorisation limitée à l'APK de test. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:usesCleartextTraffic="true" />
+</manifest>

@@ -14,6 +14,7 @@ android {
         // un appareil récent ; 26 couvre setAttestationChallenge et les
         // horloges nécessaires. À réviser si un terrain plus ancien apparaît.
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -42,4 +43,6 @@ kotlin {
 dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.google.code.gson:gson:2.11.0")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }
