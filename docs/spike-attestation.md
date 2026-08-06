@@ -39,39 +39,48 @@ La canonicité CBOR (spec §7) se teste octet à octet, pas par relecture. Une c
 logicielle **déterministe et de test** est utilisée : ce n'est pas du matériel
 cryptographique réel au sens du `.gitignore`, et le fichier le dit en tête.
 
-- [ ] `tools/gen_vectors.py` : à partir de `factory.py` avec clé EC déterministe,
+- [x] `tools/gen_vectors.py` : à partir de `factory.py` avec clé EC déterministe,
       nonce et horloges figés, écrit `payload_bytes`, `protected_bytes`,
-      `sig_structure` et l'enveloppe complète dans `verifier-python/tests/vectors/`.
-- [ ] Deux jeux : un `android` (chaînage, posture 6/7/8), un `ios` (compteur,
+      `sig_structure`, le défi R1 et l'enveloppe complète dans
+      `verifier-python/tests/vectors/`. La signature des vecteurs est en ECDSA
+      déterministe (RFC 6979) — sans quoi l'enveloppe changerait à chaque
+      génération ; les appareils, eux, signent en ECDSA aléatoire.
+- [x] Deux jeux : un `android` (chaînage, posture 6/7/8), un `ios` (compteur,
       posture 9), pour couvrir les deux formes de charge utile.
-- [ ] Test pytest qui régénère et compare : toute dérive de la fabrique ou de cbor2
-      casse le test au lieu de casser silencieusement les cœurs natifs.
-- [ ] Documenter dans le fichier de vecteurs les pièges d'encodage attendus côté
-      natif : ordre canonique des clés de map, forme la plus courte des flottants
-      (`position.3` est un float32), tag 18, signature brute `r‖s` et non DER.
+- [x] Test pytest qui régénère et compare (`test_vectors.py`) — et qui vérifie
+      aussi que les enveloppes des vecteurs sont *acceptées* par le pipeline,
+      pas seulement stables.
+- [x] Pièges d'encodage documentés dans `tests/vectors/README.md`. Constat
+      notable : les trois largeurs de flottants coexistent dans un même vecteur
+      (`8.0` → float16 `f94800`, `48.2973` → float64) — les encodeurs natifs
+      devront implémenter la demi-précision.
 
 ### 0.2 Serveur de développement
 
 Câblage du `Verifier` existant, aucune décision de validité nouvelle.
 
-- [ ] Choisir le socle : extra optionnel `[devserver]` (FastAPI + uvicorn) dans
-      `pyproject.toml`, module hors API publique.
-- [ ] `POST /enroll` : clé publique X9.62 + plateforme → calcul du `kid`
+- [x] Socle retenu : **bibliothèque standard** (`http.server`), corps JSON avec
+      octets en base64 — ~~extra optionnel `[devserver]` (FastAPI + uvicorn)~~
+      abandonné : zéro dépendance nouvelle pour trois routes, cohérent avec la
+      surface minimale d'ADR-0001. Module `attested_capture.devserver`, hors API
+      publique.
+- [x] `POST /enroll` : clé publique X9.62 + plateforme → calcul du `kid`
       (SHA-256, comme `factory.kid_for`), `DeviceRecord` en mémoire. La chaîne
       d'attestation de clé est acceptée sans validation en phase 0 (validation
       réelle : phases B et D).
-- [ ] `POST /nonce` : émission d'un nonce à durée de vie courte via
+- [x] `POST /nonce` : émission d'un nonce à durée de vie courte via
       `InMemoryNonceStore`.
-- [ ] `POST /verify` : enveloppe + média, retourne le résultat structuré JSON
+- [x] `POST /verify` : enveloppe + média, retourne le résultat structuré JSON
       (niveau, grades par propriété, `level_reason`, drapeaux).
-- [ ] `NullAttestationVerifier` par défaut, remplaçable par les vérificateurs réels
-      des phases B et D sans toucher aux routes.
-- [ ] Tests : boucle complète fabrique → serveur de dev → `STANDARD`/`STRONG`, plus
-      rejets (nonce inconnu, signature invalide) pour vérifier le câblage d'erreurs.
-- [ ] `README` du serveur de dev : commande de lancement, exemple `curl` complet.
+- [x] `NullAttestationVerifier` par défaut, remplaçable par les vérificateurs réels
+      des phases B et D sans toucher aux routes (paramètre du `DevService`).
+- [x] Tests : boucle complète fabrique → HTTP → `STANDARD`, rejeu → `REPLAYED_NONCE`,
+      nonce inconnu, clé non enrôlée, erreurs de transport (400/404).
+- [x] Doc de lancement et exemple `curl` complet dans `verifier-python/README.md`.
 
-**Sortie de phase 0 :** une enveloppe de la fabrique passe par HTTP de bout en bout ;
-les vecteurs d'or sont versionnés et testés.
+**Sortie de phase 0 : atteinte (2026-08-06).** Une enveloppe de la fabrique passe
+par HTTP de bout en bout ; les vecteurs d'or sont versionnés et testés. 50 tests,
+ruff et mypy au vert.
 
 ---
 
@@ -252,3 +261,9 @@ XCFramework autonome.
 ## Journal
 
 - 2026-08-06 : plan rédigé, phases 0/A/B/C/D définies. Rien de commencé.
+- 2026-08-06 : **phase 0 terminée.** Vecteurs d'or (`tests/vectors/`, générateur
+  `tools/gen_vectors.py`, signature RFC 6979) et serveur de dev
+  (`attested_capture.devserver`, socle stdlib au lieu de FastAPI — zéro dépendance
+  nouvelle). 50 tests au vert. Trouvaille utile pour A2/C2 : les vecteurs
+  contiennent du float16, du float32 et du float64 — la demi-précision CBOR est
+  incontournable côté natif. Prochaine étape : phase A (squelette Gradle A1).
