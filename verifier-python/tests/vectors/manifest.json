@@ -1,0 +1,26 @@
+{
+  "android": {
+    "assertion_counter": null,
+    "freshness_kind": "play-integrity",
+    "kid_hex": "98e0f400f987032e5bea7a653a359fea3cebaacd643a9f4fcc1a00e47e2d6e7b",
+    "media_digest_hex": "9c38bddbcc6cc26d03c60f10b59cdad809cf6340682fead28f9ed0219587212a",
+    "media_hex": "61632f302e312076656374657572206d65646961",
+    "nonce_hex": "d3b78b56a8cf1137101e03ec82bd038f",
+    "prev_digest_hex": "1adeacd1a41fe9c1c2339dd21ad765ecb812a7dc73957fb975ad2249ae2f723c",
+    "private_key_d_hex": "6f21a06e0588aef3a4e8da0995472c93abb007953e0c2c93fda78f14d134defb",
+    "public_key_x962_hex": "04320ebc908d1f5433938d0ae7f2d0095817bc75c1519401c0fe356d4277505b9891d5e3e7813447984bb08f640f35144054dfbddf0cb013c926c6d6202f476d6d",
+    "wall_ms": 1754400000000
+  },
+  "ios": {
+    "assertion_counter": 7,
+    "freshness_kind": "app-attest",
+    "kid_hex": "67ed0f9f0bacf203b29d88d3175fcf19d03c9e5e2290ef35bd0ebe39fc73d69a",
+    "media_digest_hex": "9c38bddbcc6cc26d03c60f10b59cdad809cf6340682fead28f9ed0219587212a",
+    "media_hex": "61632f302e312076656374657572206d65646961",
+    "nonce_hex": "e87e044fb8bfd7a414ae62721af3b2c8",
+    "prev_digest_hex": null,
+    "private_key_d_hex": "cb97c57cab338e338eeedf5ab4f69d8135d59022a09db382ea6b6dae6dd833f3",
+    "public_key_x962_hex": "042316607087ca1a63e3cd5f17fab4918f95a564612327906a8e16852565d86b65f71fa68617df2bc58972c76d078ca9d09160cb44cab52459028d86b8714ce664",
+    "wall_ms": 1754400000000
+  }
+}

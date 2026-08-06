@@ -127,6 +127,22 @@ def make_payload(
     return payload
 
 
+def encode_protected(key: ec.EllipticCurvePrivateKey) -> bytes:
+    """En-tête protégé encodé — exposé pour les vecteurs d'or."""
+    protected = {
+        1: -7,
+        4: kid_for(key),
+        100: SPEC,
+        101: DEPLOYMENT,
+    }
+    return cbor2.dumps(protected, canonical=True)
+
+
+def encode_sig_structure(protected_bytes: bytes, payload_bytes: bytes) -> bytes:
+    """`Sig_structure` COSE (RFC 8152 §4.4) — les octets réellement signés."""
+    return cbor2.dumps(["Signature1", protected_bytes, b"", payload_bytes])
+
+
 def sign_envelope(
     key: ec.EllipticCurvePrivateKey,
     payload: dict,
@@ -136,20 +152,20 @@ def sign_envelope(
     freshness_kind: str = "play-integrity",
     bind_challenge: bool = True,
     tamper_payload_after_sign: dict | None = None,
+    deterministic_signature: bool = False,
 ) -> bytes:
     """Assemble et signe une enveloppe COSE_Sign1.
 
     `bind_challenge=False` produit une enveloppe dont le jeton de
     fraîcheur ne couvre pas la charge utile : c'est l'attaque que la
     règle R1 doit intercepter.
+
+    `deterministic_signature=True` signe en ECDSA déterministe
+    (RFC 6979) pour que les vecteurs d'or soient stables octet à octet.
+    Les clés matérielles des appareils signent en ECDSA aléatoire : ce
+    mode ne sert qu'à la génération de vecteurs.
     """
-    protected = {
-        1: -7,
-        4: kid_for(key),
-        100: SPEC,
-        101: DEPLOYMENT,
-    }
-    protected_bytes = cbor2.dumps(protected, canonical=True)
+    protected_bytes = encode_protected(key)
     payload_bytes = cbor2.dumps(payload, canonical=True)
 
     challenge = hashlib.sha256(payload_bytes + nonce).digest()
@@ -159,10 +175,11 @@ def sign_envelope(
     if counter is not None:
         freshness[3] = counter
 
-    sig_structure = cbor2.dumps(
-        ["Signature1", protected_bytes, b"", payload_bytes]
+    sig_structure = encode_sig_structure(protected_bytes, payload_bytes)
+    der = key.sign(
+        sig_structure,
+        ec.ECDSA(hashes.SHA256(), deterministic_signing=deterministic_signature),
     )
-    der = key.sign(sig_structure, ec.ECDSA(hashes.SHA256()))
     r, s = asym_utils.decode_dss_signature(der)
     signature = r.to_bytes(32, "big") + s.to_bytes(32, "big")
 
