@@ -24,6 +24,11 @@ from cryptography.hazmat.primitives.asymmetric import utils as asym_utils
 SPEC = "probative/0.1"
 DEPLOYMENT = "test-deployment"
 
+# Profils du format, en clair : la fabrique ne dépend pas du vérificateur,
+# c'est ce qui lui permet de servir de référence indépendante.
+PROFILE_CAPTURE = "capture"
+PROFILE_CORE = "core"
+
 
 def new_key() -> ec.EllipticCurvePrivateKey:
     return ec.generate_private_key(ec.SECP256R1())
@@ -42,6 +47,7 @@ def kid_for(key: ec.EllipticCurvePrivateKey) -> bytes:
 def make_payload(
     *,
     nonce: bytes,
+    profile: str = PROFILE_CAPTURE,
     platform: str = "android",
     media_digest: bytes | None = None,
     lat: float = 48.2973,
@@ -107,33 +113,46 @@ def make_payload(
     if platform == "android":
         position[8] = 11
 
+    media: dict = {
+        1: "sha-256",
+        2: media_digest,
+        3: "image/jpeg" if profile == PROFILE_CAPTURE else "application/pdf",
+        4: 1_842_301,
+        6: sign_latency_ms,
+    }
     payload: dict = {
         1: nonce,
-        2: {
-            1: "sha-256",
-            2: media_digest,
-            3: "image/jpeg",
-            4: 1_842_301,
-            5: [4032, 3024],
-            6: sign_latency_ms,
-        },
-        3: position,
+        2: media,
         4: {1: wall_ms, 2: 4_312_004, 3: 120, 4: True},
         5: posture,
-        6: claims,
     }
+
+    # Le noyau ne décrit que des octets : ni dimensions, ni position, ni
+    # corroboration — rien qui suppose un capteur ou un lieu.
+    if profile == PROFILE_CAPTURE:
+        media[5] = [4032, 3024]
+        payload[3] = position
+        payload[6] = claims
+
     if prev_digest is not None:
         payload[7] = prev_digest
     return payload
 
 
-def encode_protected(key: ec.EllipticCurvePrivateKey) -> bytes:
-    """En-tête protégé encodé — exposé pour les vecteurs d'or."""
+def encode_protected(
+    key: ec.EllipticCurvePrivateKey, profile: str = PROFILE_CAPTURE
+) -> bytes:
+    """En-tête protégé encodé — exposé pour les vecteurs d'or.
+
+    Le profil est ici, dans le protégé, et non dans la charge utile : le
+    retirer ou le changer invalide la signature.
+    """
     protected = {
         1: -7,
         4: kid_for(key),
         100: SPEC,
         101: DEPLOYMENT,
+        102: profile,
     }
     return cbor2.dumps(protected, canonical=True)
 
@@ -148,6 +167,7 @@ def sign_envelope(
     payload: dict,
     *,
     nonce: bytes,
+    profile: str = PROFILE_CAPTURE,
     counter: int | None = None,
     freshness_kind: str = "play-integrity",
     bind_challenge: bool = True,
@@ -165,7 +185,7 @@ def sign_envelope(
     Les clés matérielles des appareils signent en ECDSA aléatoire : ce
     mode ne sert qu'à la génération de vecteurs.
     """
-    protected_bytes = encode_protected(key)
+    protected_bytes = encode_protected(key, profile)
     payload_bytes = cbor2.dumps(payload, canonical=True)
 
     challenge = hashlib.sha256(payload_bytes + nonce).digest()

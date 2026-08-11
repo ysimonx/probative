@@ -14,10 +14,10 @@ import time
 
 import cbor2
 import pytest
-from factory import kid_for, make_payload, new_key, sign_envelope
+from factory import PROFILE_CORE, kid_for, make_payload, new_key, sign_envelope
 
 from probative.attestation import DeviceIntegrity, NullAttestationVerifier
-from probative.model import Grade, Level, Property
+from probative.model import Grade, Level, Profile, Property
 from probative.store import (
     DeviceRecord,
     InMemoryDeviceStore,
@@ -62,9 +62,9 @@ def verifier(nonces, devices):
     )
 
 
-def _issue(nonces, **kw):
+def _issue(nonces, profile=Profile.CAPTURE, **kw):
     nonce = os.urandom(16)
-    nonces.issue(nonce, **kw)
+    nonces.issue(nonce, profile=profile, **kw)
     return nonce
 
 
@@ -84,14 +84,20 @@ def test_capture_android_valide(verifier, nonces, key):
     assert "baro-consistent" in res.properties[Property.POSITION].evidence
 
 
-def test_origin_plafonne_en_v01(verifier, nonces, key):
-    """La photographie d'écran n'étant pas détectée, origin ne peut pas valoir A."""
+def test_origin_plafonne_par_recapture_en_v01(verifier, nonces, key):
+    """Profil capture : la recapture analogique n'étant pas détectée, origin ≤ B.
+
+    Photographier un écran et enregistrer un haut-parleur sont la même
+    attaque. Le plafond porte donc sur le profil, pas sur le médium.
+    """
     nonce = _issue(nonces)
     env = sign_envelope(key, make_payload(nonce=nonce, media_digest=MEDIA_DIGEST), nonce=nonce)
 
     res = verifier.verify(env, media_bytes=MEDIA)
 
+    assert res.profile == "capture"
     assert res.properties[Property.ORIGIN].grade is Grade.B
+    assert any("recapture" in n for n in res.properties[Property.ORIGIN].notes)
     assert res.level is Level.STANDARD
 
 
@@ -135,6 +141,132 @@ def test_reclamation_inconnue_signalee_sans_penalite(verifier, nonces, key):
 
     assert "UNKNOWN_CLAIMS" in res.flags
     assert res.level is Level.STANDARD
+
+
+# --- Profils — ADR-0005 -------------------------------------------------
+
+
+def test_profil_noyau_atteint_strong(verifier, nonces, key):
+    """Le noyau n'affirme rien du monde physique : aucun plafond ne s'applique.
+
+    Ce test est la contrepartie exacte du précédent. Tant que le plafond
+    de recapture valait pour toute enveloppe, `STRONG` était inatteignable
+    quel que soit le contenu — un journal signé était pénalisé par une
+    attaque qui ne le concerne pas.
+    """
+    nonce = _issue(nonces, profile=Profile.CORE)
+    payload = make_payload(nonce=nonce, profile=PROFILE_CORE, media_digest=MEDIA_DIGEST)
+    env = sign_envelope(key, payload, nonce=nonce, profile=PROFILE_CORE)
+
+    res = verifier.verify(env, media_bytes=MEDIA)
+
+    assert res.profile == "core"
+    assert res.properties[Property.ORIGIN].grade is Grade.A
+    assert Property.POSITION not in res.properties, "le noyau ne note pas la position"
+
+
+def test_profil_inconnu_refuse_de_juger(verifier, nonces, key):
+    """Un profil non reconnu est un refus, jamais un repli sur le noyau.
+
+    Le repli donnerait un verdict d'apparence complète, en ayant
+    silencieusement omis les propriétés du profil et son plafond.
+    """
+    nonce = _issue(nonces)
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
+    env = sign_envelope(key, payload, nonce=nonce, profile="profil-de-demain")
+
+    res = verifier.verify(env, media_bytes=MEDIA)
+
+    assert res.level is Level.REJECTED
+    assert "UNKNOWN_PROFILE" in res.flags
+
+
+def test_profil_absent_rejete(verifier, nonces, key):
+    """Le label 102 est obligatoire : aucun défaut plausible n'est appliqué."""
+    nonce = _issue(nonces)
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
+    protected = cbor2.dumps(
+        {1: -7, 4: kid_for(key), 100: "probative/0.1", 101: "test-deployment"},
+        canonical=True,
+    )
+    env = _reassemble(sign_envelope(key, payload, nonce=nonce), protected)
+
+    res = verifier.verify(env, media_bytes=MEDIA)
+
+    assert res.level is Level.REJECTED
+    assert "MALFORMED_ENVELOPE" in res.flags
+
+
+def test_profil_capture_sans_position_rejete(verifier, nonces, key):
+    """`position` est optionnelle au schéma, obligatoire dans le profil capture."""
+    nonce = _issue(nonces)
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
+    del payload[3]
+    env = sign_envelope(key, payload, nonce=nonce)
+
+    res = verifier.verify(env, media_bytes=MEDIA)
+
+    assert res.level is Level.REJECTED
+    assert "MALFORMED_ENVELOPE" in res.flags
+    assert "position" in res.level_reason
+
+
+# --- S4 : déclassement de profil ----------------------------------------
+
+
+def test_s4_declassement_de_profil_par_le_nonce(verifier, nonces, key):
+    """Déclarer le noyau pour une acquisition, afin d'échapper au plafond.
+
+    Le profil est signé, donc non modifiable en vol — mais un client
+    compromis reste libre de le *déclarer* faux dès l'origine. C'est le
+    nonce qui ferme la porte : le serveur a demandé une acquisition, il
+    doit en recevoir une.
+    """
+    nonce = _issue(nonces, profile=Profile.CAPTURE)
+    payload = make_payload(nonce=nonce, profile=PROFILE_CORE, media_digest=MEDIA_DIGEST)
+    env = sign_envelope(key, payload, nonce=nonce, profile=PROFILE_CORE)
+
+    res = verifier.verify(env, media_bytes=MEDIA)
+
+    assert res.level is Level.REJECTED
+    assert "PROFILE_MISMATCH" in res.flags
+
+
+def test_s4_profil_reecrit_apres_signature(verifier, nonces, key):
+    """Le profil vit dans l'en-tête protégé : le réécrire casse la signature.
+
+    Le nonce est ici émis pour le noyau, de sorte que le déclassement
+    passerait le contrôle précédent. C'est la signature, et elle seule,
+    qui l'arrête — ce qui est bien la raison de mettre le label en 102 et
+    non dans la charge utile.
+    """
+    nonce = _issue(nonces, profile=Profile.CORE)
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
+    env = sign_envelope(key, payload, nonce=nonce, profile="capture")
+    declasse = cbor2.dumps(
+        {
+            1: -7,
+            4: kid_for(key),
+            100: "probative/0.1",
+            101: "test-deployment",
+            102: "core",
+        },
+        canonical=True,
+    )
+
+    res = verifier.verify(_reassemble(env, declasse), media_bytes=MEDIA)
+
+    assert res.level is Level.REJECTED
+    assert "INVALID_SIGNATURE" in res.flags
+
+
+def _reassemble(envelope: bytes, protected: bytes) -> bytes:
+    """Remplace l'en-tête protégé sans retoucher au reste de l'enveloppe."""
+    _, unprotected, payload_bytes, signature = cbor2.loads(envelope).value
+    return cbor2.dumps(
+        cbor2.CBORTag(18, [protected, unprotected, payload_bytes, signature]),
+        canonical=True,
+    )
 
 
 # --- S1 : falsification de position -------------------------------------

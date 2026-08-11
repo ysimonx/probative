@@ -3,8 +3,9 @@
 ## Pourquoi ce projet existe
 
 Une photo géolocalisée ordinaire ne prouve rien : l'EXIF s'édite, le GPS se simule avec
-une application du magasin, une incrustation de coordonnées est décorative. Dès qu'une
-décision dépend de la photo, il faut une preuve opposable.
+une application grand public, et des coordonnées incrustées sur l'image ne sont que des
+pixels — n'importe qui peut les y écrire. Dès qu'une décision dépend de la photo, il faut
+une preuve opposable.
 
 Ce dépôt produit une bibliothèque mobile et un vérificateur serveur qui établissent
 qu'une image a été prise **par ce capteur, à cet endroit, à cet instant**, sur un
@@ -29,7 +30,12 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
    plateforme.
 5. **Le résultat de vérification est structuré par propriété**, jamais un score seul.
    `level_reason` est obligatoire : un rejet sans motif exploitable est ingérable en
-   support.
+   support. Depuis ADR-0005, **l'ensemble des propriétés notées dépend du profil
+   déclaré** — le résultat porte donc `profile`, et un profil inconnu fait refuser de
+   juger plutôt que se replier sur le noyau.
+6. **Le noyau ignore le type de contenu.** Un besoin propre à un médium se traite par un
+   champ optionnel, jamais par du code qui suppose une image. Un nouveau profil ne se
+   justifie que si une propriété apparaît, disparaît, ou change de règle de notation.
 
 ## Documents de référence — à lire avant toute modification de fond
 
@@ -37,7 +43,7 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 |---|---|
 | `docs/architecture.html` | Vue d'ensemble illustrée du mécanisme, séquences et FAQ. Point d'entrée pour comprendre ; ne fait pas autorité. Les deux diagrammes de séquence sont générés par `tools/gen_sequences.py` — ne pas les éditer à la main. |
 | `docs/threat-model.md` | Spécification de référence. Toute fonctionnalité doit répondre à une menace identifiée. |
-| `docs/envelope-spec.md` | Format `probative/0.1`, règles de liaison R1/R2/R3, ordre de vérification |
+| `docs/envelope-spec.md` | Format `probative/0.1`, noyau et profils (§2.5), règles de liaison R1/R2/R3, ordre de vérification |
 | `docs/decisions/` | ADR. Les compléter plutôt que revenir silencieusement sur un choix. |
 | `spec/envelope-v0.1.cddl` | Extrait de la spec, **ne pas éditer à la main** |
 | `docs/etat-de-l-art.md` | Solutions voisines (Approov, Guardsquare, Truepic, C2PA, ProofMode) et ce qui distingue réellement ce dépôt. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier les faits avant de s'en servir. |
@@ -73,7 +79,7 @@ C'est leur seule raison d'être — ne rien y loger qui appartienne au cœur.
 cd verifier-python
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest              # 51 tests doivent passer
+pytest              # 60 tests doivent passer
 ruff check .
 mypy src
 ```
@@ -82,7 +88,10 @@ mypy src
 
 ```bash
 cd mobile/android
-./gradlew :core:testDebugUnitTest          # unitaires, sans appareil
+# ANDROID_HOME n'est pas dans l'environnement de ce poste ; le SDK est en
+# ~/Library/Android/sdk. Préfixer, ou renseigner sdk.dir dans local.properties.
+ANDROID_HOME=$HOME/Library/Android/sdk \
+  ./gradlew :core:testDebugUnitTest        # unitaires, sans appareil
 ./gradlew :core:connectedDebugAndroidTest  # instrumentés, appareil branché
 
 # Vecteur d'appareil (chaîne d'attestation de clé). Sort par logcat en tronçons
@@ -136,8 +145,10 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 | Composant | État |
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
-| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 51 tests au vert |
+| Noyau et profils (ADR-0005) | **Fait de bout en bout** : spec §2.5, CDDL, vérificateur, vecteurs, et les deux cœurs natifs |
+| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 60 tests au vert |
 | `PlayIntegrityVerifier`, `AppAttestVerifier` | Interfaces posées, `NotImplementedError`. **Vecteurs réels disponibles** — phases B et D n'ont plus d'excuse pour être écrites à l'aveugle |
+| Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
 | Vecteurs d'appareil | Android (chaîne à 4 certificats, SM-X200) et iOS (App Attest, iPhone 16) versionnés dans `tests/device-vectors/` |
 | Cœur natif Android | A1–A3 et **A5 faites, validées sur SM-X200**. `:demo` restauré, porte la sonde A5. Prochaine : A4, capture CameraX |
 | Cœur natif iOS | C1–C3 faites ; **C3 validée sur appareil réel** (iPhone 16, iOS 26.6), assertion R1 exercée. Prochaine : C4, capture AVFoundation |
@@ -221,6 +232,11 @@ collectées ne valent rien d'opposable, et A4 en produirait simplement davantage
 
 ## Angle mort assumé
 
-La **photographie d'un écran** n'est pas détectée en v0.1 : position authentique,
-attestation valide, contenu faux. C'est pour cela que `origin` est plafonné au grade B.
-Ne pas lever ce plafond sans implémenter la détection.
+La **recapture analogique** n'est pas détectée en v0.1 : position authentique, attestation
+valide, contenu faux. Photographier un écran et enregistrer un haut-parleur qui rejoue un
+enregistrement sont la même attaque — d'où le nom, qui ne désigne plus un médium.
+
+C'est pour cela que `origin` est plafonné au grade B **dans le profil `capture`**. Le
+plafond ne s'applique pas au noyau, qui n'affirme rien sur le monde physique : depuis
+ADR-0005, une enveloppe `core` peut atteindre `STRONG`. Ne pas lever le plafond sur
+`capture` sans implémenter la détection.

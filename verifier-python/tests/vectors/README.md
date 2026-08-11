@@ -22,15 +22,25 @@ garde de régression côté Python.
 
 | Fichier | Contenu |
 |---|---|
-| `{p}.payload.cbor` | Charge utile `capture-claims`, CBOR canonique |
-| `{p}.protected.cbor` | En-tête protégé encodé (`bstr .cbor`) |
-| `{p}.sig_structure.cbor` | `Sig_structure` COSE — les octets réellement signés |
-| `{p}.challenge.bin` | Défi R1 : `SHA-256(payload_bytes ‖ nonce)`, 32 octets |
-| `{p}.envelope.prbv` | Enveloppe `COSE_Sign1` complète, tag 18 |
+| `{n}.payload.cbor` | Charge utile `capture-claims`, CBOR canonique |
+| `{n}.protected.cbor` | En-tête protégé encodé (`bstr .cbor`) |
+| `{n}.sig_structure.cbor` | `Sig_structure` COSE — les octets réellement signés |
+| `{n}.challenge.bin` | Défi R1 : `SHA-256(payload_bytes ‖ nonce)`, 32 octets |
+| `{n}.envelope.prbv` | Enveloppe `COSE_Sign1` complète, tag 18 |
 | `manifest.json` | Toutes les entrées, en hexadécimal |
 
-Deux jeux : `android` (chaînage `payload[7]`, posture 6/7/8) et `ios`
-(compteur d'assertion `freshness[3]`, posture 9).
+Trois jeux, dont le `manifest.json` donne la plateforme et le profil :
+
+| Jeu | Profil | Ce qu'il couvre en propre |
+|---|---|---|
+| `android` | `capture` | chaînage `payload[7]`, posture 6/7/8 |
+| `ios` | `capture` | compteur d'assertion `freshness[3]`, posture 9 |
+| `core` | `core` | ni `position`, ni `media[5]`, ni corroboration |
+
+Le jeu `core` n'est pas décoratif : c'est la seule forme dont la charge
+utile ne suppose ni capteur ni lieu. Un encodeur natif qui aurait câblé
+`position` en dur passerait les deux premiers jeux et échouerait sur
+celui-ci.
 
 ## Pièges d'encodage — ce que les vecteurs attrapent
 

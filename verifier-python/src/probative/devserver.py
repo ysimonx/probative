@@ -30,10 +30,16 @@ from typing import Any
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from .attestation import AttestationVerifier, DeviceIntegrity, NullAttestationVerifier
+from .model import Profile
 from .store import DeviceRecord, InMemoryDeviceStore, InMemoryNonceStore
 from .verifier import Verifier
 
 DEFAULT_TTL_MS = 120_000
+
+# Le spike natif produit des acquisitions : c'est le profil que le serveur
+# de développement demande sauf mention contraire. Un vrai serveur tire
+# cette valeur de la requête métier, jamais d'un défaut.
+DEFAULT_PROFILE = Profile.CAPTURE
 
 
 class BadRequest(Exception):
@@ -68,6 +74,15 @@ def _uint_field(body: Mapping[str, Any], field: str, default: int) -> int:
     if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
         raise BadRequest(f"champ {field} : entier strictement positif attendu")
     return v
+
+
+def _profile_field(body: Mapping[str, Any]) -> Profile:
+    v = body.get("profile", DEFAULT_PROFILE.value)
+    try:
+        return Profile(v)
+    except ValueError as exc:
+        connus = ", ".join(sorted(p.value for p in Profile))
+        raise BadRequest(f"champ profile : attendu parmi {connus}") from exc
 
 
 class DevService:
@@ -111,12 +126,16 @@ class DevService:
     def nonce(self, body: Mapping[str, Any]) -> dict[str, Any]:
         ttl_ms = _uint_field(body, "ttl_ms", DEFAULT_TTL_MS)
         offline = _flag_field(body, "offline", False)
+        profile = _profile_field(body)
         value = os.urandom(16)
-        self.nonces.issue(value, ttl_ms=ttl_ms, offline=offline)
+        self.nonces.issue(value, profile=profile, ttl_ms=ttl_ms, offline=offline)
+        # Le profil est renvoyé : l'appareil doit inscrire exactement
+        # celui-là dans son en-tête protégé, sinon l'enveloppe est rejetée.
         return {
             "nonce_b64": base64.b64encode(value).decode(),
             "ttl_ms": ttl_ms,
             "offline": offline,
+            "profile": profile.value,
         }
 
     def verify(self, body: Mapping[str, Any]) -> dict[str, Any]:

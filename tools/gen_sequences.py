@@ -225,7 +225,7 @@ CAPTURE = build(
     [
         phase("Ouverture · le serveur ouvre l'échange"),
         msg(0, 4, "Demande un nonce"),
-        msg(4, 0, "Nonce à usage unique", "durée de validité explicite — règle R3"),
+        msg(4, 0, "Nonce + profil attendu", "usage unique, validité explicite — règle R3"),
         phase("Collecte · tout est mesuré, rien n'est jugé"),
         msg(0, 1, "Déclenche la capture"),
         msg(1, 0, "Octets bruts du capteur"),
@@ -242,18 +242,18 @@ CAPTURE = build(
         msg(0, 3, "requestHash / clientDataHash = défi", accent=True),
         msg(3, 0, "Jeton d'intégrité ou assertion", "+ compteur d'assertion sur iOS", accent=True),
         phase("Signature"),
-        msg(0, 2, "Signe la structure Signature1"),
+        msg(0, 2, "Signe la structure Signature1", "en-tête protégé : kid, version, profil"),
         msg(2, 0, "Signature ES256, 64 octets", "la clé privée n'a pas quitté la puce"),
         phase("Remise"),
         msg(0, 4, "Enveloppe COSE_Sign1"),
-        msg(0, 4, "Image", "transfert séparé de l'enveloppe", dashed=True),
+        msg(0, 4, "Octets du contenu", "transfert séparé de l'enveloppe", dashed=True),
         selfmsg(4, "Vérifie en dix étapes"),
         msg(4, 0, "Verdict par propriété", "avec son motif, obligatoire"),
     ],
-    "Séquence de capture : le serveur émet un nonce, l'application empreinte les octets bruts "
-    "puis relève position, corroboration, horloges et posture, fige la charge utile, calcule le "
-    "défi R1, obtient un jeton d'attestation, signe dans la puce, et remet l'enveloppe puis "
-    "l'image au serveur.",
+    "Séquence de capture : le serveur émet un nonce et le profil attendu, l'application "
+    "empreinte les octets bruts puis relève position, corroboration, horloges et posture, fige "
+    "la charge utile, calcule le défi R1, obtient un jeton d'attestation, signe dans la puce, et "
+    "remet l'enveloppe puis les octets du contenu au serveur.",
 )
 
 FIGURES = {"sequence-enrolement": ENROLEMENT, "sequence-capture": CAPTURE}

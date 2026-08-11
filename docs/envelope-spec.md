@@ -1,9 +1,11 @@
-# Spécification d'enveloppe de capture attestée — v0.1
+# Spécification d'enveloppe attestée — v0.1
 
 **Statut : proposition, à geler après le spike d'attestation natif.**
 Dérive du modèle de menace v0.2.
 
 Préfixe de spécification : `probative/`. La valeur exacte du label 100 de l'en-tête protégé est `probative/0.1` — arrêtée le 2026-08-11, voir §8 pour la politique de version et §9 pour ce qui reste ouvert.
+
+Le format distingue un **noyau** indépendant du contenu et des **profils** qui s'y ajoutent — voir §2.5 et [ADR-0005](decisions/ADR-0005-noyau-et-profils.md). Le noyau ne connaît que des octets ; le profil `capture` y ajoute ce qu'exige une acquisition du monde physique.
 
 ---
 
@@ -23,11 +25,11 @@ L'appareil génère une paire de clés dans son composant matériel sécurisé, 
 
 À l'issue de l'enrôlement, le serveur détient une clé publique dont il sait qu'elle est non exportable et liée à une application authentique.
 
-### 1.2 Capture — à chaque prise de vue
+### 1.2 Émission — à chaque contenu à sceller
 
 L'appareil produit une enveloppe `COSE_Sign1` signée par cette clé, accompagnée d'une preuve de fraîcheur.
 
-**L'enrôlement prouve *à qui appartient la clé*. La capture prouve *que cette clé a signé ce contenu précis, maintenant*.**
+**L'enrôlement prouve *à qui appartient la clé*. L'émission prouve *que cette clé a signé ce contenu précis, maintenant*.**
 
 ---
 
@@ -54,8 +56,11 @@ header-protected = {
   4   => bstr,          ; kid : SHA-256 de la clé publique attestée
   100 => "probative/0.1",      ; version de spécification
   101 => tstr,          ; identifiant de déploiement (multi-tenant)
+  102 => "core" / "capture",   ; profil — voir §2.5
 }
 ```
+
+Le label 102 est **obligatoire** et vit dans l'en-tête *protégé*. Les deux points sont normatifs : un profil déduit de la présence des champs permettrait de retirer `position` d'une acquisition pour la faire juger avec le jeu de règles du noyau, et un profil absent supposerait un défaut plausible là où le format n'en admet aucun.
 
 ### 2.2 En-tête non protégé — non signé, mais auto-liant
 
@@ -79,7 +84,7 @@ L'absence de signature sur cet en-tête n'est pas une faiblesse : le jeton de fr
 capture-claims = {
   1   => bstr,              ; nonce serveur, brut
   2   => media,
-  3   => position,
+  ? 3 => position,          ; exigée par le profil capture
   4   => timing,
   5   => posture,
   ? 6 => [+ claim],         ; corroboration, extensible
@@ -87,20 +92,27 @@ capture-claims = {
 }
 ```
 
+`position` est optionnelle **au schéma** et obligatoire **dans le profil capture**. La distinction est délibérée : le schéma établit la forme, le profil établit ce qu'il faut y trouver. Un vérificateur qui accepterait une enveloppe `capture` sans position aurait rendu un verdict amputé sans le dire.
+
 Le champ 7 reconstruit sur Android l'ordonnancement inviolable qu'iOS obtient gratuitement via le compteur d'assertion. Chaque enveloppe référence la précédente ; le serveur détecte tout trou ou toute réinsertion.
 
 ```cddl
 media = {
-  1 => "sha-256",
-  2 => bstr,                ; empreinte des octets bruts du capteur
-  3 => tstr,                ; type MIME
-  4 => uint,                ; taille en octets
-  5 => [uint, uint],        ; largeur, hauteur
-  6 => uint,                ; latence capture → signature, en ms
+  1   => "sha-256",
+  2   => bstr,              ; empreinte des octets bruts du payload
+  3   => tstr,              ; type MIME
+  4   => uint,              ; taille en octets
+  ? 5 => [uint, uint],      ; largeur, hauteur — médium spatial
+  6   => uint,              ; latence payload → signature, en ms
+  ? 7 => uint,              ; durée en ms — médium temporel
 }
 ```
 
-> La latence du champ 6 est un signal de détection sous-estimé. Une capture légitime signe en quelques dizaines de millisecondes. Une injection par caméra virtuelle ou une manipulation intermédiaire allonge presque toujours ce délai.
+Les champs 1 à 4 et 6 appartiennent au noyau : ils décrivent des octets quelconques. Les champs 5 et 7 sont **purement descriptifs et dépendent du médium** — une image a des dimensions, un son une durée, une vidéo les deux. Leur absence n'est pas une lacune, c'est un contenu qui n'en a pas.
+
+Le profil `capture` exige **l'un ou l'autre**, jamais les dimensions seules : c'est ce qui fait tenir l'audio dans ce profil sans lui en ouvrir un nouveau.
+
+> La latence du champ 6 est un signal de détection sous-estimé. Une acquisition légitime signe en quelques dizaines de millisecondes. Une injection par caméra virtuelle ou une manipulation intermédiaire allonge presque toujours ce délai.
 
 ```cddl
 position = {
@@ -167,6 +179,27 @@ Types définis en v0.1 :
 
 Un vérificateur **doit ignorer silencieusement** tout type inconnu. C'est ce qui rend l'ajout des réclamations radio en v0.2 non cassant.
 
+### 2.5 Profils
+
+Le **noyau** est la couche partagée par tout payload : clé attestée, règles R1/R2/R3 de §3, empreinte du payload, `timing`, `posture`, preuve de fraîcheur. Il note les propriétés `integrity`, `origin` et `time`. Ce n'est pas un profil, c'est ce que tout profil contient.
+
+Un **profil** s'y ajoute et ne fait que trois choses : exiger des champs supplémentaires, étendre l'ensemble des propriétés notées, et éventuellement plafonner l'une d'elles.
+
+| Profil | Champs exigés en plus | Propriétés notées | Plafond |
+|---|---|---|---|
+| `core` | — | `integrity`, `origin`, `time` | aucun |
+| `capture` | `position`, et `media[5]` **ou** `media[7]` | + `position` | `origin` ≤ B |
+
+**Critère d'ouverture d'un profil.** Un profil se justifie quand une propriété apparaît, disparaît, ou change de règle de notation. **Jamais quand seul le payload change de forme.** Un nouveau type MIME n'ouvre pas un profil : sans ce critère, le vérificateur deviendrait un registre de types MIME.
+
+Passé au test, l'audio ne justifie pas de profil propre — mêmes propriétés, mêmes règles, même corroboration, même menace. Seul son bloc descriptif diffère.
+
+**`capture` désigne l'acquisition d'un signal du monde physique par un capteur de l'appareil** — image, son, vidéo. Ni « capture d'image », ni « données de capteurs » au sens large : les mesures de corroboration de §2.4 restent des `claim`, quel que soit le profil. Le critère est *le payload est-il susceptible d'être rejoué devant le capteur ?* C'est ce qui rend `position` pertinente et le plafond nécessaire, dans le même mouvement.
+
+**Le nonce est émis pour un profil.** Le profil signé dit ce que le client a produit ; le profil du nonce dit ce que le serveur a demandé. Une enveloppe dont le profil diffère de celui du nonce est rejetée. Sans ce contrôle, un client compromis déclarerait `core` pour une acquisition et échapperait au plafond — le profil est signé, donc non modifiable en vol, mais rien n'empêche de le déclarer faux dès l'origine. C'est l'application de §6 : le contexte applicatif est lié par le nonce, côté serveur.
+
+**Un vérificateur qui ne connaît pas un profil doit refuser de juger.** Se replier sur les règles du noyau rendrait un verdict d'apparence complète en ayant silencieusement omis les propriétés du profil et son plafond.
+
 ---
 
 ## 3. Règles de liaison — le cœur du format
@@ -205,6 +238,7 @@ Le vérificateur ne retourne pas un score global mais une structure par proprié
 ```json
 {
   "spec": "probative/0.1",
+  "profile": "capture",
   "level": "STANDARD",
   "properties": {
     "origin":    { "grade": "B", "evidence": ["play-integrity:PLAY_RECOGNIZED", "raw-hash-match"] },
@@ -213,9 +247,11 @@ Le vérificateur ne retourne pas un score global mais une structure par proprié
     "integrity": { "grade": "A", "evidence": ["cose-valid", "key-attested-strongbox"] }
   },
   "flags": ["BARO_ABSENT"],
-  "level_reason": "origin capped at B: screen-capture detection not implemented in v0.1"
+  "level_reason": "origin capped at B: analog-recapture detection not implemented in v0.1"
 }
 ```
+
+**`profile` est de première classe, et non un détail des `flags` : l'ensemble des propriétés présentes en dépend.** Un appelant qui lirait `level` sans regarder `profile` ne saurait pas ce qui a été jugé. Sur un profil `core`, la clé `position` est absente — et non présente avec un grade neutre, qui laisserait croire qu'une position a été évaluée.
 
 Le champ `level_reason` est obligatoire. Un vérificateur qui refuse sans dire pourquoi est inexploitable en support, et vous le paierez en tickets.
 
@@ -225,15 +261,15 @@ Le champ `level_reason` est obligatoire. Un vérificateur qui refuse sans dire p
 
 L'ordre importe : on écarte au plus vite et au moins cher.
 
-1. Version de spécification connue → sinon `REJECTED`
-2. Nonce connu, non consommé, non expiré → sinon `REJECTED`
+1. Version de spécification connue, profil connu, champs exigés par le profil présents → sinon `REJECTED`
+2. Nonce connu, non consommé, non expiré, **émis pour ce profil** → sinon `REJECTED`
 3. Signature `COSE_Sign1` valide sous la clé du `kid` → sinon `REJECTED`
 4. Recalcul de R1, comparaison au défi contenu dans le jeton → sinon `REJECTED`
 5. Validation du jeton d'intégrité auprès de Google ou Apple → sinon `UNTRUSTED`
 6. iOS : compteur d'assertion strictement croissant → sinon `REJECTED`
 7. Android : chaînage cohérent avec la dernière enveloppe connue → sinon signalement
-8. Empreinte de l'image recalculée sur les octets reçus → sinon `REJECTED`
-9. Cohérence de posture, position, corroboration → détermination des grades
+8. Empreinte du payload recalculée sur les octets reçus → sinon `REJECTED`
+9. Cohérence de posture, position, corroboration → grades des **propriétés du profil**
 10. Nonce marqué comme consommé
 
 Les étapes 1 à 4 sont locales et coûtent une milliseconde. L'étape 5 est un appel réseau : elle vient après, jamais avant.
@@ -242,10 +278,10 @@ Les étapes 1 à 4 sont locales et coûtent une milliseconde. L'étape 5 est un 
 
 ## 6. Ce qui n'est délibérément pas dans le format
 
-- **Aucun champ métier.** Pas de référence de dossier, pas de site, pas d'opérateur. Le contexte applicatif est lié par le nonce, côté serveur. C'est ce qui rend la bibliothèque réutilisable et évite qu'elle traîne du vocabulaire client.
+- **Aucun champ métier.** Pas de référence de dossier, pas de site, pas d'opérateur. Le contexte applicatif est lié par le nonce, côté serveur — le profil attendu de §2.5 en est la première application concrète. C'est ce qui rend la bibliothèque réutilisable et évite qu'elle traîne du vocabulaire client.
 - **Aucune donnée de tiers.** Les réclamations radio de la v0.2 n'entreront qu'avec un condensat salé par déploiement.
 - **Aucune identité d'utilisateur.** Le format prouve l'appareil, jamais la personne.
-- **L'image elle-même.** Seule son empreinte circule dans l'enveloppe. Le média est transféré séparément, ce qui permet de rejeter une capture avant d'avoir dépensé la bande passante.
+- **Le payload lui-même.** Seule son empreinte circule dans l'enveloppe. Les octets sont transférés séparément, ce qui permet de rejeter une enveloppe avant d'avoir dépensé la bande passante.
 
 ---
 
@@ -262,9 +298,11 @@ Extension de fichier : `.prbv`
 
 ## 8. Politique de version
 
-`probative/MAJEUR.MINEUR`. Une version mineure ajoute des réclamations ou des champs optionnels ; un vérificateur d'une version mineure inférieure doit rester capable de valider les quatre propriétés. Une version majeure change les règles de liaison de §3 — c'est le seul motif légitime.
+`probative/MAJEUR.MINEUR`. Une version mineure ajoute des réclamations ou des champs optionnels ; un vérificateur d'une version mineure inférieure doit rester capable de valider **les propriétés du profil déclaré**. Une version majeure change les règles de liaison de §3 — c'est le seul motif légitime.
 
 Un vérificateur accepte les versions mineures qu'il ne connaît pas et signale `UNKNOWN_CLAIMS` sans dégrader le niveau.
+
+**La tolérance aux versions ne s'étend pas aux profils.** Un vérificateur qui rencontre un profil inconnu refuse ; il ne juge pas avec les règles du noyau. Sans cette exception, il suffirait d'un vérificateur suffisamment ancien pour qu'un profil plafonné soit jugé sans son plafond — le contournement de §2.5, obtenu par simple ancienneté du serveur.
 
 ---
 
@@ -283,3 +321,4 @@ Un vérificateur accepte les versions mineures qu'il ne connaît pas et signale 
 | Préfixe de spécification | ~~`ac/` conservé, ou aligné sur le nom de package final~~ → **`probative/`**, le label 100 vaut `probative/0.1`. Auto-descriptif au prix de 7 octets : qui inspecte des octets inconnus peut retrouver la spécification. | 2026-08-11 |
 | Extension et type MIME | `.prbv`, `application/vnd.probative+cose` | 2026-08-11 |
 | Alignement C2PA | ~~Enveloppe native puis passerelle, ou manifeste C2PA dès le départ~~ → **passerelle, jamais autorité**, manifeste produit côté serveur après le verdict. Voir `docs/decisions/ADR-0004-c2pa-passerelle.md`. Conséquence normative : `media[2]` et `media[4]` désignent **définitivement** les octets bruts du capteur, jamais un fichier porteur d'un manifeste. | 2026-08-11 |
+| Couplage du format au contenu | ~~Format unique décrivant une acquisition, ou noyau indépendant du contenu~~ → **noyau + profils déclarés**, label 102 obligatoire dans l'en-tête protégé, profil exigé par le nonce, plafond de recapture rattaché au profil `capture`. Voir §2.5 et `docs/decisions/ADR-0005-noyau-et-profils.md`. | 2026-08-12 |

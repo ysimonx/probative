@@ -55,6 +55,17 @@ def test_champ_base64_invalide():
         DevService().verify({"envelope_b64": "%%%"})
 
 
+def test_nonce_profil_inconnu_refuse():
+    """Émettre un nonce pour un profil qu'on ne saura pas juger n'a pas de sens."""
+    with pytest.raises(BadRequest):
+        DevService().nonce({"profile": "profil-de-demain"})
+
+
+def test_nonce_profil_noyau_demandable():
+    issued = DevService().nonce({"profile": "core"})
+    assert issued["profile"] == "core"
+
+
 # --- Niveau HTTP : boucle complète ----------------------------------------
 
 
@@ -95,6 +106,9 @@ def test_boucle_complete_par_http(server_url):
     status, issued = _post(server_url, "/nonce", None)
     assert status == 200
     nonce = base64.b64decode(issued["nonce_b64"])
+    # Le profil demandé fait partie de la réponse : l'appareil doit
+    # l'inscrire tel quel dans son en-tête protégé.
+    assert issued["profile"] == "capture"
 
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     envelope = sign_envelope(key, payload, nonce=nonce)
@@ -105,6 +119,7 @@ def test_boucle_complete_par_http(server_url):
     )
     assert status == 200
     assert result["level"] in ("STANDARD", "STRONG"), result
+    assert result["profile"] == "capture"
     assert result["level_reason"]
 
     # Rejeu : le même nonce est refusé, avec le code attendu (R3).

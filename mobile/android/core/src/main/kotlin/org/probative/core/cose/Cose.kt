@@ -14,14 +14,23 @@ object Cose {
 
     private const val SPEC = "probative/0.1"
 
-    /** En-tête protégé encodé : alg ES256, kid, version de spec, déploiement. */
-    fun protectedHeader(kid: ByteArray, deployment: String): ByteArray =
+    /**
+     * En-tête protégé encodé : alg ES256, kid, version de spec, déploiement,
+     * profil.
+     *
+     * Le profil (label 102, spec §2.5, ADR-0005) est ici et non dans la
+     * charge utile : le retirer ou le changer invalide la signature. Sa
+     * valeur est celle rendue par la route `/nonce` du serveur — la
+     * déclarer de son propre chef fait rejeter l'enveloppe.
+     */
+    fun protectedHeader(kid: ByteArray, deployment: String, profile: String): ByteArray =
         Cbor.encode(
             mapOf(
                 1 to -7,
                 4 to kid,
                 100 to SPEC,
                 101 to deployment,
+                102 to profile,
             )
         )
 

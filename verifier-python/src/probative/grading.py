@@ -13,11 +13,13 @@ constantes plutôt que dispersés dans le code.
 from __future__ import annotations
 
 from .attestation import AttestationOutcome, DeviceIntegrity
+from .errors import MalformedEnvelope
 from .model import (
     CaptureClaims,
     Grade,
     Level,
     Platform,
+    Profile,
     Property,
     PropertyResult,
 )
@@ -31,10 +33,17 @@ MAX_SIGN_LATENCY_MS = 3_000    # au-delà, une manipulation intermédiaire est p
 MAX_CLOCK_SKEW_MS = 300_000    # écart toléré entre horloge murale et horloge serveur
 BARO_ALT_TOLERANCE_M = 60.0    # écart toléré entre altitude GNSS et barométrique
 
-# Plafond structurel : la photographie d'écran n'est pas détectée en v0.1.
-ORIGIN_CAP_V01 = Grade.B
-ORIGIN_CAP_REASON = (
-    "origin plafonné à B : détection de photographie d'écran non implémentée en v0.1"
+# Plafond structurel du profil capture : la recapture analogique n'est pas
+# détectée en v0.1. Photographier un écran et enregistrer un haut-parleur
+# qui rejoue un enregistrement sont la même attaque — position
+# authentique, attestation valide, contenu faux. Le plafond appartient
+# donc au profil tout entier, et non à un médium particulier.
+#
+# Le noyau n'est pas concerné : il n'affirme rien sur le monde physique,
+# donc rien qu'un capteur puisse être trompé d'acquérir.
+RECAPTURE_CAP = Grade.B
+RECAPTURE_CAP_REASON = (
+    "origin plafonné à B : détection de recapture analogique non implémentée en v0.1"
 )
 
 
@@ -48,8 +57,17 @@ def grade_integrity(att: AttestationOutcome, hardware_backed: bool) -> PropertyR
     return r
 
 
-def grade_origin(claims: CaptureClaims, att: AttestationOutcome) -> PropertyResult:
-    r = PropertyResult(Grade.B, evidence=["raw-hash-match"])
+def grade_origin(
+    claims: CaptureClaims, att: AttestationOutcome, profile: Profile
+) -> PropertyResult:
+    """Provenance des octets — et, pour le profil capture, du signal.
+
+    La part noyau — application reconnue, intégrité, latence — vaut pour
+    tout payload et peut atteindre A. Le plafond de recapture ne
+    s'applique qu'au profil `capture`, qui seul prétend dire quelque
+    chose du monde physique.
+    """
+    r = PropertyResult(Grade.A, evidence=["raw-hash-match"])
 
     if att.app_recognized:
         r.evidence.append("app-recognized")
@@ -66,15 +84,22 @@ def grade_origin(claims: CaptureClaims, att: AttestationOutcome) -> PropertyResu
     if claims.media.sign_latency_ms > MAX_SIGN_LATENCY_MS:
         r.grade = Grade.C
         r.notes.append(
-            f"latence capture→signature anormale : {claims.media.sign_latency_ms} ms"
+            f"latence payload→signature anormale : {claims.media.sign_latency_ms} ms"
         )
 
-    r.notes.append(ORIGIN_CAP_REASON)
+    if profile is Profile.CAPTURE:
+        r.grade = min(r.grade, RECAPTURE_CAP, key=_grade_rank)
+        r.notes.append(RECAPTURE_CAP_REASON)
     return r
 
 
 def grade_position(claims: CaptureClaims, att: AttestationOutcome) -> PropertyResult:
     p = claims.position
+    if p is None:
+        # Garanti par `profiles.require_fields` : seuls les profils qui
+        # exigent une position font noter cette propriété. Le garde reste,
+        # parce qu'un profil futur mal câblé doit échouer bruyamment.
+        raise MalformedEnvelope("position absente alors que le profil l'exige")
     r = PropertyResult(Grade.A, evidence=[p.provider])
 
     if claims.posture.mock_location is True:

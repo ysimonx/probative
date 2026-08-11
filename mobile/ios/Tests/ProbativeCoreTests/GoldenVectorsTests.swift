@@ -23,11 +23,16 @@ final class GoldenVectorsTests: XCTestCase {
         try Data(contentsOf: Self.vectorsDir.appendingPathComponent(name))
     }
 
-    private func inputs(_ platform: String) throws -> [String: Any] {
+    /// Les trois jeux de vecteurs. `core` n'est pas décoratif : c'est la
+    /// seule forme sans position ni dimensions, et donc la seule qui
+    /// vérifie que l'encodeur ne suppose pas une acquisition (ADR-0005).
+    private static let vectorSets = ["android", "ios", "core"]
+
+    private func inputs(_ name: String) throws -> [String: Any] {
         let manifest = try JSONSerialization.jsonObject(
             with: vector("manifest.json")
         ) as? [String: Any]
-        return try XCTUnwrap(manifest?[platform] as? [String: Any])
+        return try XCTUnwrap(manifest?[name] as? [String: Any])
     }
 
     private func hexData(_ s: String) -> Data {
@@ -37,7 +42,10 @@ final class GoldenVectorsTests: XCTestCase {
     }
 
     /// Miroir de `factory.make_payload`, valeurs par défaut comprises.
-    private func payload(for platform: String, inputs: [String: Any]) throws -> CborValue {
+    private func payload(inputs: [String: Any]) throws -> CborValue {
+        let platform = try XCTUnwrap(inputs["platform"] as? String)
+        let capture = try XCTUnwrap(inputs["profile"] as? String) == "capture"
+
         var position: [Int64: CborValue] = [
             1: 48.2973, 2: 4.0744, 3: 8.0, 4: 112.0, 5: 4.0, 6: "gnss", 7: 1200,
         ]
@@ -68,21 +76,28 @@ final class GoldenVectorsTests: XCTestCase {
         ]
 
         let wallMs = try XCTUnwrap(inputs["wall_ms"] as? NSNumber).int64Value
+        var media: [Int64: CborValue] = [
+            1: "sha-256",
+            2: .bytes(hexData(try XCTUnwrap(inputs["media_digest_hex"] as? String))),
+            3: .text(capture ? "image/jpeg" : "application/pdf"),
+            4: 1_842_301,
+            6: 85,
+        ]
         var payload: [Int64: CborValue] = [
             1: .bytes(hexData(try XCTUnwrap(inputs["nonce_hex"] as? String))),
-            2: [
-                1: "sha-256",
-                2: .bytes(hexData(try XCTUnwrap(inputs["media_digest_hex"] as? String))),
-                3: "image/jpeg",
-                4: 1_842_301,
-                5: [4032, 3024],
-                6: 85,
-            ],
-            3: .map(position),
             4: .map([1: .int(wallMs), 2: 4_312_004, 3: 120, 4: true]),
             5: .map(posture),
-            6: claims,
         ]
+
+        // Le noyau ne décrit que des octets : ni dimensions, ni position,
+        // ni corroboration — rien qui suppose un capteur ou un lieu.
+        if capture {
+            media[5] = [4032, 3024]
+            payload[3] = .map(position)
+            payload[6] = claims
+        }
+        payload[2] = .map(media)
+
         if let prev = inputs["prev_digest_hex"] as? String {
             payload[7] = .bytes(hexData(prev))
         }
@@ -90,46 +105,51 @@ final class GoldenVectorsTests: XCTestCase {
     }
 
     func testChargeUtileOctetAOctet() throws {
-        for platform in ["android", "ios"] {
-            let inputs = try inputs(platform)
+        for name in Self.vectorSets {
+            let inputs = try inputs(name)
             XCTAssertEqual(
-                try vector("\(platform).payload.cbor"),
-                Cbor.encode(try payload(for: platform, inputs: inputs)),
-                platform
+                try vector("\(name).payload.cbor"),
+                Cbor.encode(try payload(inputs: inputs)),
+                name
             )
         }
     }
 
     func testEnTeteProtegeOctetAOctet() throws {
-        for platform in ["android", "ios"] {
-            let kid = hexData(try XCTUnwrap(try inputs(platform)["kid_hex"] as? String))
+        for name in Self.vectorSets {
+            let inputs = try inputs(name)
+            let kid = hexData(try XCTUnwrap(inputs["kid_hex"] as? String))
             XCTAssertEqual(
-                try vector("\(platform).protected.cbor"),
-                Cose.protectedHeader(kid: kid, deployment: "test-deployment"),
-                platform
+                try vector("\(name).protected.cbor"),
+                Cose.protectedHeader(
+                    kid: kid,
+                    deployment: "test-deployment",
+                    profile: try XCTUnwrap(inputs["profile"] as? String)
+                ),
+                name
             )
         }
     }
 
     func testSigStructureOctetAOctet() throws {
-        for platform in ["android", "ios"] {
+        for name in Self.vectorSets {
             XCTAssertEqual(
-                try vector("\(platform).sig_structure.cbor"),
+                try vector("\(name).sig_structure.cbor"),
                 Cose.sigStructure(
-                    protected: try vector("\(platform).protected.cbor"),
-                    payload: try vector("\(platform).payload.cbor")
+                    protected: try vector("\(name).protected.cbor"),
+                    payload: try vector("\(name).payload.cbor")
                 ),
-                platform
+                name
             )
         }
     }
 
     func testDefiR1SurLesOctetsEncodes() throws {
-        for platform in ["android", "ios"] {
-            let nonce = hexData(try XCTUnwrap(try inputs(platform)["nonce_hex"] as? String))
-            let payloadBytes = try vector("\(platform).payload.cbor")
+        for name in Self.vectorSets {
+            let nonce = hexData(try XCTUnwrap(try inputs(name)["nonce_hex"] as? String))
+            let payloadBytes = try vector("\(name).payload.cbor")
             let challenge = Data(SHA256.hash(data: payloadBytes + nonce))
-            XCTAssertEqual(try vector("\(platform).challenge.bin"), challenge, platform)
+            XCTAssertEqual(try vector("\(name).challenge.bin"), challenge, name)
         }
     }
 
@@ -138,12 +158,12 @@ final class GoldenVectorsTests: XCTestCase {
         // avec une clé matérielle : on la prélève de l'enveloppe (les 64
         // derniers octets) et on vérifie que tout le reste s'assemble à
         // l'identique autour d'elle.
-        for platform in ["android", "ios"] {
-            let inputs = try inputs(platform)
-            let envelope = try vector("\(platform).envelope.prbv")
+        for name in Self.vectorSets {
+            let inputs = try inputs(name)
+            let envelope = try vector("\(name).envelope.prbv")
             let signature = Data(envelope.suffix(64))
 
-            let token = Data("NULLTOKEN:".utf8) + (try vector("\(platform).challenge.bin"))
+            let token = Data("NULLTOKEN:".utf8) + (try vector("\(name).challenge.bin"))
             var freshness: [Int64: CborValue] = [
                 1: .text(try XCTUnwrap(inputs["freshness_kind"] as? String)),
                 2: .bytes(token),
@@ -155,12 +175,12 @@ final class GoldenVectorsTests: XCTestCase {
             XCTAssertEqual(
                 envelope,
                 Cose.envelope(
-                    protected: try vector("\(platform).protected.cbor"),
+                    protected: try vector("\(name).protected.cbor"),
                     freshness: freshness,
-                    payload: try vector("\(platform).payload.cbor"),
+                    payload: try vector("\(name).payload.cbor"),
                     signature: signature
                 ),
-                platform
+                name
             )
         }
     }

@@ -1,4 +1,4 @@
-; Enveloppe de capture attestee -- specification probative/0.1
+; Enveloppe attestee -- specification probative/0.1
 ; Extrait automatiquement de docs/envelope-spec.md -- ne pas editer a la main.
 ; Source de verite : docs/envelope-spec.md
 
@@ -16,7 +16,12 @@ header-protected = {
   4   => bstr,          ; kid : SHA-256 de la clé publique attestée
   100 => "probative/0.1",      ; version de spécification
   101 => tstr,          ; identifiant de déploiement (multi-tenant)
+  102 => profile,       ; profil déclaré, obligatoire -- voir §2.5
 }
+
+; Le profil vit dans l'en-tete PROTEGE : le retirer ou le changer
+; invalide la signature. Il n'est jamais deduit des champs presents.
+profile = "core" / "capture"
 
 header-unprotected = {
   200 => freshness
@@ -31,20 +36,24 @@ freshness = {
 capture-claims = {
   1   => bstr,              ; nonce serveur, brut
   2   => media,
-  3   => position,
+  ? 3 => position,          ; exigée par le profil capture
   4   => timing,
   5   => posture,
   ? 6 => [+ claim],         ; corroboration, extensible
   ? 7 => bstr,              ; chaînage : SHA-256 de l'enveloppe précédente
 }
 
+; Champs 1 a 4 et 6 : noyau, ils decrivent des octets quelconques.
+; Champs 5 et 7 : descriptifs, dependants du medium. Le profil capture
+; exige l'un OU l'autre -- une image a des dimensions, un son une duree.
 media = {
-  1 => "sha-256",
-  2 => bstr,                ; empreinte des octets bruts du capteur
-  3 => tstr,                ; type MIME
-  4 => uint,                ; taille en octets
-  5 => [uint, uint],        ; largeur, hauteur
-  6 => uint,                ; latence capture → signature, en ms
+  1   => "sha-256",
+  2   => bstr,              ; empreinte des octets bruts du payload
+  3   => tstr,              ; type MIME
+  4   => uint,              ; taille en octets
+  ? 5 => [uint, uint],      ; largeur, hauteur -- medium spatial
+  6   => uint,              ; latence payload → signature, en ms
+  ? 7 => uint,              ; duree en ms -- medium temporel
 }
 
 position = {

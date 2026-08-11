@@ -6,9 +6,25 @@
     "media_digest_hex": "edae868576217c4de87330e99753153926722f09129ee55df56626fbf5d2007a",
     "media_hex": "70726f6261746976652f302e312076656374657572206d65646961",
     "nonce_hex": "560cc86e435753489611f11383b92108",
+    "platform": "android",
     "prev_digest_hex": "1b361a2a879780fb34bdbb6db96713f8b89a57e267bb1158de833b05f4e94857",
     "private_key_d_hex": "7b5422c6a4a04d1d258153785f1468f2613ff14bfe83050c25b85f42dd2735fe",
+    "profile": "capture",
     "public_key_x962_hex": "046f2fbe0c52e30dfd1ebfe7b3a8d5d3c8507871f55f1a740aef090f070a4471d95f01a9782e3e4bcd292289b87de8bd2721cbfced813c278834f7c6e765dbe2e4",
+    "wall_ms": 1754400000000
+  },
+  "core": {
+    "assertion_counter": null,
+    "freshness_kind": "play-integrity",
+    "kid_hex": "9dcbcf9c2f44b9a80736af2802d93331f57f6edbaffe0b2c850759771eedc85a",
+    "media_digest_hex": "edae868576217c4de87330e99753153926722f09129ee55df56626fbf5d2007a",
+    "media_hex": "70726f6261746976652f302e312076656374657572206d65646961",
+    "nonce_hex": "1caad00154360c781b535006ce4e1ad5",
+    "platform": "android",
+    "prev_digest_hex": "1b361a2a879780fb34bdbb6db96713f8b89a57e267bb1158de833b05f4e94857",
+    "private_key_d_hex": "e6f96817d3d20fd275031cc84325e1c5af258cf59a8d78ec19c10ab446be1e66",
+    "profile": "core",
+    "public_key_x962_hex": "04ad40242d07708c8b4cfcfc053ade2d7dbbe60e4995490d2f7751d36f8c6e715b19acbc7240c02b4389731994b667c35cf94e0dc4f1b6f21d40987c4c614cbe4f",
     "wall_ms": 1754400000000
   },
   "ios": {
@@ -18,8 +34,10 @@
     "media_digest_hex": "edae868576217c4de87330e99753153926722f09129ee55df56626fbf5d2007a",
     "media_hex": "70726f6261746976652f302e312076656374657572206d65646961",
     "nonce_hex": "ecbc399de656428d59df1bc0c08d61af",
+    "platform": "ios",
     "prev_digest_hex": null,
     "private_key_d_hex": "99c7611a32efbabb692dfb1d522090c83f38a5838b24a87aa99845422ce3d643",
+    "profile": "capture",
     "public_key_x962_hex": "04cffed34f405b6ead8f87f4c7c0f66f1555e009fc3c1257794c98fb05e852debeebbd32bf52f293e34062a08c9819f8ad114c953b577c68ecf277dd7ca8790fb7",
     "wall_ms": 1754400000000
   }

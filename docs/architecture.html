@@ -254,11 +254,17 @@
 
   <header class="masthead">
     <div class="eyebrow">probative · spécification probative/0.1</div>
-    <h1>Prouver qu'une photo a bien été prise ici, maintenant</h1>
+    <h1>Prouver qu'un contenu vient bien de cet appareil, ici, maintenant</h1>
     <p class="lead">
       Une photo géolocalisée ordinaire ne prouve rien : l'EXIF s'édite, le GPS se simule
-      avec une application du magasin, une incrustation de coordonnées est décorative.
+      avec une application grand public, et des coordonnées incrustées sur l'image ne sont
+      que des pixels — n'importe qui peut les y écrire.
       Ce dépôt construit la preuve qui manque — et cette page explique comment.
+    </p>
+    <p class="lead">
+      Le mécanisme, lui, ne sait pas ce qu'il scelle : il travaille sur des octets. La photo
+      géolocalisée en est le cas d'usage phare, pas le périmètre — voir
+      <a href="#profils">le noyau et ses profils</a>.
     </p>
   </header>
 
@@ -334,7 +340,7 @@
   <section>
     <div class="sec-head">
       <div class="eyebrow">Les deux échanges</div>
-      <h2>Enrôlement et capture : ne pas les confondre</h2>
+      <h2>Enrôlement et émission : ne pas les confondre</h2>
     </div>
     <div class="prose">
       <p>
@@ -347,18 +353,18 @@
         y a bien été fabriquée et qu'elle ne peut pas en sortir. Le serveur range la clé publique.
       </p>
       <p>
-        À la <strong>capture</strong>, à chaque photo, le téléphone signe ses mesures avec cette clé.
-        Le serveur retrouve la clé publique correspondante et vérifie.
+        À l'<strong>émission</strong>, à chaque contenu à sceller, le téléphone signe ses mesures
+        avec cette clé. Le serveur retrouve la clé publique correspondante et vérifie.
       </p>
       <p>
-        Dit autrement : <em>l'enrôlement dit à qui appartient la clé, la capture dit que cette clé
+        Dit autrement : <em>l'enrôlement dit à qui appartient la clé, l'émission dit que cette clé
         a signé ce contenu précis, maintenant.</em>
       </p>
     </div>
 
     <figure>
       <div class="fig-scroll">
-        <svg viewBox="0 0 880 300" role="img" aria-label="L'enrôlement dépose une clé publique chez le serveur ; chaque capture est ensuite vérifiée sous cette même clé.">
+        <svg viewBox="0 0 880 300" role="img" aria-label="L'enrôlement dépose une clé publique chez le serveur ; chaque enveloppe émise ensuite est vérifiée sous cette même clé.">
           <text class="d-title" x="20" y="30">Enrôlement · une fois par installation</text>
 
           <rect class="d-box" x="20" y="44" width="245" height="74" rx="6" />
@@ -384,7 +390,7 @@
           <polygon class="d-acc-fill" points="712,190 707.5,182 716.5,182" />
           <text class="d-acc-t" x="726" y="158">la même clé, ensuite</text>
 
-          <text class="d-title" x="20" y="176">Capture · à chaque photo</text>
+          <text class="d-title" x="20" y="176">Émission · à chaque contenu scellé</text>
 
           <rect class="d-box" x="20" y="190" width="245" height="74" rx="6" />
           <text class="d-t" x="38" y="218">Mesure, puis signe</text>
@@ -413,6 +419,82 @@
     </figure>
   </section>
 
+  <!-- 2 bis --------------------------------------------------------- -->
+  <section id="profils">
+    <div class="sec-head">
+      <div class="eyebrow">La portée</div>
+      <h2>Un noyau qui ignore le contenu, et des profils</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Le mécanisme ne sait pas qu'il s'agit d'une photo. La règle R1 vaut
+        <span class="m">SHA-256(charge utile ‖ nonce)</span> : des octets quelconques. La clé
+        matérielle, l'attestation, la vérification par recalcul ne regardent jamais le contenu.
+      </p>
+      <p>
+        D'où une séparation en deux couches. Le <strong>noyau</strong> est ce que toute enveloppe
+        contient : clé attestée, règles de liaison, empreinte du contenu, temps, posture,
+        fraîcheur. Il prouve une <em>provenance</em> — ces octets ont été produits par cette
+        application, sur cet appareil non compromis, à cet instant.
+      </p>
+      <p>
+        Un <strong>profil</strong> s'y ajoute et ne fait que trois choses : exiger des champs
+        supplémentaires, étendre la liste des propriétés notées, et éventuellement en plafonner
+        une. Le profil <span class="m">capture</span> couvre l'acquisition d'un signal du monde
+        physique par un capteur — image, son, vidéo.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-scroll">
+        <svg viewBox="0 0 880 330" role="img" aria-label="Le noyau porte la clé attestée, les règles de liaison, l'empreinte du contenu, le temps et la posture ; le profil capture y ajoute la position, la corroboration et le plafond de recapture analogique.">
+          <text class="d-title" x="20" y="30">Noyau · commun à toute enveloppe</text>
+          <rect class="d-box" x="20" y="44" width="400" height="196" rx="6" />
+          <text class="d-t" x="40" y="78">clé matérielle attestée, règles R1 · R2 · R3</text>
+          <text class="d-t" x="40" y="106">empreinte des octets, type, taille</text>
+          <text class="d-t" x="40" y="134">horloges et posture de l'appareil</text>
+          <text class="d-t" x="40" y="162">preuve de fraîcheur</text>
+          <line class="d-line" x1="40" y1="182" x2="400" y2="182" />
+          <text class="d-t-mono" x="40" y="206">origine · instant · intégrité</text>
+          <text class="d-sub" x="40" y="228">aucun plafond — le grade A est atteignable</text>
+
+          <text class="d-title" x="460" y="30">Profil capture · acquisition physique</text>
+          <rect class="d-box-accent" x="460" y="44" width="400" height="196" rx="6" />
+          <text class="d-t" x="480" y="78">position, précision, âge du point</text>
+          <text class="d-t" x="480" y="106">dimensions ou durée du signal</text>
+          <text class="d-t" x="480" y="134">corroboration : baromètre, inertiels</text>
+          <text class="d-t" x="480" y="162">image · son · vidéo</text>
+          <line class="d-line" x1="480" y1="182" x2="840" y2="182" />
+          <text class="d-t-mono" x="480" y="206">+ position</text>
+          <text class="d-alarm-t" x="480" y="228">origine plafonnée à B — recapture analogique</text>
+
+          <line class="d-acc-line" x1="424" y1="142" x2="452" y2="142" />
+          <polygon class="d-acc-fill" points="460,142 452,137.5 452,146.5" />
+
+          <line class="d-grid" x1="20" y1="268" x2="860" y2="268" />
+          <text class="d-sub" x="20" y="294">Le profil est inscrit dans l'en-tête signé, et le serveur exige celui pour lequel</text>
+          <text class="d-sub" x="20" y="314">il a émis le nonce. Un profil inconnu fait refuser de juger, jamais replier sur le noyau.</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>Un profil se justifie quand une propriété apparaît, disparaît, ou change de règle de
+        notation — jamais quand seul le contenu change de forme.</b> Passé à ce test, l'audio ne
+        mérite pas de profil propre : mêmes propriétés, mêmes règles, même menace. Seul son bloc
+        descriptif diffère — une durée au lieu de dimensions. Sans ce critère, le vérificateur
+        deviendrait un registre de types de fichiers.
+      </figcaption>
+    </figure>
+
+    <div class="prose">
+      <p>
+        La conséquence tient en une phrase : <strong>le plafond ne pénalise plus que ce qu'il
+        concerne</strong>. Un journal signé, un relevé, un consentement horodaté ne subissent pas
+        la recapture analogique — ils peuvent donc atteindre le niveau le plus élevé, ce qu'aucune
+        enveloppe ne pouvait faire tant que le format entier supposait une photo.
+      </p>
+    </div>
+  </section>
+
   <!-- 3 ------------------------------------------------------------ -->
   <section>
     <div class="sec-head">
@@ -439,7 +521,7 @@
           <!-- en-tete protege -->
           <rect class="d-box" x="60" y="60" width="420" height="64" rx="5" />
           <text class="d-t-mono" x="78" y="86">En-tête protégé</text>
-          <text class="d-sub" x="78" y="106">ES256 · kid · « probative/0.1 » · déploiement</text>
+          <text class="d-sub" x="78" y="106">ES256 · kid · version · déploiement · profil</text>
           <text class="d-cap" x="462" y="86" text-anchor="end">signé</text>
 
           <!-- en-tete non protege -->
@@ -451,9 +533,9 @@
           <!-- charge utile -->
           <rect class="d-box" x="60" y="212" width="420" height="124" rx="5" />
           <text class="d-t-mono" x="78" y="238">Charge utile</text>
-          <text class="d-sub" x="78" y="260">nonce · empreinte de l'image · dimensions</text>
-          <text class="d-sub" x="78" y="280">position, précision, âge du point GPS</text>
-          <text class="d-sub" x="78" y="300">horloges · posture de l'appareil</text>
+          <text class="d-sub" x="78" y="260">nonce · empreinte du contenu · type · taille</text>
+          <text class="d-sub" x="78" y="280">horloges · posture de l'appareil</text>
+          <text class="d-sub" x="78" y="300">profil capture : dimensions ou durée, position</text>
           <text class="d-sub" x="78" y="320">corroboration : baromètre, mouvement, pas</text>
           <text class="d-cap" x="462" y="238" text-anchor="end">signé</text>
 
@@ -477,12 +559,12 @@
           <text class="d-sub" x="545" y="368">charge utile — et aucune autre.</text>
 
           <line class="d-grid" x1="60" y1="418" x2="865" y2="418" />
-          <text class="d-sub" x="60" y="442">Pas d'image, pas de vocabulaire métier, pas d'identité d'utilisateur, pas de score.</text>
+          <text class="d-sub" x="60" y="442">Pas de contenu, pas de vocabulaire métier, pas d'identité d'utilisateur, pas de score.</text>
         </svg>
       </div>
       <figcaption>
-        <b>L'image n'est pas dans l'enveloppe</b> — seule son empreinte SHA-256 y figure, calculée
-        en natif sur les octets bruts du capteur avant tout passage par du code applicatif. Sont
+        <b>Le contenu n'est pas dans l'enveloppe</b> — seule son empreinte SHA-256 y figure,
+        calculée en natif sur les octets bruts avant tout passage par du code applicatif. Sont
         également absents par décision de conception : toute référence métier (le contexte est lié
         au nonce, côté serveur), toute identité d'utilisateur, et tout indice de confiance calculé
         par le client.
@@ -700,18 +782,18 @@
       </ul>
     </div>
 
-    <h3>Capture — à chaque photo</h3>
+    <h3>Capture — à chaque acquisition</h3>
 
     <figure>
       <div class="fig-scroll">
         <!-- Figure générée par tools/gen_sequences.py — ne pas éditer à la main -->
         <!-- gen:sequence-capture -->
-        <svg viewBox="0 0 1080 1214" role="img" aria-label="Séquence de capture : le serveur émet un nonce, l'application empreinte les octets bruts puis relève position, corroboration, horloges et posture, fige la charge utile, calcule le défi R1, obtient un jeton d'attestation, signe dans la puce, et remet l'enveloppe puis l'image au serveur.">
-          <line class="d-life" x1="145" y1="70" x2="145" y2="1190" />
-          <line class="d-life" x1="405" y1="70" x2="405" y2="1190" />
-          <line class="d-life" x1="620" y1="70" x2="620" y2="1190" />
-          <line class="d-life" x1="810" y1="70" x2="810" y2="1190" />
-          <line class="d-life" x1="995" y1="70" x2="995" y2="1190" />
+        <svg viewBox="0 0 1080 1228" role="img" aria-label="Séquence de capture : le serveur émet un nonce et le profil attendu, l'application empreinte les octets bruts puis relève position, corroboration, horloges et posture, fige la charge utile, calcule le défi R1, obtient un jeton d'attestation, signe dans la puce, et remet l'enveloppe puis les octets du contenu au serveur.">
+          <line class="d-life" x1="145" y1="70" x2="145" y2="1204" />
+          <line class="d-life" x1="405" y1="70" x2="405" y2="1204" />
+          <line class="d-life" x1="620" y1="70" x2="620" y2="1204" />
+          <line class="d-life" x1="810" y1="70" x2="810" y2="1204" />
+          <line class="d-life" x1="995" y1="70" x2="995" y2="1204" />
           <rect class="d-head" x="55" y="24" width="180" height="46" rx="5" />
           <text class="d-head-t" x="145" y="46" text-anchor="middle">Application</text>
           <text class="d-head-s" x="145" y="61" text-anchor="middle">code considéré hostile</text>
@@ -736,8 +818,8 @@
           <text class="d-num" x="38" y="173" text-anchor="end">02</text>
           <line class="d-line" x1="995" y1="198" x2="154" y2="198" />
           <polygon class="d-fill-line" points="145,198 154,193.5 154,202.5" />
-          <text class="d-t" x="155" y="173">Nonce à usage unique</text>
-          <text class="d-sub" x="155" y="188">durée de validité explicite — règle R3</text>
+          <text class="d-t" x="155" y="173">Nonce + profil attendu</text>
+          <text class="d-sub" x="155" y="188">usage unique, validité explicite — règle R3</text>
           <text class="d-phase" x="52" y="226">Collecte · tout est mesuré, rien n'est jugé</text>
           <line class="d-grid" x1="52" y1="234" x2="1070" y2="234" />
           <text class="d-num" x="38" y="266" text-anchor="end">03</text>
@@ -798,35 +880,36 @@
           <text class="d-sub" x="155" y="808">+ compteur d'assertion sur iOS</text>
           <text class="d-phase" x="52" y="846">Signature</text>
           <line class="d-grid" x1="52" y1="854" x2="1070" y2="854" />
-          <text class="d-num" x="38" y="886" text-anchor="end">15</text>
-          <line class="d-line" x1="145" y1="896" x2="611" y2="896" />
-          <polygon class="d-fill-line" points="620,896 611,891.5 611,900.5" />
-          <text class="d-t" x="155" y="886">Signe la structure Signature1</text>
-          <text class="d-num" x="38" y="923" text-anchor="end">16</text>
-          <line class="d-line" x1="620" y1="948" x2="154" y2="948" />
-          <polygon class="d-fill-line" points="145,948 154,943.5 154,952.5" />
-          <text class="d-t" x="155" y="923">Signature ES256, 64 octets</text>
-          <text class="d-sub" x="155" y="938">la clé privée n'a pas quitté la puce</text>
-          <text class="d-phase" x="52" y="976">Remise</text>
-          <line class="d-grid" x1="52" y1="984" x2="1070" y2="984" />
-          <text class="d-num" x="38" y="1016" text-anchor="end">17</text>
-          <line class="d-line" x1="145" y1="1026" x2="986" y2="1026" />
-          <polygon class="d-fill-line" points="995,1026 986,1021.5 986,1030.5" />
-          <text class="d-t" x="155" y="1016">Enveloppe COSE_Sign1</text>
-          <text class="d-num" x="38" y="1053" text-anchor="end">18</text>
-          <line class="d-dash" x1="145" y1="1078" x2="986" y2="1078" />
-          <polygon class="d-fill-line" points="995,1078 986,1073.5 986,1082.5" />
-          <text class="d-t" x="155" y="1053">Image</text>
-          <text class="d-sub" x="155" y="1068">transfert séparé de l'enveloppe</text>
-          <text class="d-num" x="38" y="1106" text-anchor="end">19</text>
-          <path class="d-line" d="M 995 1111 L 1025 1111 L 1025 1121 L 1004 1121" />
-          <polygon class="d-fill-line" points="995,1121 1004,1116.5 1004,1125.5" />
-          <text class="d-t" x="983" y="1106" text-anchor="end">Vérifie en dix étapes</text>
-          <text class="d-num" x="38" y="1143" text-anchor="end">20</text>
-          <line class="d-line" x1="995" y1="1168" x2="154" y2="1168" />
-          <polygon class="d-fill-line" points="145,1168 154,1163.5 154,1172.5" />
-          <text class="d-t" x="155" y="1143">Verdict par propriété</text>
-          <text class="d-sub" x="155" y="1158">avec son motif, obligatoire</text>
+          <text class="d-num" x="38" y="885" text-anchor="end">15</text>
+          <line class="d-line" x1="145" y1="910" x2="611" y2="910" />
+          <polygon class="d-fill-line" points="620,910 611,905.5 611,914.5" />
+          <text class="d-t" x="155" y="885">Signe la structure Signature1</text>
+          <text class="d-sub" x="155" y="900">en-tête protégé : kid, version, profil</text>
+          <text class="d-num" x="38" y="937" text-anchor="end">16</text>
+          <line class="d-line" x1="620" y1="962" x2="154" y2="962" />
+          <polygon class="d-fill-line" points="145,962 154,957.5 154,966.5" />
+          <text class="d-t" x="155" y="937">Signature ES256, 64 octets</text>
+          <text class="d-sub" x="155" y="952">la clé privée n'a pas quitté la puce</text>
+          <text class="d-phase" x="52" y="990">Remise</text>
+          <line class="d-grid" x1="52" y1="998" x2="1070" y2="998" />
+          <text class="d-num" x="38" y="1030" text-anchor="end">17</text>
+          <line class="d-line" x1="145" y1="1040" x2="986" y2="1040" />
+          <polygon class="d-fill-line" points="995,1040 986,1035.5 986,1044.5" />
+          <text class="d-t" x="155" y="1030">Enveloppe COSE_Sign1</text>
+          <text class="d-num" x="38" y="1067" text-anchor="end">18</text>
+          <line class="d-dash" x1="145" y1="1092" x2="986" y2="1092" />
+          <polygon class="d-fill-line" points="995,1092 986,1087.5 986,1096.5" />
+          <text class="d-t" x="155" y="1067">Octets du contenu</text>
+          <text class="d-sub" x="155" y="1082">transfert séparé de l'enveloppe</text>
+          <text class="d-num" x="38" y="1120" text-anchor="end">19</text>
+          <path class="d-line" d="M 995 1125 L 1025 1125 L 1025 1135 L 1004 1135" />
+          <polygon class="d-fill-line" points="995,1135 1004,1130.5 1004,1139.5" />
+          <text class="d-t" x="983" y="1120" text-anchor="end">Vérifie en dix étapes</text>
+          <text class="d-num" x="38" y="1157" text-anchor="end">20</text>
+          <line class="d-line" x1="995" y1="1182" x2="154" y2="1182" />
+          <polygon class="d-fill-line" points="145,1182 154,1177.5 154,1186.5" />
+          <text class="d-t" x="155" y="1157">Verdict par propriété</text>
+          <text class="d-sub" x="155" y="1172">avec son motif, obligatoire</text>
           </svg>
         <!-- /gen:sequence-capture -->
       </div>
@@ -848,26 +931,37 @@
         Tout est signé, donc tout est opposable — et rien de tout cela n'est cru sur parole. Les
         clés entre parenthèses sont celles du schéma CDDL normatif.
       </p>
+      <p>
+        Les blocs <em>contenu</em>, <em>temps</em> et <em>posture</em> appartiennent au noyau et
+        sont toujours présents. <em>Position</em> et <em>corroboration</em> relèvent du profil
+        <span class="m">capture</span> : optionnels au schéma, obligatoires dès lors que ce profil
+        est déclaré. Le schéma établit la forme, le profil établit ce qu'il faut y trouver.
+      </p>
     </div>
 
     <div class="fields">
-      <div class="fields-group">Média <span class="gk">clé 2</span></div>
+      <div class="fields-group">Contenu <span class="gk">clé 2</span></div>
       <div class="field-row">
         <span class="k">2</span>
         <span class="v">Empreinte SHA-256 des octets bruts
-          <span class="why">Recalculée par le serveur sur l'image réellement reçue. C'est le seul lien entre l'enveloppe et la photo.</span></span>
+          <span class="why">Recalculée par le serveur sur les octets réellement reçus. C'est le seul lien entre l'enveloppe et le contenu.</span></span>
       </div>
       <div class="field-row">
-        <span class="k">3 · 4 · 5</span>
-        <span class="v">Type MIME, taille en octets, largeur et hauteur</span>
+        <span class="k">3 · 4</span>
+        <span class="v">Type MIME, taille en octets</span>
+      </div>
+      <div class="field-row">
+        <span class="k">5 · 7</span>
+        <span class="v">Largeur et hauteur, durée en millisecondes
+          <span class="why">Purement descriptifs, et dépendants du médium : une image a des dimensions, un son une durée, une vidéo les deux. Leur absence n'est pas une lacune. Le profil capture exige l'un <em>ou</em> l'autre — c'est ce qui fait tenir l'audio dans ce profil sans lui en ouvrir un.</span></span>
       </div>
       <div class="field-row">
         <span class="k">6</span>
-        <span class="v">Latence entre la capture et le figement de la charge utile
+        <span class="v">Latence entre l'obtention du contenu et le figement de la charge utile
           <span class="why">Une capture honnête se signe en quelques dizaines de millisecondes ; une injection ou une manipulation intermédiaire allonge presque toujours ce délai. Au-delà du seuil, l'origine est dégradée.</span></span>
       </div>
 
-      <div class="fields-group">Position <span class="gk">clé 3</span></div>
+      <div class="fields-group">Position <span class="gk">clé 3, exigée par le profil capture</span></div>
       <div class="field-row">
         <span class="k">1 · 2</span>
         <span class="v">Latitude et longitude WGS84</span>
@@ -985,8 +1079,8 @@
         <span class="zl">Local</span>
         <span class="zr">≈ 1 ms · écarte la quasi-totalité des rejets</span>
       </div>
-      <div class="step"><span class="n">01</span><span>Version de spécification connue <span class="out">sinon rejeté</span></span></div>
-      <div class="step"><span class="n">02</span><span>Nonce connu, non consommé, non expiré <span class="out">sinon rejeté</span></span></div>
+      <div class="step"><span class="n">01</span><span>Version et profil connus, champs exigés par le profil présents <span class="out">sinon rejeté</span></span></div>
+      <div class="step"><span class="n">02</span><span>Nonce connu, non consommé, non expiré, émis pour ce profil <span class="out">sinon rejeté</span></span></div>
       <div class="step"><span class="n">03</span><span>Signature valide sous la clé du <span class="m">kid</span> <span class="out">sinon rejeté</span></span></div>
       <div class="step"><span class="n">04</span><span>Recalcul de R1 et comparaison au défi <span class="out">sinon rejeté</span></span></div>
       <div class="zone">
@@ -1000,17 +1094,24 @@
       </div>
       <div class="step"><span class="n">06</span><span>iOS : compteur d'assertion strictement croissant <span class="out">sinon rejeté</span></span></div>
       <div class="step"><span class="n">07</span><span>Android : chaînage cohérent avec l'enveloppe précédente <span class="out">sinon signalé</span></span></div>
-      <div class="step"><span class="n">08</span><span>Empreinte de l'image recalculée sur les octets reçus <span class="out">sinon rejeté</span></span></div>
-      <div class="step"><span class="n">09</span><span>Cohérence de posture, position, corroboration <span class="out">détermine les grades</span></span></div>
+      <div class="step"><span class="n">08</span><span>Empreinte du contenu recalculée sur les octets reçus <span class="out">sinon rejeté</span></span></div>
+      <div class="step"><span class="n">09</span><span>Cohérence de posture, position, corroboration <span class="out">grades des propriétés du profil</span></span></div>
       <div class="step"><span class="n">10</span><span>Nonce marqué comme consommé</span></div>
     </div>
 
     <div class="prose">
       <p>
         Les étapes 6 et 7 servent le même but par deux chemins : empêcher qu'on réordonne ou
-        réinsère des captures. iOS l'obtient gratuitement avec le compteur d'assertion d'App
+        réinsère des enveloppes. iOS l'obtient gratuitement avec le compteur d'assertion d'App
         Attest, strictement croissant. Android doit le reconstruire en chaînant chaque enveloppe
         à l'empreinte de la précédente.
+      </p>
+      <p>
+        L'étape 2 mérite un mot, parce qu'elle ferme une porte que la signature ne ferme pas.
+        Inscrire le profil dans l'en-tête signé empêche de le <em>réécrire</em> en vol, pas de le
+        <em>déclarer faux dès l'origine</em> : un client compromis annoncerait sinon le noyau pour
+        une acquisition, et échapperait au plafond. C'est le nonce qui l'en empêche — le serveur a
+        demandé une acquisition, il doit en recevoir une.
       </p>
     </div>
   </section>
@@ -1019,26 +1120,34 @@
   <section>
     <div class="sec-head">
       <div class="eyebrow">Le résultat</div>
-      <h2>Quatre propriétés, et la plus faible l'emporte</h2>
+      <h2>Des propriétés notées séparément, et la plus faible l'emporte</h2>
     </div>
     <div class="prose">
       <p>
-        Le vérificateur ne rend pas un score. Il note séparément quatre propriétés —
-        <strong>origine</strong> (l'image vient bien du capteur), <strong>position</strong>,
-        <strong>instant</strong>, <strong>intégrité</strong> — puis retient le grade le plus bas.
-        Une chaîne vaut son maillon le plus faible.
+        Le vérificateur ne rend pas un score. Il note séparément <strong>origine</strong> (le
+        contenu vient bien de cette application, sur cet appareil), <strong>instant</strong> et
+        <strong>intégrité</strong> — les trois propriétés du noyau — puis retient le grade le plus
+        bas. Une chaîne vaut son maillon le plus faible.
       </p>
       <p>
-        Le serveur appelant doit pouvoir savoir <em>laquelle</em> des quatre est faible, pas
-        seulement qu'un score est bas. Et le motif du niveau est obligatoire : un rejet sans
-        raison exploitable est ingérable en support.
+        Le profil <span class="m">capture</span> y ajoute la <strong>position</strong>. C'est
+        pourquoi le résultat porte toujours le profil : <strong>lire le niveau sans regarder le
+        profil, c'est ignorer ce qui a été jugé</strong>. Sur une enveloppe du noyau, la position
+        est absente du résultat — et non présente avec un grade neutre, qui laisserait croire
+        qu'elle a été évaluée.
+      </p>
+      <p>
+        Le serveur appelant doit pouvoir savoir <em>laquelle</em> est faible, pas seulement qu'un
+        score est bas. Et le motif du niveau est obligatoire : un rejet sans raison exploitable est
+        ingérable en support.
       </p>
     </div>
 
     <figure>
       <div class="fig-scroll">
-        <svg viewBox="0 0 880 330" role="img" aria-label="Origine plafonnée au grade B, position et intégrité en A, instant en B ; le niveau global suit la propriété la plus faible et vaut STANDARD.">
+        <svg viewBox="0 0 880 330" role="img" aria-label="Profil capture : origine plafonnée au grade B, position et intégrité en A, instant en B ; le niveau global suit la propriété la plus faible et vaut STANDARD.">
           <text class="d-cap" x="20" y="34">grade</text>
+          <text class="d-t-mono" x="860" y="34" text-anchor="end">profil capture</text>
 
           <line class="d-grid" x1="150" y1="80" x2="700" y2="80" />
           <line class="d-grid" x1="150" y1="140" x2="700" y2="140" />
@@ -1074,11 +1183,12 @@
         </svg>
       </div>
       <figcaption>
-        <b>Le plafond sur l'origine est structurel, pas accidentel.</b> Tant que la photographie
-        d'un écran n'est pas détectée, l'origine ne peut pas dépasser le grade B — et comme le
-        niveau global suit la propriété la plus faible, aucune capture en v0.1 ne peut atteindre
-        <span class="m">STRONG</span>. C'est une limite assumée et inscrite dans le code, pas un
-        oubli.
+        <b>Le plafond sur l'origine est structurel, pas accidentel.</b> Tant que la recapture
+        analogique n'est pas détectée, l'origine ne peut pas dépasser le grade B dans le profil
+        <span class="m">capture</span> — et comme le niveau global suit la propriété la plus
+        faible, aucune acquisition ne peut atteindre <span class="m">STRONG</span> en v0.1. C'est
+        une limite assumée et inscrite dans le code, pas un oubli. Une enveloppe du noyau, elle,
+        n'est pas concernée.
       </figcaption>
     </figure>
 
@@ -1090,8 +1200,16 @@
         de position ne révèle cette attaque.
       </p>
       <p>
-        C'est pour cela que l'origine est plafonnée. Ne pas lever ce plafond sans implémenter la
-        détection.
+        Et ce n'est pas propre à l'image : <strong>enregistrer un haut-parleur qui rejoue un
+        enregistrement est exactement la même attaque</strong>. D'où le nom retenu — la
+        <em>recapture analogique</em> — qui désigne la menace et non un médium. Elle frappe tout
+        capteur, donc tout le profil <span class="m">capture</span>, et c'est là que le plafond
+        est posé.
+      </p>
+      <p>
+        Le noyau n'est pas concerné, parce qu'il n'affirme rien sur le monde physique : il n'y a
+        rien qu'un capteur puisse être trompé d'acquérir. Ne pas lever le plafond sur
+        <span class="m">capture</span> sans implémenter la détection.
       </p>
       <p>
         Les techniques envisageables pour la traiter — profondeur, différentiel de flash,
@@ -1118,7 +1236,7 @@
     <div class="faq">
 
       <div class="faq-item">
-        <div class="faq-q">À quoi sert l'appel à Google ou à Apple à chaque photo ?</div>
+        <div class="faq-q">À quoi sert l'appel à Google ou à Apple à chaque enveloppe ?</div>
         <div class="faq-a">
           <p>
             À obtenir une phrase que le téléphone serait incapable d'écrire lui-même. En substance :
@@ -1241,10 +1359,16 @@
             refusé définitivement.
           </p>
           <p>
-            Et il rattache la photo au contexte de votre application — le dossier, la demande, la
+            Et il rattache le contenu au contexte de votre application — le dossier, la demande, la
             commande — <strong>sans que ce vocabulaire n'entre jamais dans l'enveloppe</strong>. Le
             lien se fait côté serveur, au moment où il émet le nonce. C'est ce qui permet à la
             bibliothèque de rester réutilisable d'un projet à l'autre.
+          </p>
+          <p>
+            Le nonce porte enfin le <strong>profil attendu</strong>. Le serveur ne se contente pas
+            de dire « envoyez-moi quelque chose » : il dit « envoyez-moi une acquisition ». Un
+            client qui répondrait par une simple provenance d'octets, pour échapper au plafond,
+            serait refusé.
           </p>
         </div>
       </div>
@@ -1388,6 +1512,38 @@
       </div>
 
       <div class="faq-item">
+        <div class="faq-q">Est-ce que ça ne sert qu'aux photos ?</div>
+        <div class="faq-a">
+          <p>
+            Non. Le mécanisme travaille sur des octets et ne sait pas ce qu'il scelle. Un document,
+            un journal d'événements, un relevé, un consentement horodaté : tout cela passe par le
+            <strong>noyau</strong>, qui prouve la provenance sans rien affirmer sur le monde
+            physique — et qui, n'étant pas plafonné, atteint le niveau le plus élevé.
+          </p>
+          <p>
+            Le profil <span class="m">capture</span> couvre ce qui est <strong>acquis par un
+            capteur de l'appareil</strong> : photo, son, vidéo, et les relevés de profondeur ou de
+            scan 3D des appareils qui en ont un. La liste est courte, et c'est voulu.
+          </p>
+          <p>
+            <strong>Le critère n'est pas « ça vient d'un capteur ».</strong> C'est : <em>le contenu
+            peut-il être rejoué devant le capteur ?</em> C'est ce qui rend la position pertinente et
+            le plafond nécessaire, dans le même mouvement. Un enregistrement de l'écran du
+            téléphone, un graphique généré, une saisie au doigt ne sont pas des acquisitions
+            physiques : ils relèvent du noyau, et ne méritent aucun plafond.
+          </p>
+          <div class="faq-note">
+            Ce qui reste à trancher, c'est la <strong>durée</strong>. Une photo est un instant ; une
+            vidéo de trois minutes n'en est pas un. Le nonce, l'âge du point GPS et la latence de
+            signature encadrent tous un <em>moment</em> — sur un enregistrement long, ils ne
+            décrivent que sa fin, puisque la charge utile ne peut être figée qu'une fois le fichier
+            complet. Le format accepte la vidéo ; ce que le verdict signifie alors sur la position
+            demande un arbitrage qui n'est pas encore rendu.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
         <div class="faq-q">Quelqu'un peut-il tricher en photographiant un écran ?</div>
         <div class="faq-a">
           <p>
@@ -1396,8 +1552,14 @@
           </p>
           <p>
             Aucun signal de position ne peut révéler ça. C'est pour cette raison que la propriété
-            « origine » est plafonnée au grade B, et donc qu'aucune capture ne peut atteindre le
-            niveau le plus élevé aujourd'hui. La limite est inscrite dans le code, pas oubliée.
+            « origine » est plafonnée au grade B <em>dans le profil capture</em>, et donc qu'aucune
+            acquisition ne peut atteindre le niveau le plus élevé aujourd'hui. La limite est
+            inscrite dans le code, pas oubliée.
+          </p>
+          <p>
+            La même attaque existe pour le son : <strong>enregistrer un haut-parleur qui rejoue un
+            enregistrement</strong>. C'est pourquoi le plafond porte le nom de la menace — la
+            recapture analogique — et couvre tout le profil, quel que soit le capteur.
           </p>
           <p>
             Ce qui pourrait la refermer relève d'une autre famille de signaux : non plus la
@@ -1441,7 +1603,12 @@
       </div>
       <div class="repo-row">
         <span class="path">docs/envelope-spec.md</span>
-        <span class="what">Le format <span class="m">probative/0.1</span>, les règles R1/R2/R3, l'ordre de vérification.</span>
+        <span class="what">Le format <span class="m">probative/0.1</span>, le noyau et ses profils (§2.5), les règles R1/R2/R3, l'ordre de vérification.</span>
+        <span class="chip done">rédigé</span>
+      </div>
+      <div class="repo-row">
+        <span class="path">docs/decisions/</span>
+        <span class="what">Les décisions d'architecture, motivées et datées. La dernière — ADR-0005 — sépare le noyau des profils et rattache le plafond de recapture au seul profil <span class="m">capture</span>.</span>
         <span class="chip done">rédigé</span>
       </div>
       <div class="repo-row">
@@ -1461,7 +1628,12 @@
       </div>
       <div class="repo-row">
         <span class="path">verifier-python/</span>
-        <span class="what">Le vérificateur serveur. Pipeline complet des dix étapes, 40 tests au vert, chaque test d'attaque référencé au modèle de menace.</span>
+        <span class="what">Le vérificateur serveur. Pipeline complet des dix étapes, 60 tests au vert, chaque test d'attaque référencé au modèle de menace.</span>
+        <span class="chip done">fonctionnel</span>
+      </div>
+      <div class="repo-row">
+        <span class="path">…/tests/vectors/</span>
+        <span class="what">Les vecteurs d'or : les octets exacts que les cœurs natifs doivent reproduire. Trois jeux — <span class="m">android</span> et <span class="m">ios</span> en profil capture, <span class="m">core</span> pour la forme sans capteur ni lieu.</span>
         <span class="chip done">fonctionnel</span>
       </div>
       <div class="repo-row">
@@ -1476,8 +1648,8 @@
       </div>
       <div class="repo-row">
         <span class="path">mobile/android/<br>mobile/ios/</span>
-        <span class="what">Les clients natifs Kotlin et Swift.</span>
-        <span class="chip todo">non commencé</span>
+        <span class="what">Les cœurs natifs Kotlin et Swift. Encodage, clé matérielle et attestation faits, validés sur appareil réel ; les deux reproduisent les vecteurs d'or octet à octet. Reste la capture elle-même — aucune photo n'a encore été prise.</span>
+        <span class="chip wip">en cours</span>
       </div>
     </div>
 

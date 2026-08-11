@@ -19,6 +19,15 @@ import org.junit.Test
  */
 class GoldenVectorsTest {
 
+    private companion object {
+        /**
+         * Les trois jeux de vecteurs. `core` n'est pas décoratif : c'est la
+         * seule forme sans position ni dimensions, et donc la seule qui
+         * vérifie que l'encodeur ne suppose pas une acquisition (ADR-0005).
+         */
+        val VECTOR_SETS = listOf("android", "ios", "core")
+    }
+
     private val dir = File(
         requireNotNull(System.getProperty("probative.vectors.dir")) {
             "propriété probative.vectors.dir absente : lancer via Gradle"
@@ -35,11 +44,17 @@ class GoldenVectorsTest {
     private fun sha256(data: ByteArray): ByteArray =
         MessageDigest.getInstance("SHA-256").digest(data)
 
-    private fun inputs(platform: String): JsonObject = manifest.getAsJsonObject(platform)
+    private fun inputs(name: String): JsonObject = manifest.getAsJsonObject(name)
+
+    private fun platformOf(name: String): String = inputs(name)["platform"].asString
+
+    private fun profileOf(name: String): String = inputs(name)["profile"].asString
 
     /** Miroir de `factory.make_payload`, valeurs par défaut comprises. */
-    private fun payloadFor(platform: String): Map<Int, Any> {
-        val inputs = inputs(platform)
+    private fun payloadFor(name: String): Map<Int, Any> {
+        val inputs = inputs(name)
+        val platform = platformOf(name)
+        val capture = profileOf(name) == "capture"
 
         val position = mutableMapOf<Int, Any>(
             1 to 48.2973,
@@ -78,21 +93,28 @@ class GoldenVectorsTest {
             mapOf(1 to "steps", 2 to "pedometer", 3 to 4_180, 4 to 0),
         )
 
+        val media = mutableMapOf<Int, Any>(
+            1 to "sha-256",
+            2 to hex(inputs["media_digest_hex"].asString),
+            3 to if (capture) "image/jpeg" else "application/pdf",
+            4 to 1_842_301,
+            6 to 85,
+        )
         val payload = mutableMapOf<Int, Any>(
             1 to hex(inputs["nonce_hex"].asString),
-            2 to mapOf(
-                1 to "sha-256",
-                2 to hex(inputs["media_digest_hex"].asString),
-                3 to "image/jpeg",
-                4 to 1_842_301,
-                5 to listOf(4_032, 3_024),
-                6 to 85,
-            ),
-            3 to position,
+            2 to media,
             4 to mapOf(1 to inputs["wall_ms"].asLong, 2 to 4_312_004, 3 to 120, 4 to true),
             5 to posture,
-            6 to claims,
         )
+
+        // Le noyau ne décrit que des octets : ni dimensions, ni position,
+        // ni corroboration — rien qui suppose un capteur ou un lieu.
+        if (capture) {
+            media[5] = listOf(4_032, 3_024)
+            payload[3] = position
+            payload[6] = claims
+        }
+
         if (!inputs["prev_digest_hex"].isJsonNull) {
             payload[7] = hex(inputs["prev_digest_hex"].asString)
         }
@@ -101,35 +123,39 @@ class GoldenVectorsTest {
 
     @Test
     fun `charge utile octet a octet`() {
-        for (platform in listOf("android", "ios")) {
+        for (name in VECTOR_SETS) {
             assertArrayEquals(
-                platform,
-                vector("$platform.payload.cbor"),
-                Cbor.encode(payloadFor(platform)),
+                name,
+                vector("$name.payload.cbor"),
+                Cbor.encode(payloadFor(name)),
             )
         }
     }
 
     @Test
     fun `en-tete protege octet a octet`() {
-        for (platform in listOf("android", "ios")) {
+        for (name in VECTOR_SETS) {
             assertArrayEquals(
-                platform,
-                vector("$platform.protected.cbor"),
-                Cose.protectedHeader(hex(inputs(platform)["kid_hex"].asString), "test-deployment"),
+                name,
+                vector("$name.protected.cbor"),
+                Cose.protectedHeader(
+                    hex(inputs(name)["kid_hex"].asString),
+                    "test-deployment",
+                    profileOf(name),
+                ),
             )
         }
     }
 
     @Test
     fun `sig_structure octet a octet`() {
-        for (platform in listOf("android", "ios")) {
+        for (name in VECTOR_SETS) {
             assertArrayEquals(
-                platform,
-                vector("$platform.sig_structure.cbor"),
+                name,
+                vector("$name.sig_structure.cbor"),
                 Cose.sigStructure(
-                    vector("$platform.protected.cbor"),
-                    vector("$platform.payload.cbor"),
+                    vector("$name.protected.cbor"),
+                    vector("$name.payload.cbor"),
                 ),
             )
         }
@@ -137,11 +163,11 @@ class GoldenVectorsTest {
 
     @Test
     fun `defi R1 sur les octets encodes`() {
-        for (platform in listOf("android", "ios")) {
+        for (name in VECTOR_SETS) {
             val challenge = sha256(
-                vector("$platform.payload.cbor") + hex(inputs(platform)["nonce_hex"].asString)
+                vector("$name.payload.cbor") + hex(inputs(name)["nonce_hex"].asString)
             )
-            assertArrayEquals(platform, vector("$platform.challenge.bin"), challenge)
+            assertArrayEquals(name, vector("$name.challenge.bin"), challenge)
         }
     }
 
@@ -151,13 +177,13 @@ class GoldenVectorsTest {
         // avec une clé matérielle : on la prélève de l'enveloppe (les 64
         // derniers octets) et on vérifie que tout le reste s'assemble à
         // l'identique autour d'elle.
-        for (platform in listOf("android", "ios")) {
-            val inputs = inputs(platform)
-            val envelope = vector("$platform.envelope.prbv")
+        for (name in VECTOR_SETS) {
+            val inputs = inputs(name)
+            val envelope = vector("$name.envelope.prbv")
             val signature = envelope.copyOfRange(envelope.size - 64, envelope.size)
 
             val token = "NULLTOKEN:".toByteArray(Charsets.US_ASCII) +
-                vector("$platform.challenge.bin")
+                vector("$name.challenge.bin")
             val freshness = mutableMapOf<Int, Any>(
                 1 to inputs["freshness_kind"].asString,
                 2 to token,
@@ -167,12 +193,12 @@ class GoldenVectorsTest {
             }
 
             assertArrayEquals(
-                platform,
+                name,
                 envelope,
                 Cose.envelope(
-                    vector("$platform.protected.cbor"),
+                    vector("$name.protected.cbor"),
                     freshness,
-                    vector("$platform.payload.cbor"),
+                    vector("$name.payload.cbor"),
                     signature,
                 ),
             )

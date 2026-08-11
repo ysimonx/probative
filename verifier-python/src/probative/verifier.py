@@ -13,13 +13,14 @@ from __future__ import annotations
 import hashlib
 import time
 
-from . import cose, grading
+from . import cose, grading, profiles
 from .attestation import AttestationVerifier, DeviceIntegrity
 from .errors import (
     AssertionCounterRegression,
     BindingMismatch,
     ChainBroken,
     MediaDigestMismatch,
+    ProfileMismatch,
     UnsupportedSpecVersion,
     VerificationError,
 )
@@ -59,8 +60,8 @@ class Verifier:
         """Vérifie une enveloppe.
 
         `media_bytes` est optionnel : l'empreinte n'est recalculée que si
-        le média est fourni. Cela permet de rejeter une capture avant
-        d'avoir dépensé la bande passante du transfert d'image.
+        le payload est fourni. Cela permet de rejeter une enveloppe avant
+        d'avoir dépensé la bande passante du transfert.
         """
         now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
         try:
@@ -73,16 +74,28 @@ class Verifier:
     def _verify(
         self, envelope: bytes, media_bytes: bytes | None, now_ms: int
     ) -> VerificationResult:
-        # 1. version de spécification
+        # 1. version de spécification et profil connus
         sign1 = cose.decode(envelope)
         spec = sign1.spec
         if spec not in SPEC_SUPPORTED:
             raise UnsupportedSpecVersion(f"version {spec!r} non supportée")
 
+        profile = profiles.parse(sign1.profile)
         claims = CaptureClaims.decode(sign1.payload())
+        profiles.require_fields(profile, claims)
 
-        # 2. nonce connu, non consommé, non expiré
+        # 2. nonce connu, non consommé, non expiré, et émis pour ce profil
         nonce_rec = self._nonces.consume(claims.nonce, now_ms)
+        if nonce_rec.profile is not profile:
+            # Le profil est signé, donc non modifiable en vol — mais un
+            # client compromis reste libre de *déclarer* le noyau pour une
+            # acquisition, et d'échapper ainsi au plafond de recapture.
+            # C'est le nonce qui ferme cette porte : le serveur a demandé
+            # une acquisition, il doit en recevoir une.
+            raise ProfileMismatch(
+                f"nonce émis pour le profil {nonce_rec.profile.value!r}, "
+                f"enveloppe déclarée {profile.value!r}"
+            )
 
         # 3. signature sous la clé enrôlée
         device = self._devices.get(sign1.kid)
@@ -135,18 +148,20 @@ class Verifier:
         device.last_envelope_digest = hashlib.sha256(envelope).digest()
         self._devices.update(device)
 
-        # 8. empreinte du média
+        # 8. empreinte du payload
         if media_bytes is not None:
             if hashlib.sha256(media_bytes).digest() != claims.media.digest:
-                raise MediaDigestMismatch("l'image reçue ne correspond pas à l'empreinte signée")
+                raise MediaDigestMismatch(
+                    "les octets reçus ne correspondent pas à l'empreinte signée"
+                )
         else:
             flags.append("MEDIA_NOT_PROVIDED")
 
-        # 9. grades par propriété
+        # 9. grades des propriétés du profil déclaré
+        graded_by_profile = profiles.properties_for(profile)
         properties: dict[Property, PropertyResult] = {
             Property.INTEGRITY: grading.grade_integrity(att, device.hardware_backed),
-            Property.ORIGIN: grading.grade_origin(claims, att),
-            Property.POSITION: grading.grade_position(claims, att),
+            Property.ORIGIN: grading.grade_origin(claims, att, profile),
             Property.TIME: grading.grade_time(
                 claims,
                 att,
@@ -156,6 +171,20 @@ class Verifier:
                 chain_verified=chain_verified,
             ),
         }
+        if Property.POSITION in graded_by_profile:
+            properties[Property.POSITION] = grading.grade_position(claims, att)
+
+        if set(properties) != set(graded_by_profile):
+            # Faute de câblage, pas entrée hostile : un profil qui annonce
+            # une propriété non notée ici rendrait un verdict amputé sans
+            # le dire. On échoue bruyamment plutôt que de rejeter, pour que
+            # ce soit un bogue visible et non un refus mystérieux.
+            raise NotImplementedError(
+                f"profil {profile.value!r} : propriétés annoncées "
+                f"{sorted(p.value for p in graded_by_profile)}, notées "
+                f"{sorted(p.value for p in properties)}"
+            )
+
         for p in properties.values():
             p.evidence.extend(att.evidence)
 
@@ -169,6 +198,7 @@ class Verifier:
         # 10. le nonce est déjà marqué consommé par le store, à l'étape 2.
         return VerificationResult(
             spec=spec,
+            profile=profile.value,
             level=level,
             properties=properties,
             flags=flags,

@@ -12,9 +12,9 @@ cet instant**, sur un appareil non compromis.
 ## Le problème
 
 Une photo géolocalisée ordinaire ne prouve rien. Les métadonnées EXIF s'éditent, le GPS se
-simule avec une application du magasin, et une incrustation de coordonnées sur l'image est
-purement décorative. Dès qu'une décision — un paiement, une validation, un contrôle —
-dépend de la photo, l'absence de preuve devient un problème.
+simule avec une application grand public, et des coordonnées incrustées sur l'image ne sont
+que des pixels : n'importe qui peut les y écrire. Dès qu'une décision — un paiement, une
+validation, un contrôle — dépend de la photo, l'absence de preuve devient un problème.
 
 ## L'approche
 

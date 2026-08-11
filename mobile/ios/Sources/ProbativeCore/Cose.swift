@@ -13,13 +13,24 @@ public enum Cose {
 
     private static let spec = "probative/0.1"
 
-    /// En-tête protégé encodé : alg ES256, kid, version de spec, déploiement.
-    public static func protectedHeader(kid: Data, deployment: String) -> Data {
+    /// En-tête protégé encodé : alg ES256, kid, version de spec, déploiement,
+    /// profil.
+    ///
+    /// Le profil (label 102, spec §2.5, ADR-0005) est ici et non dans la
+    /// charge utile : le retirer ou le changer invalide la signature. Sa
+    /// valeur est celle rendue par la route `/nonce` du serveur — la
+    /// déclarer de son propre chef fait rejeter l'enveloppe.
+    public static func protectedHeader(
+        kid: Data,
+        deployment: String,
+        profile: String
+    ) -> Data {
         Cbor.encode(.map([
             1: .int(-7),
             4: .bytes(kid),
             100: .text(spec),
             101: .text(deployment),
+            102: .text(profile),
         ]))
     }
 

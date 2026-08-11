@@ -23,13 +23,24 @@ from dataclasses import dataclass
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from .errors import ExpiredNonce, ReplayedNonce, UnknownKey, UnknownNonce
+from .model import Profile
 
 
 @dataclass
 class NonceRecord:
+    """Un nonce est émis *pour* un profil, et ne vaut que pour lui.
+
+    C'est le pendant serveur du label 102 : le profil signé dit ce que le
+    client a produit, le profil du nonce dit ce que le serveur a demandé.
+    Sans le second, un client compromis déclarerait le noyau pour une
+    acquisition et échapperait au plafond de recapture. La spec §6 pose
+    déjà que le contexte applicatif est lié par le nonce, côté serveur.
+    """
+
     value: bytes
     issued_at_ms: int
     ttl_ms: int
+    profile: Profile
     offline: bool = False
     consumed_at_ms: int | None = None
 
@@ -61,11 +72,22 @@ class InMemoryNonceStore(NonceStore):
     def __init__(self) -> None:
         self._nonces: dict[bytes, NonceRecord] = {}
 
-    def issue(self, value: bytes, ttl_ms: int = 120_000, offline: bool = False) -> NonceRecord:
+    def issue(
+        self,
+        value: bytes,
+        *,
+        profile: Profile,
+        ttl_ms: int = 120_000,
+        offline: bool = False,
+    ) -> NonceRecord:
+        # `profile` est sans défaut, délibérément : émettre un nonce sans
+        # dire ce qu'on attend en retour est la faute que ce paramètre
+        # existe pour rendre impossible.
         rec = NonceRecord(
             value=value,
             issued_at_ms=int(time.time() * 1000),
             ttl_ms=ttl_ms,
+            profile=profile,
             offline=offline,
         )
         self._nonces[value] = rec

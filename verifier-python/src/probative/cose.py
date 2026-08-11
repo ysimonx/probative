@@ -27,6 +27,7 @@ HDR_ALG = 1
 HDR_KID = 4
 HDR_SPEC = 100
 HDR_DEPLOYMENT = 101
+HDR_PROFILE = 102
 HDR_FRESHNESS = 200
 
 
@@ -43,6 +44,19 @@ class Sign1:
         v = self.protected.get(HDR_SPEC)
         if not isinstance(v, str):
             raise MalformedEnvelope("version de spécification absente ou invalide")
+        return v
+
+    @property
+    def profile(self) -> str:
+        """Profil déclaré, brut. Sa validité est établie plus haut.
+
+        Le label vit dans l'en-tête *protégé* : c'est ce qui empêche de
+        rejouer une enveloppe sous un autre jeu de règles de notation en
+        retirant simplement un champ de la charge utile.
+        """
+        v = self.protected.get(HDR_PROFILE)
+        if not isinstance(v, str):
+            raise MalformedEnvelope("profil absent ou invalide dans l'en-tête protégé")
         return v
 
     @property

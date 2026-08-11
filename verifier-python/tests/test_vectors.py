@@ -11,10 +11,19 @@ feraient viser une mauvaise cible aux implémentations natives.
 from __future__ import annotations
 
 from factory import kid_for
-from vectors import MEDIA, VECTORS_DIR, WALL_MS, build_vectors, vector_key, vector_nonce
+from vectors import (
+    MEDIA,
+    VECTOR_SETS,
+    VECTORS_DIR,
+    WALL_MS,
+    build_vectors,
+    vector_key,
+    vector_nonce,
+    vector_prev_digest,
+)
 
 from probative.attestation import DeviceIntegrity, NullAttestationVerifier
-from probative.model import Level, VerificationResult
+from probative.model import Level, Profile, Property, VerificationResult
 from probative.store import (
     DeviceRecord,
     InMemoryDeviceStore,
@@ -38,12 +47,14 @@ def test_vecteurs_identiques_a_une_regeneration():
         assert (VECTORS_DIR / name).read_bytes() == content, f"dérive sur {name} — {REGEN}"
 
 
-def _verify_vector(platform: str) -> VerificationResult:
-    key = vector_key(platform)
+def _verify_vector(name: str) -> VerificationResult:
+    platform, profile = VECTOR_SETS[name]
+    key = vector_key(name)
     nonces = InMemoryNonceStore()
     # L'horloge des vecteurs est figée : le nonce est réputé émis juste
     # avant la capture, et la vérification datée juste après.
-    nonces.issue(vector_nonce(platform)).issued_at_ms = WALL_MS - 1_000
+    rec = nonces.issue(vector_nonce(name), profile=Profile(profile))
+    rec.issued_at_ms = WALL_MS - 1_000
     devices = InMemoryDeviceStore()
     devices.enroll(
         DeviceRecord(
@@ -51,6 +62,11 @@ def _verify_vector(platform: str) -> VerificationResult:
             public_key=key.public_key(),
             platform=platform,
             hardware_backed=True,
+            # Les vecteurs Android référencent une enveloppe précédente :
+            # sans elle côté serveur, le chaînage ne se vérifie pas et
+            # `time` reste au grade B pour une raison qui n'a rien à voir
+            # avec le vecteur lui-même.
+            last_envelope_digest=vector_prev_digest() if platform == "android" else None,
         )
     )
     verifier = Verifier(
@@ -58,15 +74,30 @@ def _verify_vector(platform: str) -> VerificationResult:
         device_store=devices,
         attestation=NullAttestationVerifier(DeviceIntegrity.STRONG),
     )
-    envelope = (VECTORS_DIR / f"{platform}.envelope.prbv").read_bytes()
+    envelope = (VECTORS_DIR / f"{name}.envelope.prbv").read_bytes()
     return verifier.verify(envelope, media_bytes=MEDIA, now_ms=WALL_MS + 2_000)
 
 
 def test_enveloppe_vecteur_android_acceptee():
     res = _verify_vector("android")
     assert res.level in (Level.STANDARD, Level.STRONG), res.to_dict()
+    assert res.profile == "capture"
 
 
 def test_enveloppe_vecteur_ios_acceptee():
     res = _verify_vector("ios")
     assert res.level in (Level.STANDARD, Level.STRONG), res.to_dict()
+    assert res.profile == "capture"
+
+
+def test_enveloppe_vecteur_noyau_atteint_strong():
+    """Le vecteur du noyau démontre ce que le couplage à la photo interdisait.
+
+    Tant que le plafond de recapture s'appliquait à toute enveloppe,
+    `STRONG` était inatteignable pour n'importe quel contenu. Ce test
+    échouerait si le plafond redevenait global.
+    """
+    res = _verify_vector("core")
+    assert res.level is Level.STRONG, res.to_dict()
+    assert res.profile == "core"
+    assert Property.POSITION not in res.properties

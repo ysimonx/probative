@@ -28,6 +28,23 @@ class MalformedEnvelope(VerificationError):
     code = "MALFORMED_ENVELOPE"
 
 
+class UnknownProfile(VerificationError):
+    """Profil déclaré que ce vérificateur ne sait pas juger.
+
+    Refuser est la seule issue correcte : juger avec le jeu de règles du
+    noyau reviendrait à laisser tomber silencieusement les propriétés
+    propres au profil, et donc son plafond éventuel.
+    """
+
+    code = "UNKNOWN_PROFILE"
+
+
+class ProfileMismatch(VerificationError):
+    """Le profil déclaré n'est pas celui pour lequel le nonce a été émis."""
+
+    code = "PROFILE_MISMATCH"
+
+
 class UnknownNonce(VerificationError):
     code = "UNKNOWN_NONCE"
 

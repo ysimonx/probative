@@ -50,6 +50,23 @@ class Property(str, Enum):
     INTEGRITY = "integrity"
 
 
+class Profile(str, Enum):
+    """Profil déclaré par l'enveloppe — voir ADR-0005.
+
+    Un profil se justifie quand une propriété apparaît, disparaît, ou
+    change de règle de notation. Jamais quand seul le payload change de
+    forme : un nouveau type MIME ne crée pas un profil.
+
+    `CAPTURE` désigne l'acquisition d'un signal du monde physique par un
+    capteur de l'appareil — image, son, vidéo. C'est ce qui rend la
+    position pertinente et le plafond de recapture analogique nécessaire,
+    dans le même mouvement.
+    """
+
+    CORE = "core"
+    CAPTURE = "capture"
+
+
 # --- lecture défensive --------------------------------------------------
 #
 # Rien de ce que contient la charge utile n'a le type attendu tant qu'on
@@ -133,28 +150,43 @@ def _opt(m: CborMap, key: int, what: str, read: Callable[[Any, str], _T]) -> _T 
 
 @dataclass(frozen=True)
 class Media:
+    """Descripteur du payload — les octets eux-mêmes ne circulent pas.
+
+    Les quatre premiers champs et la latence appartiennent au noyau :
+    ils décrivent des octets quelconques. Les dimensions et la durée sont
+    purement descriptives et dépendent du médium ; leur absence n'est pas
+    une lacune, c'est un contenu qui n'a ni l'une ni l'autre.
+    """
+
     digest_alg: str
     digest: bytes
     mime: str
     length: int
-    width: int
-    height: int
     sign_latency_ms: int
+    width: int | None = None
+    height: int | None = None
+    duration_ms: int | None = None
 
     @classmethod
     def decode(cls, m: Any) -> Media:
         m = _map(m, "media")
-        dims = _seq(_req(m, 5, "media.dimensions"), "media.dimensions")
-        if len(dims) != 2:
-            raise MalformedEnvelope("media.dimensions doit être [largeur, hauteur]")
+        width = height = None
+        raw_dims = m.get(5)
+        if raw_dims is not None:
+            dims = _seq(raw_dims, "media.dimensions")
+            if len(dims) != 2:
+                raise MalformedEnvelope("media.dimensions doit être [largeur, hauteur]")
+            width = _as_uint(dims[0], "media.width")
+            height = _as_uint(dims[1], "media.height")
         return cls(
             digest_alg=_get(m, 1, "media.digest_alg", _as_text),
             digest=_get(m, 2, "media.digest", _as_blob),
             mime=_get(m, 3, "media.mime", _as_text),
             length=_get(m, 4, "media.length", _as_uint),
-            width=_as_uint(dims[0], "media.width"),
-            height=_as_uint(dims[1], "media.height"),
             sign_latency_ms=_get(m, 6, "media.sign_latency_ms", _as_uint),
+            width=width,
+            height=height,
+            duration_ms=_opt(m, 7, "media.duration_ms", _as_uint),
         )
 
 
@@ -278,9 +310,9 @@ class Freshness:
 class CaptureClaims:
     nonce: bytes
     media: Media
-    position: Position
     timing: Timing
     posture: Posture
+    position: Position | None = None
     claims: list[Claim] = field(default_factory=list)
     prev_digest: bytes | None = None
 
@@ -288,14 +320,19 @@ class CaptureClaims:
     def decode(cls, m: Any) -> CaptureClaims:
         # Point d'entrée de la charge utile : le type n'est pas garanti,
         # c'est ici qu'on l'établit avant tout accès.
+        #
+        # `position` est optionnelle *ici*, et exigée par le profil : le
+        # décodage établit la forme, le profil établit ce qu'il faut y
+        # trouver. Voir `profiles.require_fields`.
         m = _map(m, "charge utile")
         raw_claims = _opt(m, 6, "corroboration", _seq)
+        raw_position = m.get(3)
         return cls(
             nonce=_get(m, 1, "nonce", _as_blob),
             media=Media.decode(_req(m, 2, "media")),
-            position=Position.decode(_req(m, 3, "position")),
             timing=Timing.decode(_req(m, 4, "timing")),
             posture=Posture.decode(_req(m, 5, "posture")),
+            position=None if raw_position is None else Position.decode(raw_position),
             claims=[Claim.decode(c) for c in (raw_claims or ())],
             prev_digest=_opt(m, 7, "chaînage", _as_blob),
         )
@@ -317,14 +354,20 @@ class PropertyResult:
 @dataclass
 class VerificationResult:
     spec: str
+    profile: str
     level: Level
     properties: dict[Property, PropertyResult]
     flags: list[str] = field(default_factory=list)
     level_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
+        # `profile` est de première classe, et non un détail de `flags` :
+        # l'ensemble des propriétés notées en dépend. Un appelant qui
+        # lirait `level` sans regarder `profile` ne saurait pas ce qui a
+        # été jugé.
         return {
             "spec": self.spec,
+            "profile": self.profile,
             "level": self.level.value,
             "properties": {
                 p.value: {
@@ -340,8 +383,12 @@ class VerificationResult:
 
     @classmethod
     def rejected(cls, code: str, detail: str = "") -> VerificationResult:
+        # Un rejet peut survenir avant que le profil soit établi. On note
+        # donc les quatre propriétés en échec, sans chercher à restreindre
+        # l'ensemble : sur un rejet, tout est en échec par construction.
         return cls(
             spec="unknown",
+            profile="unknown",
             level=Level.REJECTED,
             properties={p: PropertyResult(Grade.F) for p in Property},
             flags=[code],
