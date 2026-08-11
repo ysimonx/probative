@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.attestedcapture.core"
+    namespace = "org.probative.core"
     compileSdk = 36
 
     defaultConfig {
@@ -27,7 +27,7 @@ android {
             // Les vecteurs d'or vivent dans le vérificateur : source unique,
             // aucune copie à faire dériver.
             it.systemProperty(
-                "ac.vectors.dir",
+                "probative.vectors.dir",
                 rootDir.resolve("../../verifier-python/tests/vectors").canonicalPath,
             )
         }

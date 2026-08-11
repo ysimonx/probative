@@ -1,7 +1,7 @@
-# attested-capture (vérificateur Python)
+# probative (vérificateur Python)
 
 Vérificateur serveur d'enveloppes de capture photo géolocalisée attestée,
-spécification `ac/0.1`.
+spécification `probative/0.1`.
 
 Le client collecte et signe des preuves, le serveur juge. Le code client est
 intégralement considéré comme hostile : aucune décision de validité n'est prise
@@ -16,7 +16,7 @@ Cible HTTP du spike natif : trois routes JSON, états en mémoire, substitut
 d'attestation. Jamais en production.
 
 ```bash
-.venv/bin/python -m attested_capture.devserver          # http://127.0.0.1:8765
+.venv/bin/python -m probative.devserver          # http://127.0.0.1:8765
 ```
 
 Boucle complète avec `curl` (les octets binaires transitent en base64) :
@@ -34,7 +34,7 @@ curl -s http://127.0.0.1:8765/nonce -d '{}'
 
 # 3. Capturer, signer, puis soumettre l'enveloppe et le média
 curl -s http://127.0.0.1:8765/verify -d '{
-  "envelope_b64": "'$(base64 < capture.acap)'",
+  "envelope_b64": "'$(base64 < capture.prbv)'",
   "media_b64":    "'$(base64 < photo.jpg)'"
 }'
 # → résultat structuré : level, grades par propriété, level_reason, flags

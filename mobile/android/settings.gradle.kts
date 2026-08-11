@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "attested-capture-android"
+rootProject.name = "probative-android"
 
 include(":core")

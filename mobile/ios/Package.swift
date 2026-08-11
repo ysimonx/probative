@@ -5,19 +5,19 @@ import PackageDescription
 // applicatif (ADR-0003). macOS est déclaré uniquement pour exécuter les
 // tests sur l'hôte — les vecteurs d'or se vérifient sans appareil.
 let package = Package(
-    name: "AttestedCaptureCore",
+    name: "ProbativeCore",
     platforms: [
         .iOS(.v15),
         .macOS(.v12),
     ],
     products: [
-        .library(name: "AttestedCaptureCore", targets: ["AttestedCaptureCore"])
+        .library(name: "ProbativeCore", targets: ["ProbativeCore"])
     ],
     targets: [
-        .target(name: "AttestedCaptureCore"),
+        .target(name: "ProbativeCore"),
         .testTarget(
-            name: "AttestedCaptureCoreTests",
-            dependencies: ["AttestedCaptureCore"]
+            name: "ProbativeCoreTests",
+            dependencies: ["ProbativeCore"]
         ),
     ]
 )

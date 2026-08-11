@@ -1,4 +1,4 @@
-# attested-capture
+# probative
 
 ## Pourquoi ce projet existe
 
@@ -37,7 +37,7 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 |---|---|
 | `docs/architecture.html` | Vue d'ensemble illustrée du mécanisme, séquences et FAQ. Point d'entrée pour comprendre ; ne fait pas autorité. Les deux diagrammes de séquence sont générés par `tools/gen_sequences.py` — ne pas les éditer à la main. |
 | `docs/threat-model.md` | Spécification de référence. Toute fonctionnalité doit répondre à une menace identifiée. |
-| `docs/envelope-spec.md` | Format `ac/0.1`, règles de liaison R1/R2/R3, ordre de vérification |
+| `docs/envelope-spec.md` | Format `probative/0.1`, règles de liaison R1/R2/R3, ordre de vérification |
 | `docs/decisions/` | ADR. Les compléter plutôt que revenir silencieusement sur un choix. |
 | `spec/envelope-v0.1.cddl` | Extrait de la spec, **ne pas éditer à la main** |
 | `docs/etat-de-l-art.md` | Solutions voisines (Approov, Guardsquare, Truepic, C2PA, ProofMode) et ce qui distingue réellement ce dépôt. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier les faits avant de s'en servir. |
@@ -46,7 +46,8 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 
 ```
 docs/             Modèle de menace, spec d'enveloppe, ADR, vue d'ensemble
-spec/             Schéma CDDL normatif (généré)
+spec/             Schéma CDDL normatif — extrait de docs/envelope-spec.md, à garder
+                  synchronisé à la main (aucun générateur à ce jour)
 tools/            Génération des figures de la documentation
 verifier-python/  Vérificateur serveur
 mobile/android/   Cœur natif Kotlin (AAR) — spike en cours
@@ -82,9 +83,10 @@ mypy src
 | Composant | État |
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
-| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 40 tests au vert |
+| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 51 tests au vert |
 | `PlayIntegrityVerifier`, `AppAttestVerifier` | Interfaces posées, `NotImplementedError` |
-| Cœurs natifs Android / iOS | Encodeurs et clés au vert hors appareil (A1–A3, C1–C3) ; validations sur matériel en attente |
+| Cœur natif Android | A1–A3 faites ; **A3 validée sur appareil réel** (SM-X200). Prochaine : A4, capture CameraX |
+| Cœur natif iOS | C1–C3 faites, validées autant que l'hôte le permet ; App Attest attend un appareil (C4) |
 | Liaisons Flutter / React Native | Non commencées |
 | Banc de triche | Non commencé |
 

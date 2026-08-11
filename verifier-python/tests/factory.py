@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric import utils as asym_utils
 
-SPEC = "ac/0.1"
+SPEC = "probative/0.1"
 DEPLOYMENT = "test-deployment"
 
 

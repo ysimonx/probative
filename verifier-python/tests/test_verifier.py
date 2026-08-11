@@ -16,14 +16,14 @@ import cbor2
 import pytest
 from factory import kid_for, make_payload, new_key, sign_envelope
 
-from attested_capture.attestation import DeviceIntegrity, NullAttestationVerifier
-from attested_capture.model import Grade, Level, Property
-from attested_capture.store import (
+from probative.attestation import DeviceIntegrity, NullAttestationVerifier
+from probative.model import Grade, Level, Property
+from probative.store import (
     DeviceRecord,
     InMemoryDeviceStore,
     InMemoryNonceStore,
 )
-from attested_capture.verifier import Verifier
+from probative.verifier import Verifier
 
 MEDIA = b"image-de-test"
 MEDIA_DIGEST = hashlib.sha256(MEDIA).digest()
@@ -396,7 +396,7 @@ def test_charge_utile_illisible_rejetee(verifier, key):
     c'est donc une porte d'entrée atteignable sans aucune clé.
     """
     protected = cbor2.dumps(
-        {1: -7, 4: kid_for(key), 100: "ac/0.1", 101: "test-deployment"}, canonical=True
+        {1: -7, 4: kid_for(key), 100: "probative/0.1", 101: "test-deployment"}, canonical=True
     )
     env = cbor2.dumps(
         cbor2.CBORTag(
@@ -464,7 +464,7 @@ def test_s4_champ_mal_type_rejete(verifier, nonces, key, chemin, valeur):
 
 def test_algorithme_non_es256_refuse(verifier):
     env = cbor2.dumps(
-        cbor2.CBORTag(18, [cbor2.dumps({1: -35, 100: "ac/0.1"}), {}, b"", b""])
+        cbor2.CBORTag(18, [cbor2.dumps({1: -35, 100: "probative/0.1"}), {}, b"", b""])
     )
     res = verifier.verify(env)
 
@@ -476,7 +476,7 @@ def test_version_de_spec_inconnue(verifier, key, nonces):
     import factory
 
     original = factory.SPEC
-    factory.SPEC = "ac/9.9"
+    factory.SPEC = "probative/9.9"
     try:
         nonce = _issue(nonces)
         env = sign_envelope(key, make_payload(nonce=nonce), nonce=nonce)

@@ -1,8 +1,8 @@
-; Enveloppe de capture attestee -- specification ac/0.1
+; Enveloppe de capture attestee -- specification probative/0.1
 ; Extrait automatiquement de docs/envelope-spec.md -- ne pas editer a la main.
 ; Source de verite : docs/envelope-spec.md
 
-ac-envelope = #6.18(COSE_Sign1)
+probative-envelope = #6.18(COSE_Sign1)
 
 COSE_Sign1 = [
   protected   : bstr .cbor header-protected,
@@ -14,7 +14,7 @@ COSE_Sign1 = [
 header-protected = {
   1   => -7,            ; alg : ES256
   4   => bstr,          ; kid : SHA-256 de la clé publique attestée
-  100 => "ac/0.1",      ; version de spécification
+  100 => "probative/0.1",      ; version de spécification
   101 => tstr,          ; identifiant de déploiement (multi-tenant)
 }
 

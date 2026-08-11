@@ -10,10 +10,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SCHEME=AttestedCaptureCore
+SCHEME=ProbativeCore
 DERIVED=build/xcframework-dd
 STAGING=build/xcframework-staging
-OUT=build/AttestedCaptureCore.xcframework
+OUT=build/ProbativeCore.xcframework
 
 rm -rf "$DERIVED" "$STAGING" "$OUT"
 

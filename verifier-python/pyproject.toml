@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "attested-capture"
+name = "probative"
 version = "0.1.0.dev0"
 description = "Vérificateur serveur d'enveloppes de capture photo géolocalisée attestée"
 readme = "README.md"
@@ -18,7 +18,7 @@ dependencies = [
 dev = ["pytest>=8.0", "pytest-cov", "ruff", "mypy"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/attested_capture"]
+packages = ["src/probative"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "tests"]

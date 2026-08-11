@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Architecture d'attested-capture : le mecanisme de preuve, les regles de liaison R1/R2/R3 et le pipeline de verification.">
-<title>attested-capture — l'architecture en clair</title>
+<meta name="description" content="Architecture d'probative : le mecanisme de preuve, les regles de liaison R1/R2/R3 et le pipeline de verification.">
+<title>probative — l'architecture en clair</title>
 
 <style>
 
@@ -253,7 +253,7 @@
 <div class="page">
 
   <header class="masthead">
-    <div class="eyebrow">attested-capture · spécification ac/0.1</div>
+    <div class="eyebrow">probative · spécification probative/0.1</div>
     <h1>Prouver qu'une photo a bien été prise ici, maintenant</h1>
     <p class="lead">
       Une photo géolocalisée ordinaire ne prouve rien : l'EXIF s'édite, le GPS se simule
@@ -439,7 +439,7 @@
           <!-- en-tete protege -->
           <rect class="d-box" x="60" y="60" width="420" height="64" rx="5" />
           <text class="d-t-mono" x="78" y="86">En-tête protégé</text>
-          <text class="d-sub" x="78" y="106">ES256 · kid · « ac/0.1 » · déploiement</text>
+          <text class="d-sub" x="78" y="106">ES256 · kid · « probative/0.1 » · déploiement</text>
           <text class="d-cap" x="462" y="86" text-anchor="end">signé</text>
 
           <!-- en-tete non protege -->
@@ -1441,7 +1441,7 @@
       </div>
       <div class="repo-row">
         <span class="path">docs/envelope-spec.md</span>
-        <span class="what">Le format <span class="m">ac/0.1</span>, les règles R1/R2/R3, l'ordre de vérification.</span>
+        <span class="what">Le format <span class="m">probative/0.1</span>, les règles R1/R2/R3, l'ordre de vérification.</span>
         <span class="chip done">rédigé</span>
       </div>
       <div class="repo-row">
@@ -1590,7 +1590,7 @@
         La conséquence est heureuse : <strong>aucun changement du format</strong>. Le jeton porte
         sur l'empreinte de l'enveloppe complète, donc après signature — il ne peut pas être à
         l'intérieur, et n'a pas à y être. C'est du stockage de preuve côté serveur, une politique de
-        déploiement, pas une évolution de <span class="m">ac/0.1</span>.
+        déploiement, pas une évolution de <span class="m">probative/0.1</span>.
       </p>
       <div class="note">
         <p>
@@ -1638,7 +1638,7 @@
   </section>
 
   <footer>
-    Projet personnel indépendant, licence Apache-2.0. Spécification <span class="m">ac/0.1</span>,
+    Projet personnel indépendant, licence Apache-2.0. Spécification <span class="m">probative/0.1</span>,
     proposition à geler après le spike natif.
   </footer>
 

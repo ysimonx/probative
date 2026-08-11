@@ -7,7 +7,7 @@ silencieusement. Ce qui relève d'une décision durable part en ADR à la clôtu
 ## Objectif et critère de sortie
 
 Produire, depuis un appareil réel — Android d'abord, iOS ensuite — une enveloppe
-`ac/0.1` que le vérificateur Python accepte. Critère binaire : la boucle
+`probative/0.1` que le vérificateur Python accepte. Critère binaire : la boucle
 « capture sur appareil → enveloppe → vérification serveur » passe au vert avec la
 validation d'attestation **réelle** (étape 5 du pipeline), pas le substitut.
 
@@ -62,7 +62,7 @@ Câblage du `Verifier` existant, aucune décision de validité nouvelle.
 - [x] Socle retenu : **bibliothèque standard** (`http.server`), corps JSON avec
       octets en base64 — ~~extra optionnel `[devserver]` (FastAPI + uvicorn)~~
       abandonné : zéro dépendance nouvelle pour trois routes, cohérent avec la
-      surface minimale d'ADR-0001. Module `attested_capture.devserver`, hors API
+      surface minimale d'ADR-0001. Module `probative.devserver`, hors API
       publique.
 - [x] `POST /enroll` : clé publique X9.62 + plateforme → calcul du `kid`
       (SHA-256, comme `factory.kid_for`), `DeviceRecord` en mémoire. La chaîne
@@ -309,7 +309,7 @@ XCFramework autonome.
 - 2026-08-06 : plan rédigé, phases 0/A/B/C/D définies. Rien de commencé.
 - 2026-08-06 : **phase 0 terminée.** Vecteurs d'or (`tests/vectors/`, générateur
   `tools/gen_vectors.py`, signature RFC 6979) et serveur de dev
-  (`attested_capture.devserver`, socle stdlib au lieu de FastAPI — zéro dépendance
+  (`probative.devserver`, socle stdlib au lieu de FastAPI — zéro dépendance
   nouvelle). 50 tests au vert. Trouvaille utile pour A2/C2 : les vecteurs
   contiennent du float16, du float32 et du float64 — la demi-précision CBOR est
   incontournable côté natif. Prochaine étape : phase A (squelette Gradle A1).
@@ -319,7 +319,7 @@ XCFramework autonome.
   précision comprise. `:demo` différé à A4. Prochaine étape : A3 (clé Keystore et
   enrôlement), qui demande un appareil réel pour ses tests instrumentés.
 - 2026-08-06 : **C1 et C2 terminées.** `mobile/ios/` : package SwiftPM
-  `AttestedCaptureCore`, encodeur CBOR canonique et couche COSE en Swift, 13 tests
+  `ProbativeCore`, encodeur CBOR canonique et couche COSE en Swift, 13 tests
   au vert contre les mêmes vecteurs d'or, XCFramework produit et validé par
   script (712 Ko). Les deux cœurs sont désormais au même point : tout ce qui se
   valide sans matériel est fait. Restent A3–A7 (appareil Android + Play Console)
@@ -375,3 +375,21 @@ XCFramework autonome.
   d'assurance 2, ce qui déplace notre valeur vers ce que le natif ne fait pas ; et
   Truepic paraît répondre à notre angle mort par l'empreinte de bruit de capteur,
   piste à instruire pour v0.3.
+- 2026-08-11 : **projet renommé `attested-capture` → `probative`**, sur toute la
+  surface cette fois. Au sens juridique, « qui tend à prouver » : une pièce a une
+  valeur probante *appréciée par un tiers*, jamais autoproclamée — c'est exactement
+  l'invariant n° 1. Suivent le paquet Python, le tag de format `probative/0.1`
+  (label 100), l'extension `.prbv`, le type MIME `application/vnd.probative+cose`,
+  la règle CDDL `probative-envelope`, le paquet Kotlin `org.probative.core`, le
+  module Swift `ProbativeCore`, et les propriétés d'injection de test
+  (`probative.vectors.dir`, `probative.devserver`).
+  Les vecteurs d'or ont dû être régénérés : l'en-tête protégé entre dans
+  `Sig_structure`, donc changer le tag change aussi les signatures. C'est
+  précisément le couplage que les vecteurs existent pour rendre visible — et les
+  trois implémentations l'ont suivi sans retouche.
+  Vérifié de bout en bout : Python 51 tests + ruff + mypy, Kotlin 30 tests unitaires,
+  Swift 18 tests (1 sauté hors appareil), et **le test instrumenté rejoué sur la
+  SM-X200 — 3 tests, 0 sauté, `POST /enroll 200`**. AAR toujours autonome
+  (`kotlin-stdlib` seul), XCFramework reconstruit en `ProbativeCore.xcframework`.
+  Espace de noms `org.probative` ; `probative.org` est libre, `probative.io` était
+  déjà déposé par un tiers.
