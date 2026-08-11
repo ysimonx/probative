@@ -120,25 +120,37 @@ pas de bibliothèque généraliste).
 
 ### A3 — Clé matérielle et enrôlement
 
-*Code écrit à l'aveugle le 2026-08-06 (`core/keys/`), compile, tests instrumentés
-prêts. Les cases restantes se cochent à la première exécution sur appareil réel.*
+*Code écrit à l'aveugle le 2026-08-06 (`core/keys/`). **Validé sur appareil réel le
+2026-08-11** : Samsung SM-X200, 3 tests instrumentés, 0 échec, 0 sauté.*
 
-- [ ] Génération ES256 Keystore, `setAttestationChallenge(nonce)`, StrongBox si
+- [x] Génération ES256 Keystore, `setAttestationChallenge(nonce)`, StrongBox si
       disponible avec repli documenté, `setUserAuthenticationRequired(false)`.
-      *(code prêt : `KeystoreKeys.generate`, repli TEE sur
-      `StrongBoxUnavailableException` et `ProviderException` — certains appareils
-      signalent l'absence de StrongBox par la seconde.)*
-- [x] Export de la clé publique X9.62 non compressée, `kid` = SHA-256 — validé
-      sur l'hôte JVM contre le couple (clé, kid) du manifest des vecteurs, plus
-      cadrage des coordonnées courtes sur 64 clés aléatoires.
-- [ ] Appel `POST /enroll` du serveur de dev, chaîne de certificats transmise
-      (validée en phase B seulement). *(test instrumenté prêt :*
-      `./gradlew :core:connectedDebugAndroidTest`
-      `-Pandroid.testInstrumentationRunnerArguments.ac.devserver=http://IP:8765`
-      *avec le serveur lancé en `--host 0.0.0.0`.)*
-- [ ] Test instrumenté sur appareil : la clé est bien `hardware-backed`
-      (`KeyInfo.securityLevel`). *(écrit : `KeystoreKeysDeviceTest`, avec
-      vérification croisée de la signature et du kid côté serveur.)*
+      Le repli a effectivement servi : la SM-X200 n'expose pas
+      `android.hardware.strongbox_keystore`, la clé sort en `TRUSTED_ENVIRONMENT`.
+      Le double filet (`StrongBoxUnavailableException` **et** `ProviderException`)
+      était la bonne intuition.
+- [x] Export de la clé publique X9.62 non compressée, `kid` = SHA-256 — validé sur
+      l'hôte JVM contre le couple (clé, kid) du manifest des vecteurs, plus cadrage
+      des coordonnées courtes sur 64 clés aléatoires. Confirmé sur appareil :
+      65 octets, préfixe `0x04`, `kid` de 32 octets.
+- [x] Appel `POST /enroll` du serveur de dev, chaîne de certificats transmise
+      (validée en phase B seulement). Serveur et appareil calculent le **même
+      `kid`** : la règle R2 tient de bout en bout, journal serveur à l'appui
+      (`POST /enroll 200`).
+- [x] Test instrumenté sur appareil : la clé est bien `hardware-backed`
+      (`KeyInfo.securityLevel`). Chaîne d'attestation d'au moins 2 certificats ;
+      signature brute de 64 octets reconvertie en DER et acceptée par le
+      fournisseur JCA.
+
+Point de méthode : le serveur de dev a été rendu joignable par
+`adb reverse tcp:8765 tcp:8765` plutôt que par `--host 0.0.0.0`. C'est plus simple
+(aucune adresse IP à relever, appareil et hôte n'ont pas besoin d'être sur le même
+réseau) et cela évite d'exposer le serveur sur le réseau local. À préférer dans le
+commentaire d'en-tête de `KeystoreKeysDeviceTest`.
+
+**Sortie de A3 : atteinte (2026-08-11).** Deux réserves explicites : aucun appareil
+doté de StrongBox au banc, donc ce chemin n'est pas exercé — seul le repli l'est ; et
+la chaîne d'attestation est transmise sans être validée, ce qui reste la phase B.
 
 ### A4 — Capture et collecte
 
@@ -344,3 +356,22 @@ XCFramework autonome.
   sur `kSecAttrKeyClassPrivate`. À traiter en C4 : `create` sous une étiquette
   déjà occupée duplique l'entrée de trousseau — il faudra un
   « créer-si-absent ».
+- 2026-08-11 : **A3 franchie sur matériel réel.** Samsung SM-X200 (Galaxy Tab A8
+  Wi-Fi, Unisoc T618, Android 14) : `connectedDebugAndroidTest`, 3 tests, 0 échec
+  et surtout **0 sauté** — le journal du serveur (`POST /enroll 200`) confirme que
+  l'enrôlement s'est réellement produit et n'a pas été escamoté par `assumeTrue`.
+  Le code écrit à l'aveugle passe au premier contact ; le double filet
+  `StrongBoxUnavailableException` / `ProviderException` a servi, cet appareil
+  n'ayant pas de StrongBox. Serveur rendu joignable par `adb reverse`, plus sobre
+  que `--host 0.0.0.0`. Deux réserves consignées en A3 : le chemin StrongBox
+  n'est pas exercé faute d'appareil, et la chaîne d'attestation reste non validée
+  (phase B). Prochaine étape : **A4**, capture CameraX et collecte.
+- 2026-08-11 : `docs/etat-de-l-art.md` — analyse des solutions voisines (Approov,
+  Guardsquare, Truepic Lens, C2PA, ProofMode). Trois conséquences pour la suite :
+  un article académique de 2026 montre que C2PA ne couvre pas son horodatage par
+  la signature et laisse modifier les métadonnées GPS via ses zones d'exclusion,
+  ce qui conforte l'ordre choisi (liaison dure d'abord, passerelle C2PA ensuite) ;
+  le Pixel 10 signe désormais **toutes** ses photos nativement au niveau
+  d'assurance 2, ce qui déplace notre valeur vers ce que le natif ne fait pas ; et
+  Truepic paraît répondre à notre angle mort par l'empreinte de bruit de capteur,
+  piste à instruire pour v0.3.
