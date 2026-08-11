@@ -282,6 +282,9 @@ Les étapes 1 à 4 sont locales et coûtent une milliseconde. L'étape 5 est un 
 - **Aucune donnée de tiers.** Les réclamations radio de la v0.2 n'entreront qu'avec un condensat salé par déploiement.
 - **Aucune identité d'utilisateur.** Le format prouve l'appareil, jamais la personne.
 - **Le payload lui-même.** Seule son empreinte circule dans l'enveloppe. Les octets sont transférés séparément, ce qui permet de rejeter une enveloppe avant d'avoir dépensé la bande passante.
+- **Toute dépendance au canal de transport.** L'enveloppe s'authentifie par elle-même : la règle R2 établit déjà quel appareil l'a produite, au niveau du message. Une sécurité de canal — mTLS, certificat client, jeton de session — ne peut rien y ajouter et ne doit jamais entrer dans le verdict. **Une enveloppe archivée doit rester vérifiable des années plus tard, quand la session par laquelle elle est arrivée n'existe plus depuis longtemps.** Le jour où une enveloppe serait acceptée *parce qu'elle est arrivée par un canal authentifié*, ou refusée faute de l'être, la preuve cesserait d'être auto-portante — et l'invariant « le serveur juge sur pièces » avec elle.
+
+  Cela ne dispense évidemment pas de TLS : les coordonnées ne doivent pas circuler en clair. Le durcissement du canal relève du déploiement, au même titre que la limitation de débit — laquelle protège la seule route qui crée de l'état sans authentification, l'émission de nonce.
 
 ---
 

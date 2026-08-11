@@ -1593,6 +1593,45 @@
       </div>
 
       <div class="faq-item">
+        <div class="faq-q">Pourquoi pas du mTLS entre l'application et le serveur ?</div>
+        <div class="faq-a">
+          <p>
+            Parce que ce serait répondre au niveau du <strong>canal</strong> à une question qui se
+            joue au niveau du <strong>message</strong>. La règle R2 établit déjà quel appareil a
+            produit l'enveloppe : la signature se vérifie sous la clé matérielle enrôlée. Un
+            certificat client n'y ajouterait rien.
+          </p>
+          <p>
+            Et il retirerait quelque chose d'essentiel. <strong>Une enveloppe archivée doit rester
+            vérifiable des années plus tard</strong> — devant un assureur, un auditeur, un
+            tribunal. Si une partie de la preuve reposait sur la session TLS, elle s'évanouirait
+            avec elle. La signature, non.
+          </p>
+          <p>
+            S'ajoutent deux limites propres au mobile. La clé privée du certificat client vivrait
+            où ? Dans un fichier, elle s'extrait d'un appareil compromis et ne prouve rien de plus
+            qu'un jeton ; dans la puce sécurisée, il faudrait gérer <em>deux</em> clés matérielles
+            et deux enrôlements pour une propriété que le premier établit déjà. Surtout, un
+            certificat client prouve la possession d'une clé — <strong>jamais que l'application
+            est authentique ni que l'appareil est sain</strong>. C'est exactement ce que Play
+            Integrity et App Attest apportent, et qu'aucun mTLS ne peut apporter.
+          </p>
+          <p>
+            Tout cela ne dispense évidemment pas de HTTPS : les coordonnées n'ont pas à circuler
+            en clair. La question ne porte que sur le certificat <em>client</em>.
+          </p>
+          <div class="faq-note">
+            Le vrai point d'attention est ailleurs : l'émission de nonce est la seule route où un
+            appelant non authentifié fait <em>créer de l'état</em> au serveur. Cela se traite par
+            une limitation de débit et par l'authentification applicative que votre produit possède
+            déjà — celle qui décide, de toute façon, à quel dossier ce nonce se rattache.
+            Durcir le canal reste utile, mais c'est une décision de déploiement : le verdict, lui,
+            ne doit jamais en dépendre.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
         <div class="faq-q">C'est une bibliothèque qu'on installe ?</div>
         <div class="faq-a">
           <p>
