@@ -21,6 +21,8 @@ mobile/**/.build/
 mobile/**/.swiftpm/
 mobile/**/Pods/
 mobile/**/*.xcuserdatad/
+# Projet Xcode de la demo : genere par scripts/make_demo_project.rb
+mobile/**/*.xcodeproj/
 # Ne jamais versionner de materiel cryptographique reel
 *.p8
 *.p12

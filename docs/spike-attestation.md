@@ -239,10 +239,16 @@ Package SwiftPM produisant un XCFramework, plus une application de démonstratio
 
 ### C3 — Clé et enrôlement App Attest
 
-- [ ] `DCAppAttestService.generateKey()`, attestation initiale transmise à
-      `POST /enroll` (validée en phase D), `kid` cohérent avec le `keyId` stocké.
-      *(enveloppe mince `AppAttest` écrite et compilée pour iOS ; test conditionnel
-      prêt, sauté hors appareil — App Attest exige un App ID provisionné.)*
+- [x] `DCAppAttestService.generateKey()` et attestation initiale, **obtenues sur
+      iPhone 16 réel** (iOS 26.6) via l'application de démonstration
+      `mobile/ios/demo`. Objet de 5 816 octets, `fmt = apple-appattest`, chaîne
+      `x5c` à 2 certificats, reçu de 3 966 octets. Deux liaisons vérifiées par
+      recalcul, pas par lecture : `rpIdHash == SHA-256("9SGKL7VUD3.org.probative.demo")`
+      et `credentialId == keyId`. `aaguid = appattestdevelop` — environnement de
+      développement, ce que la phase D devra accepter explicitement.
+- [ ] Transmission à `POST /enroll` — reportée avec la phase D : le serveur ne
+      sait pas encore valider une attestation Apple, l'y envoyer ne prouverait
+      rien. Le vecteur capturé est ce qui permet d'écrire cette validation.
 - [x] Clé de signature d'enveloppe Secure Enclave, export public X9.62, même `kid`
       que la convention Android — **validé sur l'enclave réelle du Mac hôte**
       (Apple Silicon, même API que l'appareil) : création, export, signature
@@ -258,8 +264,12 @@ Package SwiftPM produisant un XCFramework, plus une application de démonstratio
 
 ### C5 — Fraîcheur (règle R1)
 
-- [ ] `generateAssertion(clientDataHash: R1)` — 32 octets bruts, pas de problème
-      d'encodage attendu ; compteur d'assertion dans `freshness[3]`.
+- [x] `generateAssertion(clientDataHash: R1)` — **exercé sur appareil réel** avec
+      un R1 calculé pour de bon, `SHA-256(payload_bytes ‖ nonce)` : assertion de
+      142 octets, signature DER de 72 octets, compteur passé de 0 à 1. Les 32
+      octets bruts passent sans encapsulation, l'inconnue d'encodage qui pesait
+      sur Android (`requestHash`) n'a pas d'équivalent ici. La charge utile reste
+      synthétique : le branchement sur une capture réelle est en C4.
 - [ ] Pas de chaînage `payload[7]` : le compteur joue ce rôle (spec §2.3).
 - [ ] Mesure de `media.6` sur un appareil iOS réel, reportée ici.
 
@@ -301,8 +311,10 @@ XCFramework autonome.
       projet Google Cloud lié pour l'API standard Play Integrity.
 - [ ] Appareil Android réel d'entrée de gamme + un milieu de gamme (émulateur non
       représentatif pour Play Integrity et StrongBox).
-- [ ] Compte développeur Apple payant.
-- [ ] Appareil iOS réel (App Attest indisponible sur simulateur).
+- [x] Compte développeur Apple payant. *(équipe `9SGKL7VUD3` ; le profil joker
+      `9SGKL7VUD3.*` couvre `org.probative.demo` sans démarche sur le portail.)*
+- [x] Appareil iOS réel (App Attest indisponible sur simulateur). *(iPhone 16,
+      iOS 26.6.)*
 
 ## Journal
 
@@ -383,6 +395,31 @@ XCFramework autonome.
   la règle CDDL `probative-envelope`, le paquet Kotlin `org.probative.core`, le
   module Swift `ProbativeCore`, et les propriétés d'injection de test
   (`probative.vectors.dir`, `probative.devserver`).
+- 2026-08-11 : **C3 franchie sur matériel réel** — iPhone 16, iOS 26.6, équipe
+  `9SGKL7VUD3`. Première application de démonstration du dépôt
+  (`mobile/ios/demo`, bundle `org.probative.demo`) : App Attest exige un App ID
+  provisionné, qu'un bundle de test XCTest n'a pas, il fallait donc un hôte
+  applicatif. Le projet Xcode n'est pas versionné — `scripts/make_demo_project.rb`
+  le régénère, un pbxproj étant illisible en revue. La séquence complète passe du
+  premier coup : `generateKey`, `attestKey`, `generateAssertion`, plus la clé
+  d'enveloppe Secure Enclave, cette fois sur l'enclave de l'appareil et non celle
+  du Mac hôte.
+
+  Les deux liaisons qui comptent sont vérifiées **par recalcul** :
+  `rpIdHash == SHA-256(teamId.bundleId)` et `credentialId == keyId`. Le compteur
+  d'assertion démarre à 0 et passe à 1 — c'est l'état que la phase D devra
+  persister dans `DeviceRecord`.
+
+  **Latences mesurées** (à confronter à `grading.py` en clôture) : création de clé
+  Secure Enclave 6,3 ms, signature 4,8 ms, **assertion 18 ms**, attestation
+  d'enrôlement 1 230 ms. L'écart de deux ordres de grandeur est structurel :
+  l'enrôlement fait un aller-retour chez Apple, l'assertion est locale. Bonne
+  nouvelle pour l'inconnue n° 2 — la fraîcheur R1 ne coûte rien au chemin
+  capture→signature ; c'est la capture elle-même qu'il faudra mesurer en C4.
+
+  Réserve : l'environnement est `appattestdevelop`. Un build de distribution
+  produira `appattestprod` et une racine différente ; la phase D doit traiter les
+  deux, et un vecteur de développement ne prouve pas le chemin de production.
   Les vecteurs d'or ont dû être régénérés : l'en-tête protégé entre dans
   `Sig_structure`, donc changer le tag change aussi les signatures. C'est
   précisément le couplage que les vecteurs existent pour rendre visible — et les

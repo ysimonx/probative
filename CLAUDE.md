@@ -86,7 +86,7 @@ mypy src
 | Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 51 tests au vert |
 | `PlayIntegrityVerifier`, `AppAttestVerifier` | Interfaces posées, `NotImplementedError` |
 | Cœur natif Android | A1–A3 faites ; **A3 validée sur appareil réel** (SM-X200). Prochaine : A4, capture CameraX |
-| Cœur natif iOS | C1–C3 faites, validées autant que l'hôte le permet ; App Attest attend un appareil (C4) |
+| Cœur natif iOS | C1–C3 faites ; **C3 validée sur appareil réel** (iPhone 16, iOS 26.6), assertion R1 exercée. Prochaine : C4, capture AVFoundation |
 | Liaisons Flutter / React Native | Non commencées |
 | Banc de triche | Non commencé |
 
