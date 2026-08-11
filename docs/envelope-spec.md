@@ -3,7 +3,9 @@
 **Statut : proposition, à geler après le spike d'attestation natif.**
 Dérive du modèle de menace v0.2.
 
-Nom de code provisoire : `ac` (*attested capture*). Le préfixe est à fixer avant publication — voir §9.
+Préfixe de spécification : `probative/`. La valeur exacte du label 100 de l'en-tête
+protégé est `probative/0.1` — arrêtée le 2026-08-11, voir §8 pour la politique de
+version et §9 pour ce qui reste ouvert.
 
 ---
 
@@ -36,7 +38,7 @@ L'appareil produit une enveloppe `COSE_Sign1` signée par cette clé, accompagn�
 L'enveloppe est un `COSE_Sign1` étiqueté (tag CBOR 18).
 
 ```cddl
-ac-envelope = #6.18(COSE_Sign1)
+probative-envelope = #6.18(COSE_Sign1)
 
 COSE_Sign1 = [
   protected   : bstr .cbor header-protected,
@@ -52,7 +54,7 @@ COSE_Sign1 = [
 header-protected = {
   1   => -7,            ; alg : ES256
   4   => bstr,          ; kid : SHA-256 de la clé publique attestée
-  100 => "ac/0.1",      ; version de spécification
+  100 => "probative/0.1",      ; version de spécification
   101 => tstr,          ; identifiant de déploiement (multi-tenant)
 }
 ```
@@ -204,7 +206,7 @@ Le vérificateur ne retourne pas un score global mais une structure par proprié
 
 ```json
 {
-  "spec": "ac/0.1",
+  "spec": "probative/0.1",
   "level": "STANDARD",
   "properties": {
     "origin":    { "grade": "B", "evidence": ["play-integrity:PLAY_RECOGNIZED", "raw-hash-match"] },
@@ -253,14 +255,14 @@ Les étapes 1 à 4 sont locales et coûtent une milliseconde. L'étape 5 est un 
 
 CBOR canonique, RFC 8949 §4.2.1, sans exception. Deux implémentations doivent produire des octets identiques pour une même charge utile — sinon la signature ne se vérifie pas.
 
-Type MIME proposé : `application/vnd.attested-capture+cose`
-Extension de fichier : `.acap`
+Type MIME proposé : `application/vnd.probative+cose`
+Extension de fichier : `.prbv`
 
 ---
 
 ## 8. Politique de version
 
-`ac/MAJEUR.MINEUR`. Une version mineure ajoute des réclamations ou des champs optionnels ; un vérificateur d'une version mineure inférieure doit rester capable de valider les quatre propriétés. Une version majeure change les règles de liaison de §3 — c'est le seul motif légitime.
+`probative/MAJEUR.MINEUR`. Une version mineure ajoute des réclamations ou des champs optionnels ; un vérificateur d'une version mineure inférieure doit rester capable de valider les quatre propriétés. Une version majeure change les règles de liaison de §3 — c'est le seul motif légitime.
 
 Un vérificateur accepte les versions mineures qu'il ne connaît pas et signale `UNKNOWN_CLAIMS` sans dégrader le niveau.
 
@@ -270,8 +272,16 @@ Un vérificateur accepte les versions mineures qu'il ne connaît pas et signale 
 
 | Sujet | Options | À trancher |
 |---|---|---|
-| Préfixe de spécification | `ac/` conservé, ou aligné sur le nom de package final | Avant publication |
-| Nom de package | `attested_capture`, `proofshot`, `veracapture` — vérifier la disponibilité sur pub.dev et PyPI simultanément | Cette semaine |
 | Chaînage Android | Chaîne de hachage locale, ou compteur monotone stocké dans le Keystore | Après le spike |
 | Fenêtre inertielle | 10 s fixes, ou adaptative selon l'activité détectée | Après mesure de l'impact sur la taille d'enveloppe |
 | Alignement C2PA | Enveloppe native puis passerelle, ou manifeste C2PA dès le départ | v0.3 |
+
+### Arrêtées
+
+Conservées ici pour que le motif reste lisible après le gel de la spécification.
+
+| Sujet | Décision | Date |
+|---|---|---|
+| Nom de projet | `probative` — au sens juridique, « qui tend à prouver » : la pièce a une valeur probante, appréciée par un tiers, jamais autoproclamée. Libre sur PyPI, npm et pub.dev à cette date. | 2026-08-11 |
+| Préfixe de spécification | `probative/` — le label 100 vaut `probative/0.1`. Auto-descriptif au prix de 7 octets : qui inspecte des octets inconnus peut retrouver la spécification. | 2026-08-11 |
+| Extension et type MIME | `.prbv`, `application/vnd.probative+cose` | 2026-08-11 |

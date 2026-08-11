@@ -1,11 +1,13 @@
-# attested-capture
+# probative
 
 Preuve de présence photographique : une bibliothèque mobile et un vérificateur serveur
 permettant d'établir qu'une image donnée a été prise **par ce capteur, à cet endroit, à
 cet instant**, sur un appareil non compromis.
 
-> **Nom provisoire.** `attested-capture` est un nom de travail. À vérifier sur pub.dev,
-> npm et PyPI simultanément avant publication. Voir `docs/envelope-spec.md` §9.
+> **Nom arrêté le 2026-08-11.** `probative`, au sens juridique : *qui tend à prouver*.
+> Une pièce a une valeur probante, appréciée par un tiers — jamais autoproclamée, ce qui
+> est exactement l'invariant n° 1. Libre sur PyPI, npm et pub.dev à cette date. Le format
+> s'identifie par `probative/0.1`, extension `.prbv`. Voir `docs/envelope-spec.md` §9.
 
 ---
 
@@ -36,7 +38,7 @@ sur l'appareil, et l'API publique n'expose jamais de booléen de confiance.
 | Composant | État |
 |---|---|
 | Modèle de menace | Rédigé — `docs/threat-model.md` |
-| Spécification d'enveloppe `ac/0.1` | Proposée — `docs/envelope-spec.md` |
+| Spécification d'enveloppe `probative/0.1` | Proposée — `docs/envelope-spec.md` |
 | Vérificateur Python | Fonctionnel, 40 tests au vert |
 | Validation Play Integrity | Interface posée, implémentation à faire |
 | Validation App Attest | Interface posée, implémentation à faire |
@@ -86,7 +88,7 @@ ne saurait pas produire, c'est le client qui s'écarte de la spécification.
 ## Usage
 
 ```python
-from attested_capture import Verifier
+from probative import Verifier
 
 verifier = Verifier(
     nonce_store=...,

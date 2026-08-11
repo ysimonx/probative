@@ -1,4 +1,4 @@
-"""Modèle de données de l'enveloppe `ac/0.1`.
+"""Modèle de données de l'enveloppe `probative/0.1`.
 
 Le décodage est volontairement strict et défensif : l'enveloppe provient
 d'un client considéré comme hostile. Toute donnée absente est `None`,
@@ -15,7 +15,7 @@ from typing import Any, TypeVar
 
 from .errors import MalformedEnvelope
 
-SPEC_SUPPORTED = {"ac/0.1"}
+SPEC_SUPPORTED = {"probative/0.1"}
 
 # Toutes les maps du format sont à clés entières (spec §2). L'alias évite
 # de répéter l'annotation et rappelle que la valeur reste non validée tant

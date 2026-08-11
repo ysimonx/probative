@@ -13,14 +13,14 @@ from __future__ import annotations
 from factory import kid_for
 from vectors import MEDIA, VECTORS_DIR, WALL_MS, build_vectors, vector_key, vector_nonce
 
-from attested_capture.attestation import DeviceIntegrity, NullAttestationVerifier
-from attested_capture.model import Level, VerificationResult
-from attested_capture.store import (
+from probative.attestation import DeviceIntegrity, NullAttestationVerifier
+from probative.model import Level, VerificationResult
+from probative.store import (
     DeviceRecord,
     InMemoryDeviceStore,
     InMemoryNonceStore,
 )
-from attested_capture.verifier import Verifier
+from probative.verifier import Verifier
 
 REGEN = "relancer tools/gen_vectors.py et examiner le diff avant de committer"
 
@@ -53,7 +53,7 @@ def _verify_vector(platform: str) -> VerificationResult:
         device_store=devices,
         attestation=NullAttestationVerifier(DeviceIntegrity.STRONG),
     )
-    envelope = (VECTORS_DIR / f"{platform}.envelope.acap").read_bytes()
+    envelope = (VECTORS_DIR / f"{platform}.envelope.prbv").read_bytes()
     return verifier.verify(envelope, media_bytes=MEDIA, now_ms=WALL_MS + 2_000)
 
 

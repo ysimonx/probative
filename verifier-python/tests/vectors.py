@@ -41,12 +41,12 @@ WALL_MS = 1_754_400_000_000
 
 def vector_key(platform: str) -> ec.EllipticCurvePrivateKey:
     """Clé P-256 de test, dérivée d'une étiquette. Jamais sur un appareil."""
-    d = int.from_bytes(_digest(f"ac/0.1 vecteur cle {platform}"), "big")
+    d = int.from_bytes(_digest(f"probative/0.1 vecteur cle {platform}"), "big")
     return ec.derive_private_key(d % (_P256_ORDER - 1) + 1, ec.SECP256R1())
 
 
 def vector_nonce(platform: str) -> bytes:
-    return _digest(f"ac/0.1 vecteur nonce {platform}")[:16]
+    return _digest(f"probative/0.1 vecteur nonce {platform}")[:16]
 
 
 def _digest(label: str) -> bytes:
@@ -55,7 +55,7 @@ def _digest(label: str) -> bytes:
 
 # Le média des vecteurs est ce texte : son empreinte figure dans la
 # charge utile, et les tests de vérification le fournissent tel quel.
-MEDIA = b"ac/0.1 vecteur media"
+MEDIA = b"probative/0.1 vecteur media"
 
 
 def build_vectors() -> dict[str, bytes]:
@@ -66,7 +66,7 @@ def build_vectors() -> dict[str, bytes]:
     for platform in ("android", "ios"):
         key = vector_key(platform)
         nonce = vector_nonce(platform)
-        prev_digest = _digest("ac/0.1 vecteur enveloppe precedente") if platform == "android" else None
+        prev_digest = _digest("probative/0.1 vecteur enveloppe precedente") if platform == "android" else None
         counter = 7 if platform == "ios" else None
         freshness_kind = "play-integrity" if platform == "android" else "app-attest"
 
@@ -94,7 +94,7 @@ def build_vectors() -> dict[str, bytes]:
         files[f"{platform}.protected.cbor"] = protected_bytes
         files[f"{platform}.sig_structure.cbor"] = sig_structure
         files[f"{platform}.challenge.bin"] = challenge
-        files[f"{platform}.envelope.acap"] = envelope
+        files[f"{platform}.envelope.prbv"] = envelope
 
         public_x962 = key.public_key().public_bytes(
             Encoding.X962, PublicFormat.UncompressedPoint

@@ -1,4 +1,4 @@
-"""Vérification d'enveloppes de capture attestée — spécification ac/0.1."""
+"""Vérification d'enveloppes de capture attestée — spécification probative/0.1."""
 
 from .errors import VerificationError
 from .model import Grade, Level, Property, VerificationResult

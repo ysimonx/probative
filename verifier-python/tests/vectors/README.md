@@ -8,7 +8,7 @@ fichiers à une régénération : toute dérive casse le test.
 Un cœur natif est conforme quand, pour les entrées du `manifest.json`,
 il reproduit **octet à octet** `payload.cbor`, `protected.cbor`,
 `sig_structure.cbor` et `challenge.bin`. L'enveloppe complète
-(`envelope.acap`) n'est *pas* reproductible sur appareil : sa signature
+(`envelope.prbv`) n'est *pas* reproductible sur appareil : sa signature
 est ECDSA déterministe (RFC 6979), alors que Keystore et Secure Enclave
 signent en ECDSA aléatoire. Elle sert de référence structurelle et de
 garde de régression côté Python.
@@ -26,7 +26,7 @@ garde de régression côté Python.
 | `{p}.protected.cbor` | En-tête protégé encodé (`bstr .cbor`) |
 | `{p}.sig_structure.cbor` | `Sig_structure` COSE — les octets réellement signés |
 | `{p}.challenge.bin` | Défi R1 : `SHA-256(payload_bytes ‖ nonce)`, 32 octets |
-| `{p}.envelope.acap` | Enveloppe `COSE_Sign1` complète, tag 18 |
+| `{p}.envelope.prbv` | Enveloppe `COSE_Sign1` complète, tag 18 |
 | `manifest.json` | Toutes les entrées, en hexadécimal |
 
 Deux jeux : `android` (chaînage `payload[7]`, posture 6/7/8) et `ios`

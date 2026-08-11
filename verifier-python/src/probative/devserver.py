@@ -162,7 +162,7 @@ def make_server(
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Serveur de développement attested-capture")
+    parser = argparse.ArgumentParser(description="Serveur de développement probative")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args(argv)

@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 from factory import make_payload, new_key, sign_envelope
 
-from attested_capture.devserver import BadRequest, DevService, make_server
+from probative.devserver import BadRequest, DevService, make_server
 
 MEDIA = b"image-de-test"
 MEDIA_DIGEST = hashlib.sha256(MEDIA).digest()
