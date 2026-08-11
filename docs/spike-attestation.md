@@ -18,10 +18,13 @@ XCFramework — sans dépendance à un framework (ADR-0003).
 
 ## Inconnues que le spike doit lever
 
-1. **`requestHash` Play Integrity.** L'API standard prend une *chaîne* (≤ 500 octets
-   documentés) ; R1 produit un condensat de 32 octets *bruts*. Fixer l'encodage
-   (vraisemblablement base64url sans bourrage), le valider empiriquement, puis
-   réviser ADR-0002 et la spec §3/R1 pour le rendre normatif.
+1. **`requestHash` Play Integrity.** ~~L'API standard prend une *chaîne* (≤ 500
+   octets documentés) ; R1 produit un condensat de 32 octets *bruts*.~~
+   **Levée sur la taille le 2026-08-11** (SM-X200) : base64url sans bourrage donne
+   43 caractères, très en deçà du plafond. Le condensat passe tel quel, aucun
+   niveau d'indirection, la spec §3/R1 tient. Reste à confirmer que Play restitue
+   la chaîne intacte — cela suppose de déchiffrer le jeton, donc la phase B — puis
+   à rendre l'encodage normatif dans ADR-0002.
 2. **Latence capture→signature (`media.6`)** sur appareil d'entrée de gamme : elle
    conditionne l'exploitabilité du champ comme discriminant d'injection.
 3. **Chaînage Android** (spec §9) : chaîne de hachage locale ou compteur Keystore.
@@ -177,11 +180,24 @@ n'a pas été confrontée à celle publiée par Google, ce qui reste la phase B.
 
 ### A5 — Fraîcheur Play Integrity (règle R1)
 
-- [ ] Intégration API standard (`StandardIntegrityManager`), préchauffage du
-      fournisseur de jetons au démarrage.
-- [ ] `requestHash` = encodage retenu de `SHA-256(payload_bytes ‖ nonce)` —
-      **inconnue n° 1** : valider empiriquement l'encodage et la taille, noter le
-      résultat ici et dans ADR-0002.
+- [x] Intégration API standard (`StandardIntegrityManager`) — `core/freshness/
+      PlayIntegrity.kt`, exercée sur SM-X200 le 2026-08-11. Le type
+      `StandardIntegrityTokenProvider` de Play est encapsulé dans une classe
+      opaque : la surface publique du cœur ne doit pas faire fuir un type
+      propriétaire, sans quoi les liaisons Flutter et React Native devraient
+      embarquer Play Integrity rien que pour le nommer.
+- [x] **Préchauffage confirmé nécessaire, chiffres à l'appui** : `prepare` coûte
+      **1 313 ms à froid** et **533 ms à chaud**, quand la demande de jeton ne
+      coûte que **36–39 ms**. Préparer le fournisseur au démarrage, jamais sur le
+      chemin capture→signature.
+- [x] `requestHash` = **base64url sans bourrage**, 43 caractères pour un plafond
+      documenté à 500 — **inconnue n° 1 levée sur la taille** : le condensat de
+      32 octets passe tel quel, aucun niveau d'indirection n'est nécessaire, la
+      spec §3/R1 n'a pas à être révisée sur ce point.
+- [ ] Confirmer que Play **restitue** le `requestHash` intact dans le jeton —
+      exige de le faire déchiffrer par Google (compte de service), donc phase B.
+      Tant que ce n'est pas fait, l'encodage est validé en émission seulement.
+- [ ] Rendre l'encodage normatif dans ADR-0002 une fois l'aller-retour confirmé.
 - [ ] Jeton opaque dans `freshness[2]`, enveloppe complète signée, acceptée par le
       serveur de dev avec substitut d'attestation.
 
@@ -446,6 +462,33 @@ XCFramework autonome.
   par un fichier. Gradle désinstalle le paquet de test à la fin de la campagne —
   emportant son répertoire de données — et depuis Android 11 `adb` ne peut plus
   lire `Android/data` d'une autre application. Le tampon logcat survit aux deux.
+- 2026-08-11 : **A5 largement franchie, inconnue n° 1 levée sur la taille.** Module
+  `:demo` restauré depuis le tag `abandon/renommage-probative` — seul endroit où il
+  subsistait — puis réécrit : le commit abandonné portait un état bien plus ancien
+  du cœur. Sonde A5 exécutée sur SM-X200 avec le projet Cloud `probative`
+  (487335590129).
+
+  **Le jeton est délivré alors que l'application n'est *pas* déclarée dans la Play
+  Console.** Contre-intuitif et utile à savoir : l'API standard n'exige que le
+  numéro de projet Cloud. Le verdict interne dira vraisemblablement que
+  l'application n'est pas reconnue, mais cela ne se lit qu'après déchiffrement
+  (phase B). Conséquence pratique : A5 a pu avancer sans ouvrir la Play Console.
+
+  **Mesures** (deux exécutions) : `prepare` 1 313 ms à froid puis 533 ms à chaud ;
+  demande de jeton **36 puis 39 ms** ; jeton de 528–530 caractères ; génération de
+  clé matérielle 264 ms à froid puis 61–70 ms. Le préchauffage du fournisseur, que
+  le plan supposait utile, est confirmé nécessaire — deux ordres de grandeur entre
+  `prepare` et la demande.
+
+  Comparaison avec iOS, sur le seul chiffre qui compte pour `media.6` : fraîcheur
+  **36–39 ms sur Android, 18 ms sur iPhone 16**. Le même ordre de grandeur, et
+  négligeable devant une capture photo. L'inconnue n° 2 se joue donc bien dans la
+  capture elle-même (A4/C4), pas dans l'attestation.
+
+  Réserve : l'encodage du `requestHash` n'est validé **qu'en émission**. Tant que
+  la phase B ne l'a pas relu dans un jeton déchiffré, rien ne prouve que Play le
+  restitue intact — et un encodage qui diverge entre client et serveur casse R1
+  silencieusement, ce qui est le pire mode de défaillance possible.
   Les vecteurs d'or ont dû être régénérés : l'en-tête protégé entre dans
   `Sig_structure`, donc changer le tag change aussi les signatures. C'est
   précisément le couplage que les vecteurs existent pour rendre visible — et les
