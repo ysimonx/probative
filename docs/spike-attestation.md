@@ -469,10 +469,19 @@ XCFramework autonome.
   (487335590129).
 
   **Le jeton est délivré alors que l'application n'est *pas* déclarée dans la Play
-  Console.** Contre-intuitif et utile à savoir : l'API standard n'exige que le
-  numéro de projet Cloud. Le verdict interne dira vraisemblablement que
-  l'application n'est pas reconnue, mais cela ne se lit qu'après déchiffrement
-  (phase B). Conséquence pratique : A5 a pu avancer sans ouvrir la Play Console.
+  Console.** Contraire à nos attentes, mais **conforme à la documentation**, qui
+  est explicite : le numéro de projet Cloud est *requis pour les applications
+  distribuées exclusivement hors de Google Play*, et configuré dans la Play Console
+  pour les autres. `setCloudProjectNumber` existe donc exactement pour ce cas —
+  aucun contrôle n'est contourné. Le jugement se fait ailleurs : le jeton déchiffré
+  porte `appRecognitionVerdict`, qui vaut ici très probablement
+  `UNRECOGNIZED_VERSION`. Google délivre et laisse juger le serveur : le même
+  partage que l'invariant n° 1.
+
+  Deux conséquences. A5 a pu avancer sans ouvrir la Play Console. Et surtout, le
+  chemin **hors Play étant officiellement pris en charge**, ce dépôt peut servir des
+  applications distribuées en interne ou par sideload, pas seulement publiées sur le
+  Store — ce qui compte pour une bibliothèque destinée à être réutilisée.
 
   **Mesures** (deux exécutions) : `prepare` 1 313 ms à froid puis 533 ms à chaud ;
   demande de jeton **36 puis 39 ms** ; jeton de 528–530 caractères ; génération de
