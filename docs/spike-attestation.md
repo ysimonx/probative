@@ -148,9 +148,18 @@ Point de méthode : le serveur de dev a été rendu joignable par
 réseau) et cela évite d'exposer le serveur sur le réseau local. À préférer dans le
 commentaire d'en-tête de `KeystoreKeysDeviceTest`.
 
+- [x] **Vecteur d'appareil capturé** (`KeystoreVectorDeviceTest`, 2026-08-11) —
+      pendant de la sonde C3 côté iOS. Chaîne de 4 certificats conservée dans
+      `tests/device-vectors/`. Contrôle décisif fait **par recalcul** : le défi
+      inscrit par le TEE dans l'extension `1.3.6.1.4.1.11129.2.1.17` vaut bien
+      `SHA-256(payload ‖ nonce)`, et `attestationSecurityLevel` confirme
+      `TrustedEnvironment` dans l'attestation elle-même, pas seulement d'après ce
+      que déclare l'appareil.
+
 **Sortie de A3 : atteinte (2026-08-11).** Deux réserves explicites : aucun appareil
 doté de StrongBox au banc, donc ce chemin n'est pas exercé — seul le repli l'est ; et
-la chaîne d'attestation est transmise sans être validée, ce qui reste la phase B.
+la chaîne d'attestation est **cohérente avec elle-même mais sans ancre** — sa racine
+n'a pas été confrontée à celle publiée par Google, ce qui reste la phase B.
 
 ### A4 — Capture et collecte
 
@@ -420,6 +429,23 @@ XCFramework autonome.
   Réserve : l'environnement est `appattestdevelop`. Un build de distribution
   produira `appattestprod` et une racine différente ; la phase D doit traiter les
   deux, et un vecteur de développement ne prouve pas le chemin de production.
+- 2026-08-11 : **vecteur d'appareil Android capturé**, rétablissant la symétrie
+  avec iOS — les deux plateformes ont désormais une capture réelle versionnée.
+  Contrôle décisif obtenu sur la SM-X200 : le défi que le TEE inscrit dans
+  l'extension d'attestation vaut exactement le R1 recalculé côté hôte. La chaîne
+  de 4 certificats s'enchaîne, chaque signature vérifiée, racine auto-signée, et
+  la clé du certificat feuille est bien celle qu'exporte le cœur.
+
+  À l'occasion, une asymétrie de rigueur a été corrigée : côté iOS, seule la
+  cohérence *interne* de l'attestation avait été vérifiée — la signature d'Apple,
+  jamais. Les deux vecteurs sont donc au même stade : cohérents avec eux-mêmes,
+  sans ancre de confiance. C'est exactement ce que les phases B et D apportent, et
+  la raison pour laquelle aucune des deux ne peut être déclarée faite.
+
+  Point de méthode : le vecteur ressort par **logcat en tronçons numérotés**, pas
+  par un fichier. Gradle désinstalle le paquet de test à la fin de la campagne —
+  emportant son répertoire de données — et depuis Android 11 `adb` ne peut plus
+  lire `Android/data` d'une autre application. Le tampon logcat survit aux deux.
   Les vecteurs d'or ont dû être régénérés : l'en-tête protégé entre dans
   `Sig_structure`, donc changer le tag change aussi les signatures. C'est
   précisément le couplage que les vecteurs existent pour rendre visible — et les

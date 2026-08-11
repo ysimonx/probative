@@ -16,7 +16,70 @@ d'appareil est ce qui permet de la tenir côté iOS.
 > `.gitignore` interdit le matériel cryptographique réel : il s'agit de secrets,
 > pas de preuves publiques.
 
-## `appattest-c3-iphone16.json`
+## `keystore-a3-sm-x200.json` — Android
+
+| | |
+|---|---|
+| Origine | Samsung SM-X200, Android 14, patch de sécurité 2025-08-01 |
+| Produit par | `KeystoreVectorDeviceTest`, étape A3 du spike |
+| Date | 2026-08-11 |
+| Niveau | `TRUSTED_ENVIRONMENT` — cet appareil n'expose pas StrongBox |
+
+Chaîne d'attestation de clé à **4 certificats**, clé publique X9.62, `kid`, une
+signature de contrôle, et le défi d'attestation avec ses composants.
+
+Le défi est un **vrai R1**, `SHA-256(payload ‖ nonce)`. C'est ce qui rend le
+vecteur intéressant : Keymaster recopie ce défi dans l'extension d'attestation
+`1.3.6.1.4.1.11129.2.1.17` du certificat feuille, donc un vérificateur peut
+retrouver la liaison **par recalcul** au lieu de croire le client.
+
+### Ce qui a été vérifié à la capture
+
+Tout ceci a été refait à la main sur le vecteur, avant de le figer — un vecteur
+qu'on n'a pas su vérifier soi-même ne vaut rien comme référence :
+
+- défi inscrit par le TEE dans l'extension == `SHA-256(payload ‖ nonce)` recalculé ;
+- `attestationSecurityLevel` = `TrustedEnvironment` **dans l'attestation**, et pas
+  seulement d'après ce que déclare l'appareil (`attestationVersion` = 3) ;
+- les 4 certificats s'enchaînent, chaque signature vérifiée, racine auto-signée ;
+- clé publique du certificat feuille == clé exportée par le cœur ;
+- `kid` == `SHA-256(clé publique X9.62)` ;
+- signature `r‖s` de contrôle acceptée par la clé attestée.
+
+Empreinte SHA-256 de la racine :
+`1ef1a04b8ba58ab94589ac498c8982a783f24ea7307e0159a0c3a73b377d87cc`
+
+### Ce qu'il ne prouve pas
+
+La racine **n'a pas été confrontée à la racine d'attestation matérielle publiée
+par Google**, ni aucun certificat à une liste de révocation : c'est le cœur de la
+phase B. Une chaîne cohérente avec elle-même reste une chaîne que n'importe qui
+peut fabriquer — seule l'ancre de confiance la rend opposable.
+
+StrongBox n'est pas exercé, faute d'appareil au banc qui l'expose. Et Play
+Integrity — le pendant réel d'App Attest, qui atteste l'*application* et non la
+clé — n'est pas dans ce vecteur : c'est l'étape A5, non commencée.
+
+### Refaire la capture
+
+```bash
+cd mobile/android
+adb logcat -c
+./gradlew :core:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=org.probative.core.keys.KeystoreVectorDeviceTest
+adb logcat -d -s PROBATIVE_VECTOR   # tronçons numérotés à recoller
+```
+
+Le vecteur sort par **logcat**, pas par un fichier. Gradle désinstalle le paquet
+de test à la fin de la campagne, ce qui emporte son répertoire de données ; et
+depuis Android 11, `adb` ne peut plus lire `Android/data` d'une autre
+application. Le tampon logcat survit aux deux. Les tronçons sont numérotés parce
+que l'ordre de lecture du tampon n'est pas garanti.
+
+Chaque exécution génère une clé neuve : `kid`, certificats et défi diffèrent
+d'une capture à l'autre. Un test ne doit jamais coder ces valeurs en dur.
+
+## `appattest-c3-iphone16.json` — iOS
 
 | | |
 |---|---|
