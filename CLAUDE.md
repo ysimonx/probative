@@ -50,12 +50,24 @@ spec/             Schéma CDDL normatif — extrait de docs/envelope-spec.md, à
                   synchronisé à la main (aucun générateur à ce jour)
 tools/            Génération des figures de la documentation
 verifier-python/  Vérificateur serveur
-mobile/android/   Cœur natif Kotlin (AAR) — spike en cours
-mobile/ios/       Cœur natif Swift (XCFramework) — spike en cours
+  tests/vectors/        Vecteurs d'or synthétiques, régénérés par tools/gen_vectors.py.
+                        Le test compare le dossier à une régénération : n'y déposer
+                        aucun fichier étranger.
+  tests/device-vectors/ Captures réelles d'appareils, non régénérables. Socle des
+                        phases B et D — sans elles on code contre une documentation.
+mobile/android/   Cœur natif Kotlin (AAR) — :core, plus :demo qui porte les sondes
+mobile/ios/       Cœur natif Swift (XCFramework) — paquet SwiftPM, plus demo/ qui
+                  porte la sonde C3. Le .xcodeproj est généré, non versionné.
 bindings/         Liaisons minces : plugin Flutter fédéré, module React Native — non commencées
 ```
 
+Les applications de démonstration ne sont pas décoratives : App Attest et Play
+Integrity exigent une application provisionnée, qu'un bundle de test n'est pas.
+C'est leur seule raison d'être — ne rien y loger qui appartienne au cœur.
+
 ## Commandes
+
+### Vérificateur
 
 ```bash
 cd verifier-python
@@ -64,6 +76,47 @@ pip install -e ".[dev]"
 pytest              # 51 tests doivent passer
 ruff check .
 mypy src
+```
+
+### Android — appareil réel requis pour les sondes
+
+```bash
+cd mobile/android
+./gradlew :core:testDebugUnitTest          # unitaires, sans appareil
+./gradlew :core:connectedDebugAndroidTest  # instrumentés, appareil branché
+
+# Vecteur d'appareil (chaîne d'attestation de clé). Sort par logcat en tronçons
+# numérotés : Gradle désinstalle le paquet de test en fin de campagne, et
+# Android 11+ interdit à adb de lire Android/data d'une autre application.
+adb logcat -c && ./gradlew :core:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=org.probative.core.keys.KeystoreVectorDeviceTest
+adb logcat -d -s PROBATIVE_VECTOR
+
+# Sonde A5 — Play Integrity. Le numéro de projet Google Cloud est une donnée de
+# compte, passée en propriété et jamais écrite dans le code.
+./gradlew :demo:installDebug -Pprobative.cloudProjectNumber=487335590129
+adb shell am start -n org.probative.demo/.MainActivity
+adb logcat -d -s PROBATIVE_A5
+```
+
+### iOS — appareil réel et compte payant requis pour App Attest
+
+```bash
+cd mobile/ios
+swift test                        # 18 tests sur l'hôte, App Attest se saute
+./scripts/make_xcframework.sh     # artefact autonome
+ruby scripts/make_demo_project.rb # projet Xcode, non versionné
+
+UDID=$(xcrun devicectl list devices | awk '/available/{print $3; exit}')
+xcodebuild -project demo/ProbativeDemo.xcodeproj -scheme ProbativeDemo \
+  -destination "id=$UDID" -derivedDataPath demo/build -allowProvisioningUpdates build
+xcrun devicectl device install app --device "$UDID" \
+  demo/build/Build/Products/Debug-iphoneos/ProbativeDemo.app
+# Sans --console : ce drapeau attend la fin de l'application et donne
+# l'impression que la commande est bloquée.
+xcrun devicectl device process launch --device "$UDID" --terminate-existing org.probative.demo
+xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer \
+  --domain-identifier org.probative.demo --source Documents/c3-fixture.json --destination ./
 ```
 
 ## Conventions
@@ -84,11 +137,36 @@ mypy src
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 51 tests au vert |
-| `PlayIntegrityVerifier`, `AppAttestVerifier` | Interfaces posées, `NotImplementedError` |
-| Cœur natif Android | A1–A3 faites ; **A3 validée sur appareil réel** (SM-X200). Prochaine : A4, capture CameraX |
+| `PlayIntegrityVerifier`, `AppAttestVerifier` | Interfaces posées, `NotImplementedError`. **Vecteurs réels disponibles** — phases B et D n'ont plus d'excuse pour être écrites à l'aveugle |
+| Vecteurs d'appareil | Android (chaîne à 4 certificats, SM-X200) et iOS (App Attest, iPhone 16) versionnés dans `tests/device-vectors/` |
+| Cœur natif Android | A1–A3 et **A5 faites, validées sur SM-X200**. `:demo` restauré, porte la sonde A5. Prochaine : A4, capture CameraX |
 | Cœur natif iOS | C1–C3 faites ; **C3 validée sur appareil réel** (iPhone 16, iOS 26.6), assertion R1 exercée. Prochaine : C4, capture AVFoundation |
 | Liaisons Flutter / React Native | Non commencées |
 | Banc de triche | Non commencé |
+
+**Ce qui est réellement prouvé, et ce qui ne l'est pas.** Les deux plateformes
+produisent une clé matérielle liée à un défi R1, et le lien est vérifié *par
+recalcul* — côté Android, le défi que le TEE inscrit dans l'extension
+`1.3.6.1.4.1.11129.2.1.17` vaut bien `SHA-256(payload ‖ nonce)`.
+
+Il faut distinguer deux preuves de nature différente, souvent confondues :
+
+- **L'attestation de clé** (chaîne de 4 certificats) est produite **hors ligne**
+  par la puce. Aucun serveur n'est interrogé — c'est voulu, cela fonctionne sans
+  réseau. On a vérifié que la chaîne est cohérente, jamais que sa racine est
+  bien **celle que Google publie**. Or une chaîne cohérente se fabrique de toutes
+  pièces : sans confrontation à l'ancre, elle ne prouve rien.
+- **Le jeton Play Integrity** est bien obtenu **auprès des serveurs de Google**,
+  qui répondent. Mais il est **chiffré et n'a jamais été ouvert** : le lire exige
+  de le faire déchiffrer par Google via un compte de service. **Obtenir un jeton
+  n'est pas passer un contrôle** — le verdict qu'il contient dit très
+  probablement que l'application n'est pas reconnue.
+
+Idem côté iOS : l'objet App Attest est en main, sa cohérence interne vérifiée,
+la signature d'Apple jamais. C'est exactement ce qu'apportent les phases B et D,
+et pourquoi aucune ne peut être déclarée faite.
+
+Et **aucune photo n'a encore été prise** : A4 et C4 restent à faire.
 
 ## Prochaine étape
 
@@ -103,11 +181,43 @@ sans dépendance à un framework : c'est la condition de la stratégie multi-fra
 Flutter + React Native (ADR-0003). Tout le chemin critique reste natif ; le pont
 Dart/JS ne reçoit que l'enveloppe signée, opaque.
 
-Deux inconnues à lever pendant le spike, susceptibles de forcer une révision de la spec :
+Nuance apparue en A5 : `:core` dépend désormais de `com.google.android.play:integrity`.
+Contrairement à DeviceCheck côté iOS, ce n'est pas un framework système. L'AAR n'est
+donc plus sans dépendance externe. Le type `StandardIntegrityTokenProvider` est
+encapsulé dans une classe opaque pour que la surface publique du cœur ne fasse pas
+fuir un type propriétaire — mais la dépendance existe et il faut l'assumer, ou
+l'isoler dans un module séparé si elle gêne un jour les liaisons.
 
-- la contrainte de taille du `requestHash` de Play Integrity ;
-- la latence capture→signature réelle sur appareils d'entrée de gamme, qui conditionne
-  l'exploitabilité du champ `media.6` comme discriminant.
+### Où en sont les inconnues
+
+1. **`requestHash` Play Integrity — levée sur la taille.** base64url sans bourrage :
+   43 caractères pour un plafond de 500. Aucun niveau d'indirection nécessaire.
+   *Reste* : confirmer que Play restitue la chaîne intacte, ce qui exige de
+   déchiffrer un jeton — donc la phase B. Une divergence d'encodage entre client et
+   serveur casserait R1 **silencieusement** : c'est le pire mode de défaillance, à
+   traiter avant de figer ADR-0002.
+2. **Latence — déplacée, pas levée.** La fraîcheur ne coûte rien : 36–39 ms sur
+   SM-X200, 18 ms sur iPhone 16. Le préchauffage Play Integrity, lui, coûte 1 313 ms
+   à froid et doit rester au démarrage. Conclusion : le sujet de `media.6` est la
+   **capture elle-même**, à mesurer en A4/C4.
+3. **Chaînage Android** (spec §9) : inchangée, non instruite.
+
+### Trois chantiers ouverts, aucun bloqué
+
+**Phase B — `PlayIntegrityVerifier`.** Celle qui ferme le plus de réserves : la
+racine Google jamais confrontée, l'aller-retour du `requestHash`, et le
+déchiffrement du jeton. Elle dispose du vecteur Android réel. Demande un compte de
+service Google pour l'API de déchiffrement.
+
+**Phase D — `AppAttestVerifier`.** Symétrique, avec le vecteur App Attest en main.
+Réserve connue : le vecteur est en environnement `appattestdevelop`, la production
+utilise une autre racine.
+
+**A4 / C4 — la capture.** La seule qui mettra enfin une photo sous le sceau, et le
+vrai sujet de mesure de latence. Rien ne la bloque ; c'est aussi la plus longue.
+
+Ordre suggéré : **B ou D d'abord**. Tant qu'aucun vérificateur ne juge, les preuves
+collectées ne valent rien d'opposable, et A4 en produirait simplement davantage.
 
 ## Angle mort assumé
 

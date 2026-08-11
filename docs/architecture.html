@@ -1487,10 +1487,10 @@
         Kotlin et Swift en parallèle, avec une cible précise et vérifiable : produire une
         enveloppe que <span class="m">pytest</span> accepte.
       </p>
-      <p>Deux inconnues doivent être levées, et l'une comme l'autre peut forcer une révision de la spécification :</p>
+      <p>Deux inconnues devaient être levées, l'une comme l'autre susceptible de forcer une révision de la spécification. Elles ont été instruites sur matériel réel le 11 août 2026 :</p>
       <ul class="plain">
-        <li>la contrainte de taille du <span class="m">requestHash</span> de Play Integrity — si le condensat de 32 octets ne passe pas tel quel, il faudra un niveau d'indirection ;</li>
-        <li>la latence réelle entre capture et signature sur des appareils d'entrée de gamme, qui décide si ce champ est exploitable comme signal de détection ou seulement décoratif.</li>
+        <li><strong>La contrainte de taille du <span class="m">requestHash</span> — levée.</strong> Encodé en base64url sans bourrage, le condensat de 32 octets donne 43 caractères pour un plafond documenté à 500. Il passe tel quel : aucun niveau d'indirection n'est nécessaire. Reste à confirmer que Play restitue la chaîne intacte, ce qui suppose de déchiffrer un jeton — donc le vérificateur serveur.</li>
+        <li><strong>La latence capture→signature — déplacée.</strong> La preuve de fraîcheur ne coûte presque rien : 36 à 39 ms sur une tablette d'entrée de gamme, 18 ms sur iPhone 16. Ce n'est donc pas l'attestation qui décidera de l'exploitabilité du champ, mais la capture photographique elle-même, encore à mesurer.</li>
       </ul>
     </div>
   </section>
