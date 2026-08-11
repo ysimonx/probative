@@ -10,8 +10,13 @@ confié au client :
 
 Les implémentations mémoire ci-dessous servent aux tests. En production,
 `NonceStore.consume` doit être atomique — un `UPDATE ... WHERE consumed_at
-IS NULL` avec vérification du nombre de lignes affectées, jamais un
-`SELECT` suivi d'un `UPDATE`, sous peine de rejeu par course.
+IS NULL AND kid = ?` avec vérification du nombre de lignes affectées,
+jamais un `SELECT` suivi d'un `UPDATE`, sous peine de rejeu par course.
+
+Le `kid` fait partie de la condition, et pas seulement d'un contrôle qui
+suivrait : un nonce présenté par le mauvais appareil ne doit pas être
+consommé, sinon il suffirait de le présenter une fois avec une signature
+quelconque pour le brûler.
 """
 
 from __future__ import annotations
@@ -22,25 +27,41 @@ from dataclasses import dataclass
 
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from .errors import ExpiredNonce, ReplayedNonce, UnknownKey, UnknownNonce
+from .errors import (
+    ExpiredNonce,
+    NonceDeviceMismatch,
+    ReplayedNonce,
+    UnknownKey,
+    UnknownNonce,
+)
 from .model import Profile
 
 
 @dataclass
 class NonceRecord:
-    """Un nonce est émis *pour* un profil, et ne vaut que pour lui.
+    """Un nonce est émis *pour* un appareil et *pour* un profil.
 
-    C'est le pendant serveur du label 102 : le profil signé dit ce que le
-    client a produit, le profil du nonce dit ce que le serveur a demandé.
-    Sans le second, un client compromis déclarerait le noyau pour une
-    acquisition et échapperait au plafond de recapture. La spec §6 pose
-    déjà que le contexte applicatif est lié par le nonce, côté serveur.
+    Le profil est le pendant serveur du label 102 : le profil signé dit ce
+    que le client a produit, celui du nonce dit ce que le serveur a
+    demandé. Sans le second, un client compromis déclarerait le noyau pour
+    une acquisition et échapperait au plafond de recapture.
+
+    Le `kid` ferme la moisson. Un nonce n'est ni un secret ni un droit
+    d'accès — le connaître ne permet pas de forger, puisqu'il faut encore
+    une clé matérielle enrôlée et une attestation liée au contenu. Mais
+    sans liaison à l'appareil, un lot moissonné servirait à **n'importe
+    quel appareil enrôlé, y compris celui de l'attaquant**, et les lots
+    hors ligne à durée de vie étendue en font un gisement.
+
+    La spec §6 pose que le contexte applicatif est lié par le nonce, côté
+    serveur : ces deux champs en sont l'application.
     """
 
     value: bytes
     issued_at_ms: int
     ttl_ms: int
     profile: Profile
+    kid: bytes
     offline: bool = False
     consumed_at_ms: int | None = None
 
@@ -66,7 +87,15 @@ class DeviceRecord:
 
 class NonceStore(ABC):
     @abstractmethod
-    def consume(self, nonce: bytes, now_ms: int) -> NonceRecord: ...
+    def consume(self, nonce: bytes, now_ms: int, *, kid: bytes) -> NonceRecord:
+        """Consomme un nonce pour un appareil donné, ou lève.
+
+        Le `kid` est celui que l'enveloppe *déclare*, pas encore celui
+        qu'elle a prouvé — la signature se vérifie à l'étape suivante.
+        C'est suffisant : un attaquant qui déclare le bon `kid` échoue de
+        toute façon à la signature, et un nonce présenté sous un autre
+        `kid` n'est pas consommé.
+        """
 
 
 class DeviceStore(ABC):
@@ -86,26 +115,32 @@ class InMemoryNonceStore(NonceStore):
         value: bytes,
         *,
         profile: Profile,
+        kid: bytes,
         ttl_ms: int = 120_000,
         offline: bool = False,
     ) -> NonceRecord:
-        # `profile` est sans défaut, délibérément : émettre un nonce sans
-        # dire ce qu'on attend en retour est la faute que ce paramètre
-        # existe pour rendre impossible.
+        # `profile` et `kid` sont sans défaut, délibérément : émettre un
+        # nonce sans dire ce qu'on attend en retour, ni de qui, est la
+        # faute que ces deux paramètres existent pour rendre impossible.
         rec = NonceRecord(
             value=value,
             issued_at_ms=int(time.time() * 1000),
             ttl_ms=ttl_ms,
             profile=profile,
+            kid=kid,
             offline=offline,
         )
         self._nonces[value] = rec
         return rec
 
-    def consume(self, nonce: bytes, now_ms: int) -> NonceRecord:
+    def consume(self, nonce: bytes, now_ms: int, *, kid: bytes) -> NonceRecord:
         rec = self._nonces.get(nonce)
         if rec is None:
             raise UnknownNonce("nonce jamais émis par ce serveur")
+        # Avant toute autre chose, et surtout avant de marquer consommé :
+        # un nonce présenté par le mauvais appareil ressort intact.
+        if rec.kid != kid:
+            raise NonceDeviceMismatch("nonce émis pour un autre appareil")
         if rec.consumed_at_ms is not None:
             raise ReplayedNonce("nonce déjà consommé")
         if now_ms > rec.issued_at_ms + rec.ttl_ms:

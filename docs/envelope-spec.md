@@ -223,9 +223,15 @@ Sans R1, un attaquant obtient un jeton d'intégrité valide sur un appareil sain
 
 La signature `COSE_Sign1` doit se vérifier avec la clé publique enregistrée à l'enrôlement, identifiée par le `kid` de l'en-tête protégé. Aucune clé transmise dans l'enveloppe n'est acceptée.
 
-### R3 — Unicité du nonce
+### R3 — Unicité du nonce, et liaison à l'appareil
 
 Le nonce est émis par le serveur, à usage unique, avec une durée de validité explicite. Un nonce consommé est refusé définitivement.
+
+**Le nonce est en outre émis pour un `kid` précis, et n'est utilisable que par lui.** Une enveloppe qui présente un nonce émis pour un autre appareil est rejetée — et le nonce **n'est pas consommé**, sinon il suffirait de le présenter une fois, avec une signature quelconque, pour empêcher son propriétaire de s'en servir. En base, la condition appartient à la mise à jour atomique (`UPDATE … WHERE consumed_at IS NULL AND kid = ?`), pas à un contrôle qui la suivrait.
+
+Cette liaison ne protège pas contre la forge : un nonce n'est ni un secret ni un droit d'accès, et le connaître ne permet rien sans clé matérielle enrôlée ni attestation liée au contenu. Elle ferme la **moisson** — sans elle, un lot de nonces accumulé servirait à n'importe quel appareil enrôlé, y compris celui de l'attaquant. Les lots hors ligne, à durée de vie étendue, en font le gisement le plus exposé.
+
+L'émission de nonce est par ailleurs la seule opération du serveur qui **crée de l'état sans preuve préalable**. Elle doit être placée derrière l'authentification applicative — celle qui détermine de toute façon à quel contexte métier le nonce se rattache — et faire l'objet d'une limitation de débit. Refuser d'émettre pour un `kid` non enrôlé est un premier verrou peu coûteux.
 
 En mode hors ligne, le serveur pré-délivre un lot de nonces à durée de vie étendue. Toute enveloppe utilisant un nonce pré-délivré est plafonnée à `DEGRADED`.
 
@@ -262,7 +268,7 @@ Le champ `level_reason` est obligatoire. Un vérificateur qui refuse sans dire p
 L'ordre importe : on écarte au plus vite et au moins cher.
 
 1. Version de spécification connue, profil connu, champs exigés par le profil présents → sinon `REJECTED`
-2. Nonce connu, non consommé, non expiré, **émis pour ce profil** → sinon `REJECTED`
+2. Nonce connu, non consommé, non expiré, **émis pour ce `kid` et pour ce profil** → sinon `REJECTED`
 3. Signature `COSE_Sign1` valide sous la clé du `kid` → sinon `REJECTED`
 4. Recalcul de R1, comparaison au défi contenu dans le jeton → sinon `REJECTED`
 5. Validation du jeton d'intégrité auprès de Google ou Apple → sinon `UNTRUSTED`

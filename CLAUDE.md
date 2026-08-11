@@ -21,19 +21,24 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 2. **La règle R1 ne s'assouplit pas.** Le défi soumis au service d'attestation vaut
    exactement `SHA-256(payload_bytes || nonce)`. Sans elle, l'enveloppe atteste
    seulement qu'un appareil sain existe quelque part — ce qui ne prouve rien.
-3. **Aucun vocabulaire métier dans ce dépôt.** Pas de « chantier », pas de nom de
+3. **Le verdict ne dépend jamais du canal.** L'enveloppe s'authentifie par elle-même :
+   R2 établit déjà quel appareil l'a produite, au niveau du message. Une sécurité de
+   canal — mTLS, certificat client, jeton de session — relève du déploiement et ne doit
+   jamais entrer dans le jugement, sous peine de rendre la preuve invérifiable une fois
+   la session close. Voir spec §6.
+4. **Aucun vocabulaire métier dans ce dépôt.** Pas de « chantier », pas de nom de
    client, pas de domaine applicatif. Uniquement `capture`, `subject`, `evidence`.
    Cette règle protège la réutilisabilité et l'antériorité du code ; elle prime sur
    la lisibilité d'un exemple.
-4. **Le format raisonne en propriétés, pas en plateformes.** Android et iOS atteignent
+5. **Le format raisonne en propriétés, pas en plateformes.** Android et iOS atteignent
    le même niveau par des chemins différents. Aucun champ obligatoire propre à une
    plateforme.
-5. **Le résultat de vérification est structuré par propriété**, jamais un score seul.
+6. **Le résultat de vérification est structuré par propriété**, jamais un score seul.
    `level_reason` est obligatoire : un rejet sans motif exploitable est ingérable en
    support. Depuis ADR-0005, **l'ensemble des propriétés notées dépend du profil
    déclaré** — le résultat porte donc `profile`, et un profil inconnu fait refuser de
    juger plutôt que se replier sur le noyau.
-6. **Le noyau ignore le type de contenu.** Un besoin propre à un médium se traite par un
+7. **Le noyau ignore le type de contenu.** Un besoin propre à un médium se traite par un
    champ optionnel, jamais par du code qui suppose une image. Un nouveau profil ne se
    justifie que si une propriété apparaît, disparaît, ou change de règle de notation.
 
@@ -79,7 +84,7 @@ C'est leur seule raison d'être — ne rien y loger qui appartienne au cœur.
 cd verifier-python
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest              # 93 tests doivent passer
+pytest              # 96 tests doivent passer
 ruff check .
 mypy src
 ```
@@ -146,7 +151,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Noyau et profils (ADR-0005) | **Fait de bout en bout** : spec §2.5, CDDL, vérificateur, vecteurs, et les deux cœurs natifs |
-| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 93 tests au vert |
+| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 96 tests au vert |
 | `AppAttestVerifier` — **phase D faite** | Attestation d'enrôlement validée **jusqu'à la racine publiée par Apple**, assertion validée par enveloppe. Éprouvé contre le vecteur iPhone 16 réel, 26 tests |
 | `PlayIntegrityVerifier` | Interface posée, `NotImplementedError`. **Vecteur réel disponible** — la phase B n'a plus d'excuse pour être écrite à l'aveugle |
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |

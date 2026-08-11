@@ -40,7 +40,7 @@ from .attestation import (
     NullAttestationVerifier,
     verify_attestation,
 )
-from .errors import AttestationRejected
+from .errors import AttestationRejected, UnknownKey
 from .model import Profile
 from .store import DeviceRecord, InMemoryDeviceStore, InMemoryNonceStore
 from .verifier import Verifier
@@ -178,8 +178,19 @@ class DevService:
         ttl_ms = _uint_field(body, "ttl_ms", DEFAULT_TTL_MS)
         offline = _flag_field(body, "offline", False)
         profile = _profile_field(body)
+
+        # Un nonce est émis pour un appareil précis, et n'est utilisable
+        # que par lui. On refuse d'en émettre pour un `kid` inconnu : cela
+        # ne prouve rien mais évite d'entretenir un stock de nonces pour
+        # des appareils qui n'existent pas.
+        kid = _b64_field(body, "kid_b64")
+        try:
+            self.devices.get(kid)
+        except UnknownKey as exc:
+            raise BadRequest("kid inconnu : enrôler l'appareil d'abord") from exc
+
         value = os.urandom(16)
-        self.nonces.issue(value, profile=profile, ttl_ms=ttl_ms, offline=offline)
+        self.nonces.issue(value, profile=profile, kid=kid, ttl_ms=ttl_ms, offline=offline)
         # Le profil est renvoyé : l'appareil doit inscrire exactement
         # celui-là dans son en-tête protégé, sinon l'enveloppe est rejetée.
         return {

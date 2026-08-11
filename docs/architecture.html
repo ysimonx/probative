@@ -664,8 +664,8 @@
         <p>La signature se vérifie sous la clé publique enrôlée, désignée par le <span class="m">kid</span>. Aucune clé transportée dans l'enveloppe.</p>
       </div>
       <div class="rule-card">
-        <div class="rid">R3 — unicité du nonce</div>
-        <p>Nonce émis par le serveur, à usage unique, à durée de validité explicite. Un nonce consommé est refusé définitivement.</p>
+        <div class="rid">R3 — unicité du nonce, et liaison à l'appareil</div>
+        <p>Nonce émis par le serveur, à usage unique, à durée de validité explicite, <strong>pour un <span class="m">kid</span> précis</strong>. Un nonce consommé est refusé définitivement ; un nonce présenté par un autre appareil est refusé sans être consommé.</p>
       </div>
     </div>
   </section>
@@ -788,12 +788,12 @@
       <div class="fig-scroll">
         <!-- Figure générée par tools/gen_sequences.py — ne pas éditer à la main -->
         <!-- gen:sequence-capture -->
-        <svg viewBox="0 0 1080 1228" role="img" aria-label="Séquence de capture : le serveur émet un nonce et le profil attendu, l'application empreinte les octets bruts puis relève position, corroboration, horloges et posture, fige la charge utile, calcule le défi R1, obtient un jeton d'attestation, signe dans la puce, et remet l'enveloppe puis les octets du contenu au serveur.">
-          <line class="d-life" x1="145" y1="70" x2="145" y2="1204" />
-          <line class="d-life" x1="405" y1="70" x2="405" y2="1204" />
-          <line class="d-life" x1="620" y1="70" x2="620" y2="1204" />
-          <line class="d-life" x1="810" y1="70" x2="810" y2="1204" />
-          <line class="d-life" x1="995" y1="70" x2="995" y2="1204" />
+        <svg viewBox="0 0 1080 1242" role="img" aria-label="Séquence de capture : le serveur émet un nonce lié à l'appareil et le profil attendu, l'application empreinte les octets bruts puis relève position, corroboration, horloges et posture, fige la charge utile, calcule le défi R1, obtient un jeton d'attestation, signe dans la puce, et remet l'enveloppe puis les octets du contenu au serveur.">
+          <line class="d-life" x1="145" y1="70" x2="145" y2="1218" />
+          <line class="d-life" x1="405" y1="70" x2="405" y2="1218" />
+          <line class="d-life" x1="620" y1="70" x2="620" y2="1218" />
+          <line class="d-life" x1="810" y1="70" x2="810" y2="1218" />
+          <line class="d-life" x1="995" y1="70" x2="995" y2="1218" />
           <rect class="d-head" x="55" y="24" width="180" height="46" rx="5" />
           <text class="d-head-t" x="145" y="46" text-anchor="middle">Application</text>
           <text class="d-head-s" x="145" y="61" text-anchor="middle">code considéré hostile</text>
@@ -811,105 +811,106 @@
           <text class="d-head-s" x="995" y="61" text-anchor="middle">seul juge</text>
           <text class="d-phase" x="52" y="96">Ouverture · le serveur ouvre l'échange</text>
           <line class="d-grid" x1="52" y1="104" x2="1070" y2="104" />
-          <text class="d-num" x="38" y="136" text-anchor="end">01</text>
-          <line class="d-line" x1="145" y1="146" x2="986" y2="146" />
-          <polygon class="d-fill-line" points="995,146 986,141.5 986,150.5" />
-          <text class="d-t" x="155" y="136">Demande un nonce</text>
-          <text class="d-num" x="38" y="173" text-anchor="end">02</text>
-          <line class="d-line" x1="995" y1="198" x2="154" y2="198" />
-          <polygon class="d-fill-line" points="145,198 154,193.5 154,202.5" />
-          <text class="d-t" x="155" y="173">Nonce + profil attendu</text>
-          <text class="d-sub" x="155" y="188">usage unique, validité explicite — règle R3</text>
-          <text class="d-phase" x="52" y="226">Collecte · tout est mesuré, rien n'est jugé</text>
-          <line class="d-grid" x1="52" y1="234" x2="1070" y2="234" />
-          <text class="d-num" x="38" y="266" text-anchor="end">03</text>
-          <line class="d-line" x1="145" y1="276" x2="396" y2="276" />
-          <polygon class="d-fill-line" points="405,276 396,271.5 396,280.5" />
-          <text class="d-t" x="155" y="266">Déclenche la capture</text>
-          <text class="d-num" x="38" y="304" text-anchor="end">04</text>
-          <line class="d-line" x1="405" y1="314" x2="154" y2="314" />
-          <polygon class="d-fill-line" points="145,314 154,309.5 154,318.5" />
-          <text class="d-t" x="155" y="304">Octets bruts du capteur</text>
-          <text class="d-num" x="38" y="341" text-anchor="end">05</text>
-          <path class="d-acc-line" d="M 145 361 L 175 361 L 175 371 L 154 371" />
-          <polygon class="d-acc-fill" points="145,371 154,366.5 154,375.5" />
-          <text class="d-t" x="155" y="341">SHA-256 des octets bruts, en natif</text>
-          <text class="d-sub" x="155" y="356">avant tout passage par le code applicatif</text>
-          <text class="d-num" x="38" y="394" text-anchor="end">06</text>
-          <line class="d-line" x1="145" y1="404" x2="396" y2="404" />
-          <polygon class="d-fill-line" points="405,404 396,399.5 396,408.5" />
-          <text class="d-t" x="155" y="394">Relève la position</text>
-          <text class="d-num" x="38" y="431" text-anchor="end">07</text>
-          <line class="d-line" x1="405" y1="456" x2="154" y2="456" />
-          <polygon class="d-fill-line" points="145,456 154,451.5 154,460.5" />
-          <text class="d-t" x="155" y="431">lat, lon, précision, altitude</text>
-          <text class="d-sub" x="155" y="446">source, âge du point, satellites</text>
-          <text class="d-num" x="38" y="484" text-anchor="end">08</text>
-          <line class="d-line" x1="145" y1="494" x2="396" y2="494" />
-          <polygon class="d-fill-line" points="405,494 396,489.5 396,498.5" />
-          <text class="d-t" x="155" y="484">Relève la corroboration</text>
-          <text class="d-num" x="38" y="521" text-anchor="end">09</text>
-          <line class="d-line" x1="405" y1="546" x2="154" y2="546" />
-          <polygon class="d-fill-line" points="145,546 154,541.5 154,550.5" />
-          <text class="d-t" x="155" y="521">pression, altitude barométrique</text>
-          <text class="d-sub" x="155" y="536">fenêtre inertielle 10 s, pas, activité</text>
-          <text class="d-num" x="38" y="574" text-anchor="end">10</text>
-          <path class="d-line" d="M 145 579 L 175 579 L 175 589 L 154 589" />
-          <polygon class="d-fill-line" points="145,589 154,584.5 154,593.5" />
-          <text class="d-t" x="155" y="574">Horloges et posture de l'appareil</text>
-          <text class="d-phase" x="52" y="612">Liaison · la règle R1</text>
-          <line class="d-grid" x1="52" y1="620" x2="1070" y2="620" />
-          <text class="d-num" x="38" y="651" text-anchor="end">11</text>
-          <path class="d-line" d="M 145 671 L 175 671 L 175 681 L 154 681" />
-          <polygon class="d-fill-line" points="145,681 154,676.5 154,685.5" />
-          <text class="d-t" x="155" y="651">Sérialise la charge utile en CBOR</text>
-          <text class="d-sub" x="155" y="666">la latence de capture est figée ici</text>
-          <text class="d-num" x="38" y="703" text-anchor="end">12</text>
-          <path class="d-acc-line" d="M 145 723 L 175 723 L 175 733 L 154 733" />
-          <polygon class="d-acc-fill" points="145,733 154,728.5 154,737.5" />
-          <text class="d-t" x="155" y="703">Calcule le défi R1</text>
-          <text class="d-sub" x="155" y="718">SHA-256( charge utile ‖ nonce )</text>
-          <text class="d-num" x="38" y="756" text-anchor="end">13</text>
-          <line class="d-acc-line" x1="145" y1="766" x2="801" y2="766" />
-          <polygon class="d-acc-fill" points="810,766 801,761.5 801,770.5" />
-          <text class="d-t" x="155" y="756">requestHash / clientDataHash = défi</text>
-          <text class="d-num" x="38" y="793" text-anchor="end">14</text>
-          <line class="d-acc-line" x1="810" y1="818" x2="154" y2="818" />
-          <polygon class="d-acc-fill" points="145,818 154,813.5 154,822.5" />
-          <text class="d-t" x="155" y="793">Jeton d'intégrité ou assertion</text>
-          <text class="d-sub" x="155" y="808">+ compteur d'assertion sur iOS</text>
-          <text class="d-phase" x="52" y="846">Signature</text>
-          <line class="d-grid" x1="52" y1="854" x2="1070" y2="854" />
-          <text class="d-num" x="38" y="885" text-anchor="end">15</text>
-          <line class="d-line" x1="145" y1="910" x2="611" y2="910" />
-          <polygon class="d-fill-line" points="620,910 611,905.5 611,914.5" />
-          <text class="d-t" x="155" y="885">Signe la structure Signature1</text>
-          <text class="d-sub" x="155" y="900">en-tête protégé : kid, version, profil</text>
-          <text class="d-num" x="38" y="937" text-anchor="end">16</text>
-          <line class="d-line" x1="620" y1="962" x2="154" y2="962" />
-          <polygon class="d-fill-line" points="145,962 154,957.5 154,966.5" />
-          <text class="d-t" x="155" y="937">Signature ES256, 64 octets</text>
-          <text class="d-sub" x="155" y="952">la clé privée n'a pas quitté la puce</text>
-          <text class="d-phase" x="52" y="990">Remise</text>
-          <line class="d-grid" x1="52" y1="998" x2="1070" y2="998" />
-          <text class="d-num" x="38" y="1030" text-anchor="end">17</text>
-          <line class="d-line" x1="145" y1="1040" x2="986" y2="1040" />
-          <polygon class="d-fill-line" points="995,1040 986,1035.5 986,1044.5" />
-          <text class="d-t" x="155" y="1030">Enveloppe COSE_Sign1</text>
-          <text class="d-num" x="38" y="1067" text-anchor="end">18</text>
-          <line class="d-dash" x1="145" y1="1092" x2="986" y2="1092" />
-          <polygon class="d-fill-line" points="995,1092 986,1087.5 986,1096.5" />
-          <text class="d-t" x="155" y="1067">Octets du contenu</text>
-          <text class="d-sub" x="155" y="1082">transfert séparé de l'enveloppe</text>
-          <text class="d-num" x="38" y="1120" text-anchor="end">19</text>
-          <path class="d-line" d="M 995 1125 L 1025 1125 L 1025 1135 L 1004 1135" />
-          <polygon class="d-fill-line" points="995,1135 1004,1130.5 1004,1139.5" />
-          <text class="d-t" x="983" y="1120" text-anchor="end">Vérifie en dix étapes</text>
-          <text class="d-num" x="38" y="1157" text-anchor="end">20</text>
-          <line class="d-line" x1="995" y1="1182" x2="154" y2="1182" />
-          <polygon class="d-fill-line" points="145,1182 154,1177.5 154,1186.5" />
-          <text class="d-t" x="155" y="1157">Verdict par propriété</text>
-          <text class="d-sub" x="155" y="1172">avec son motif, obligatoire</text>
+          <text class="d-num" x="38" y="135" text-anchor="end">01</text>
+          <line class="d-line" x1="145" y1="160" x2="986" y2="160" />
+          <polygon class="d-fill-line" points="995,160 986,155.5 986,164.5" />
+          <text class="d-t" x="155" y="135">Demande un nonce</text>
+          <text class="d-sub" x="155" y="150">en indiquant son kid</text>
+          <text class="d-num" x="38" y="187" text-anchor="end">02</text>
+          <line class="d-line" x1="995" y1="212" x2="154" y2="212" />
+          <polygon class="d-fill-line" points="145,212 154,207.5 154,216.5" />
+          <text class="d-t" x="155" y="187">Nonce + profil attendu</text>
+          <text class="d-sub" x="155" y="202">lié à ce kid, usage unique — règle R3</text>
+          <text class="d-phase" x="52" y="240">Collecte · tout est mesuré, rien n'est jugé</text>
+          <line class="d-grid" x1="52" y1="248" x2="1070" y2="248" />
+          <text class="d-num" x="38" y="280" text-anchor="end">03</text>
+          <line class="d-line" x1="145" y1="290" x2="396" y2="290" />
+          <polygon class="d-fill-line" points="405,290 396,285.5 396,294.5" />
+          <text class="d-t" x="155" y="280">Déclenche la capture</text>
+          <text class="d-num" x="38" y="318" text-anchor="end">04</text>
+          <line class="d-line" x1="405" y1="328" x2="154" y2="328" />
+          <polygon class="d-fill-line" points="145,328 154,323.5 154,332.5" />
+          <text class="d-t" x="155" y="318">Octets bruts du capteur</text>
+          <text class="d-num" x="38" y="355" text-anchor="end">05</text>
+          <path class="d-acc-line" d="M 145 375 L 175 375 L 175 385 L 154 385" />
+          <polygon class="d-acc-fill" points="145,385 154,380.5 154,389.5" />
+          <text class="d-t" x="155" y="355">SHA-256 des octets bruts, en natif</text>
+          <text class="d-sub" x="155" y="370">avant tout passage par le code applicatif</text>
+          <text class="d-num" x="38" y="408" text-anchor="end">06</text>
+          <line class="d-line" x1="145" y1="418" x2="396" y2="418" />
+          <polygon class="d-fill-line" points="405,418 396,413.5 396,422.5" />
+          <text class="d-t" x="155" y="408">Relève la position</text>
+          <text class="d-num" x="38" y="445" text-anchor="end">07</text>
+          <line class="d-line" x1="405" y1="470" x2="154" y2="470" />
+          <polygon class="d-fill-line" points="145,470 154,465.5 154,474.5" />
+          <text class="d-t" x="155" y="445">lat, lon, précision, altitude</text>
+          <text class="d-sub" x="155" y="460">source, âge du point, satellites</text>
+          <text class="d-num" x="38" y="498" text-anchor="end">08</text>
+          <line class="d-line" x1="145" y1="508" x2="396" y2="508" />
+          <polygon class="d-fill-line" points="405,508 396,503.5 396,512.5" />
+          <text class="d-t" x="155" y="498">Relève la corroboration</text>
+          <text class="d-num" x="38" y="535" text-anchor="end">09</text>
+          <line class="d-line" x1="405" y1="560" x2="154" y2="560" />
+          <polygon class="d-fill-line" points="145,560 154,555.5 154,564.5" />
+          <text class="d-t" x="155" y="535">pression, altitude barométrique</text>
+          <text class="d-sub" x="155" y="550">fenêtre inertielle 10 s, pas, activité</text>
+          <text class="d-num" x="38" y="588" text-anchor="end">10</text>
+          <path class="d-line" d="M 145 593 L 175 593 L 175 603 L 154 603" />
+          <polygon class="d-fill-line" points="145,603 154,598.5 154,607.5" />
+          <text class="d-t" x="155" y="588">Horloges et posture de l'appareil</text>
+          <text class="d-phase" x="52" y="626">Liaison · la règle R1</text>
+          <line class="d-grid" x1="52" y1="634" x2="1070" y2="634" />
+          <text class="d-num" x="38" y="665" text-anchor="end">11</text>
+          <path class="d-line" d="M 145 685 L 175 685 L 175 695 L 154 695" />
+          <polygon class="d-fill-line" points="145,695 154,690.5 154,699.5" />
+          <text class="d-t" x="155" y="665">Sérialise la charge utile en CBOR</text>
+          <text class="d-sub" x="155" y="680">la latence de capture est figée ici</text>
+          <text class="d-num" x="38" y="717" text-anchor="end">12</text>
+          <path class="d-acc-line" d="M 145 737 L 175 737 L 175 747 L 154 747" />
+          <polygon class="d-acc-fill" points="145,747 154,742.5 154,751.5" />
+          <text class="d-t" x="155" y="717">Calcule le défi R1</text>
+          <text class="d-sub" x="155" y="732">SHA-256( charge utile ‖ nonce )</text>
+          <text class="d-num" x="38" y="770" text-anchor="end">13</text>
+          <line class="d-acc-line" x1="145" y1="780" x2="801" y2="780" />
+          <polygon class="d-acc-fill" points="810,780 801,775.5 801,784.5" />
+          <text class="d-t" x="155" y="770">requestHash / clientDataHash = défi</text>
+          <text class="d-num" x="38" y="807" text-anchor="end">14</text>
+          <line class="d-acc-line" x1="810" y1="832" x2="154" y2="832" />
+          <polygon class="d-acc-fill" points="145,832 154,827.5 154,836.5" />
+          <text class="d-t" x="155" y="807">Jeton d'intégrité ou assertion</text>
+          <text class="d-sub" x="155" y="822">+ compteur d'assertion sur iOS</text>
+          <text class="d-phase" x="52" y="860">Signature</text>
+          <line class="d-grid" x1="52" y1="868" x2="1070" y2="868" />
+          <text class="d-num" x="38" y="899" text-anchor="end">15</text>
+          <line class="d-line" x1="145" y1="924" x2="611" y2="924" />
+          <polygon class="d-fill-line" points="620,924 611,919.5 611,928.5" />
+          <text class="d-t" x="155" y="899">Signe la structure Signature1</text>
+          <text class="d-sub" x="155" y="914">en-tête protégé : kid, version, profil</text>
+          <text class="d-num" x="38" y="951" text-anchor="end">16</text>
+          <line class="d-line" x1="620" y1="976" x2="154" y2="976" />
+          <polygon class="d-fill-line" points="145,976 154,971.5 154,980.5" />
+          <text class="d-t" x="155" y="951">Signature ES256, 64 octets</text>
+          <text class="d-sub" x="155" y="966">la clé privée n'a pas quitté la puce</text>
+          <text class="d-phase" x="52" y="1004">Remise</text>
+          <line class="d-grid" x1="52" y1="1012" x2="1070" y2="1012" />
+          <text class="d-num" x="38" y="1044" text-anchor="end">17</text>
+          <line class="d-line" x1="145" y1="1054" x2="986" y2="1054" />
+          <polygon class="d-fill-line" points="995,1054 986,1049.5 986,1058.5" />
+          <text class="d-t" x="155" y="1044">Enveloppe COSE_Sign1</text>
+          <text class="d-num" x="38" y="1081" text-anchor="end">18</text>
+          <line class="d-dash" x1="145" y1="1106" x2="986" y2="1106" />
+          <polygon class="d-fill-line" points="995,1106 986,1101.5 986,1110.5" />
+          <text class="d-t" x="155" y="1081">Octets du contenu</text>
+          <text class="d-sub" x="155" y="1096">transfert séparé de l'enveloppe</text>
+          <text class="d-num" x="38" y="1134" text-anchor="end">19</text>
+          <path class="d-line" d="M 995 1139 L 1025 1139 L 1025 1149 L 1004 1149" />
+          <polygon class="d-fill-line" points="995,1149 1004,1144.5 1004,1153.5" />
+          <text class="d-t" x="983" y="1134" text-anchor="end">Vérifie en dix étapes</text>
+          <text class="d-num" x="38" y="1171" text-anchor="end">20</text>
+          <line class="d-line" x1="995" y1="1196" x2="154" y2="1196" />
+          <polygon class="d-fill-line" points="145,1196 154,1191.5 154,1200.5" />
+          <text class="d-t" x="155" y="1171">Verdict par propriété</text>
+          <text class="d-sub" x="155" y="1186">avec son motif, obligatoire</text>
           </svg>
         <!-- /gen:sequence-capture -->
       </div>
@@ -1087,7 +1088,7 @@
         <span class="zr">≈ 1 ms · écarte la quasi-totalité des rejets</span>
       </div>
       <div class="step"><span class="n">01</span><span>Version et profil connus, champs exigés par le profil présents <span class="out">sinon rejeté</span></span></div>
-      <div class="step"><span class="n">02</span><span>Nonce connu, non consommé, non expiré, émis pour ce profil <span class="out">sinon rejeté</span></span></div>
+      <div class="step"><span class="n">02</span><span>Nonce connu, non consommé, non expiré, émis pour ce <span class="m">kid</span> et ce profil <span class="out">sinon rejeté</span></span></div>
       <div class="step"><span class="n">03</span><span>Signature valide sous la clé du <span class="m">kid</span> <span class="out">sinon rejeté</span></span></div>
       <div class="step"><span class="n">04</span><span>Recalcul de R1 et comparaison au défi <span class="out">sinon rejeté</span></span></div>
       <div class="zone">
@@ -1372,11 +1373,20 @@
             bibliothèque de rester réutilisable d'un projet à l'autre.
           </p>
           <p>
-            Le nonce porte enfin le <strong>profil attendu</strong>. Le serveur ne se contente pas
-            de dire « envoyez-moi quelque chose » : il dit « envoyez-moi une acquisition ». Un
-            client qui répondrait par une simple provenance d'octets, pour échapper au plafond,
-            serait refusé.
+            Le nonce porte enfin deux choses. Le <strong>profil attendu</strong> : le serveur ne se
+            contente pas de dire « envoyez-moi quelque chose », il dit « envoyez-moi une
+            acquisition ». Et le <strong><span class="m">kid</span> de l'appareil qui l'a
+            demandé</strong> : un nonce n'est utilisable que par lui.
           </p>
+          <div class="faq-note">
+            Cette seconde liaison ne protège pas contre la forge — un nonce n'est ni un secret ni
+            un droit d'accès, et le connaître ne permet rien sans clé matérielle enrôlée. Elle
+            ferme la <strong>moisson</strong> : sans elle, un stock de nonces accumulé servirait à
+            n'importe quel appareil enrôlé, y compris celui de l'attaquant. Les lots pré-délivrés
+            pour le hors-ligne, à durée de vie étendue, en sont le gisement le plus exposé.
+            Un nonce présenté par le mauvais appareil est refusé <em>sans être consommé</em> :
+            sinon, le présenter une fois suffirait à le brûler pour son propriétaire.
+          </div>
         </div>
       </div>
 
@@ -1621,12 +1631,15 @@
             en clair. La question ne porte que sur le certificat <em>client</em>.
           </p>
           <div class="faq-note">
-            Le vrai point d'attention est ailleurs : l'émission de nonce est la seule route où un
-            appelant non authentifié fait <em>créer de l'état</em> au serveur. Cela se traite par
-            une limitation de débit et par l'authentification applicative que votre produit possède
-            déjà — celle qui décide, de toute façon, à quel dossier ce nonce se rattache.
-            Durcir le canal reste utile, mais c'est une décision de déploiement : le verdict, lui,
-            ne doit jamais en dépendre.
+            Le vrai point d'attention est ailleurs : l'émission de nonce est la seule opération qui
+            fait <em>créer de l'état</em> au serveur sans preuve préalable. Le format y répond au
+            niveau du message plutôt que du canal — un nonce est émis pour un
+            <span class="m">kid</span> précis et n'est utilisable que par lui (règle R3), et la
+            route refuse d'émettre pour un appareil non enrôlé. Restent la limitation de débit et
+            l'authentification applicative que votre produit possède déjà — celle qui décide, de
+            toute façon, à quel dossier ce nonce se rattache. Durcir le canal par-dessus reste
+            utile, mais c'est une décision de déploiement : le verdict, lui, ne doit jamais en
+            dépendre.
           </div>
         </div>
       </div>
@@ -1744,7 +1757,7 @@
       </div>
       <div class="repo-row">
         <span class="path">verifier-python/</span>
-        <span class="what">Le vérificateur serveur. Pipeline complet des dix étapes, 93 tests au vert, chaque test d'attaque référencé au modèle de menace.</span>
+        <span class="what">Le vérificateur serveur. Pipeline complet des dix étapes, 96 tests au vert, chaque test d'attaque référencé au modèle de menace.</span>
         <span class="chip done">fonctionnel</span>
       </div>
       <div class="repo-row">

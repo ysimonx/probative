@@ -60,11 +60,15 @@ def test_champ_base64_invalide():
 def test_nonce_profil_inconnu_refuse():
     """Émettre un nonce pour un profil qu'on ne saura pas juger n'a pas de sens."""
     with pytest.raises(BadRequest):
-        DevService().nonce({"profile": "profil-de-demain"})
+        DevService().nonce({"profile": "profil-de-demain", "kid_b64": _b64(b"x" * 32)})
 
 
 def test_nonce_profil_noyau_demandable():
-    issued = DevService().nonce({"profile": "core"})
+    service = DevService()
+    enrolled = service.enroll(
+        {"public_key_x962_b64": _b64(_public_x962(new_key())), "platform": "android"}
+    )
+    issued = service.nonce({"profile": "core", "kid_b64": enrolled["kid_b64"]})
     assert issued["profile"] == "core"
 
 
@@ -187,7 +191,7 @@ def test_boucle_complete_par_http(server_url):
     assert status == 200
     assert enrolled["kid_hex"] == hashlib.sha256(_public_x962(key)).hexdigest()
 
-    status, issued = _post(server_url, "/nonce", None)
+    status, issued = _post(server_url, "/nonce", {"kid_b64": enrolled["kid_b64"]})
     assert status == 200
     nonce = base64.b64decode(issued["nonce_b64"])
     # Le profil demandé fait partie de la réponse : l'appareil doit
@@ -229,16 +233,34 @@ def test_nonce_jamais_emis_rejete(server_url):
     assert "UNKNOWN_NONCE" in result["flags"]
 
 
-def test_cle_non_enrolee_rejetee(server_url):
-    key = new_key()
-    status, issued = _post(server_url, "/nonce", None)
+def test_nonce_refuse_pour_un_kid_inconnu(server_url):
+    """La route d'émission n'entretient pas de stock pour des appareils
+    qui n'existent pas — premier verrou contre la moisson."""
+    status, body = _post(server_url, "/nonce", {"kid_b64": _b64(os.urandom(32))})
+    assert status == 400
+    assert "kid inconnu" in body["error"]
+
+
+def test_nonce_dun_autre_appareil_rejete_par_http(server_url):
+    """Deux appareils enrôlés, le second essaie le nonce du premier."""
+    premier, second = new_key(), new_key()
+    kids = []
+    for k in (premier, second):
+        _, enrolled = _post(
+            server_url,
+            "/enroll",
+            {"public_key_x962_b64": _b64(_public_x962(k)), "platform": "android"},
+        )
+        kids.append(enrolled["kid_b64"])
+
+    _, issued = _post(server_url, "/nonce", {"kid_b64": kids[0]})
     nonce = base64.b64decode(issued["nonce_b64"])
-    envelope = sign_envelope(key, make_payload(nonce=nonce), nonce=nonce)
+    envelope = sign_envelope(second, make_payload(nonce=nonce), nonce=nonce)
 
     status, result = _post(server_url, "/verify", {"envelope_b64": _b64(envelope)})
     assert status == 200
     assert result["level"] == "REJECTED"
-    assert "UNKNOWN_KEY" in result["flags"]
+    assert "NONCE_DEVICE_MISMATCH" in result["flags"]
 
 
 def test_erreurs_de_transport(server_url):

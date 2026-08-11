@@ -84,8 +84,9 @@ class Verifier:
         claims = CaptureClaims.decode(sign1.payload())
         profiles.require_fields(profile, claims)
 
-        # 2. nonce connu, non consommé, non expiré, et émis pour ce profil
-        nonce_rec = self._nonces.consume(claims.nonce, now_ms)
+        # 2. nonce connu, non consommé, non expiré, émis pour cet appareil
+        #    et pour ce profil
+        nonce_rec = self._nonces.consume(claims.nonce, now_ms, kid=sign1.kid)
         if nonce_rec.profile is not profile:
             # Le profil est signé, donc non modifiable en vol — mais un
             # client compromis reste libre de *déclarer* le noyau pour une

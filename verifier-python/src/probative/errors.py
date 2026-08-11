@@ -57,6 +57,16 @@ class ReplayedNonce(VerificationError):
     code = "REPLAYED_NONCE"
 
 
+class NonceDeviceMismatch(VerificationError):
+    """Nonce présenté par un autre appareil que celui qui l'a demandé.
+
+    Sans ce contrôle, un lot de nonces moissonné servirait à n'importe
+    quel appareil enrôlé — y compris celui de l'attaquant.
+    """
+
+    code = "NONCE_DEVICE_MISMATCH"
+
+
 class UnknownKey(VerificationError):
     code = "UNKNOWN_KEY"
 

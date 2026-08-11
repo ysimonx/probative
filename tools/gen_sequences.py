@@ -224,8 +224,8 @@ CAPTURE = build(
      ("Serveur", "seul juge", 995, 160)],
     [
         phase("Ouverture · le serveur ouvre l'échange"),
-        msg(0, 4, "Demande un nonce"),
-        msg(4, 0, "Nonce + profil attendu", "usage unique, validité explicite — règle R3"),
+        msg(0, 4, "Demande un nonce", "en indiquant son kid"),
+        msg(4, 0, "Nonce + profil attendu", "lié à ce kid, usage unique — règle R3"),
         phase("Collecte · tout est mesuré, rien n'est jugé"),
         msg(0, 1, "Déclenche la capture"),
         msg(1, 0, "Octets bruts du capteur"),
@@ -250,7 +250,7 @@ CAPTURE = build(
         selfmsg(4, "Vérifie en dix étapes"),
         msg(4, 0, "Verdict par propriété", "avec son motif, obligatoire"),
     ],
-    "Séquence de capture : le serveur émet un nonce et le profil attendu, l'application "
+    "Séquence de capture : le serveur émet un nonce lié à l'appareil et le profil attendu, l'application "
     "empreinte les octets bruts puis relève position, corroboration, horloges et posture, fige "
     "la charge utile, calcule le défi R1, obtient un jeton d'attestation, signe dans la puce, et "
     "remet l'enveloppe puis les octets du contenu au serveur.",

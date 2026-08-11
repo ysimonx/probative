@@ -53,7 +53,7 @@ def _verify_vector(name: str) -> VerificationResult:
     nonces = InMemoryNonceStore()
     # L'horloge des vecteurs est figée : le nonce est réputé émis juste
     # avant la capture, et la vérification datée juste après.
-    rec = nonces.issue(vector_nonce(name), profile=Profile(profile))
+    rec = nonces.issue(vector_nonce(name), profile=Profile(profile), kid=kid_for(key))
     rec.issued_at_ms = WALL_MS - 1_000
     devices = InMemoryDeviceStore()
     devices.enroll(

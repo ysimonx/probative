@@ -23,14 +23,17 @@ Boucle complète avec `curl` (les octets binaires transitent en base64) :
 
 ```bash
 # 1. Enrôler une clé publique P-256 (X9.62 non compressée, 65 octets)
+#    iOS : joindre attestation_b64, challenge_b64 et key_id_b64 pour que la
+#    chaîne App Attest soit réellement validée jusqu'à la racine Apple.
 curl -s http://127.0.0.1:8765/enroll -d '{
   "public_key_x962_b64": "'$PUBKEY_B64'", "platform": "android"
 }'
-# → {"kid_b64": "...", "kid_hex": "..."}
+# → {"kid_b64": "...", "kid_hex": "...", "attested": false}
 
-# 2. Obtenir un nonce
-curl -s http://127.0.0.1:8765/nonce -d '{}'
-# → {"nonce_b64": "...", "ttl_ms": 120000, "offline": false}
+# 2. Obtenir un nonce — émis POUR cet appareil, et inutilisable par un autre
+#    (règle R3). Un kid non enrôlé est refusé.
+curl -s http://127.0.0.1:8765/nonce -d '{"kid_b64": "'$KID_B64'"}'
+# → {"nonce_b64": "...", "ttl_ms": 120000, "offline": false, "profile": "capture"}
 
 # 3. Capturer, signer, puis soumettre l'enveloppe et le média
 curl -s http://127.0.0.1:8765/verify -d '{

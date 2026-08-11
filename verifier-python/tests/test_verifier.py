@@ -62,9 +62,9 @@ def verifier(nonces, devices):
     )
 
 
-def _issue(nonces, profile=Profile.CAPTURE, **kw):
+def _issue(nonces, key, profile=Profile.CAPTURE, **kw):
     nonce = os.urandom(16)
-    nonces.issue(nonce, profile=profile, **kw)
+    nonces.issue(nonce, profile=profile, kid=kid_for(key), **kw)
     return nonce
 
 
@@ -72,7 +72,7 @@ def _issue(nonces, profile=Profile.CAPTURE, **kw):
 
 
 def test_capture_android_valide(verifier, nonces, key):
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce)
 
@@ -90,7 +90,7 @@ def test_origin_plafonne_par_recapture_en_v01(verifier, nonces, key):
     Photographier un écran et enregistrer un haut-parleur sont la même
     attaque. Le plafond porte donc sur le profil, pas sur le médium.
     """
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     env = sign_envelope(key, make_payload(nonce=nonce, media_digest=MEDIA_DIGEST), nonce=nonce)
 
     res = verifier.verify(env, media_bytes=MEDIA)
@@ -117,7 +117,7 @@ def test_ios_compteur_assertion_donne_grade_a_sur_time(nonces, key):
         device_store=devices,
         attestation=NullAttestationVerifier(DeviceIntegrity.STRONG),
     )
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, platform="ios", media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce, counter=8, freshness_kind="app-attest")
 
@@ -129,7 +129,7 @@ def test_ios_compteur_assertion_donne_grade_a_sur_time(nonces, key):
 
 def test_reclamation_inconnue_signalee_sans_penalite(verifier, nonces, key):
     """Extensibilité : un type inconnu est signalé, jamais pénalisant."""
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(
         nonce=nonce,
         media_digest=MEDIA_DIGEST,
@@ -154,7 +154,7 @@ def test_profil_noyau_atteint_strong(verifier, nonces, key):
     quel que soit le contenu — un journal signé était pénalisé par une
     attaque qui ne le concerne pas.
     """
-    nonce = _issue(nonces, profile=Profile.CORE)
+    nonce = _issue(nonces, key, profile=Profile.CORE)
     payload = make_payload(nonce=nonce, profile=PROFILE_CORE, media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce, profile=PROFILE_CORE)
 
@@ -171,7 +171,7 @@ def test_profil_inconnu_refuse_de_juger(verifier, nonces, key):
     Le repli donnerait un verdict d'apparence complète, en ayant
     silencieusement omis les propriétés du profil et son plafond.
     """
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce, profile="profil-de-demain")
 
@@ -183,7 +183,7 @@ def test_profil_inconnu_refuse_de_juger(verifier, nonces, key):
 
 def test_profil_absent_rejete(verifier, nonces, key):
     """Le label 102 est obligatoire : aucun défaut plausible n'est appliqué."""
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     protected = cbor2.dumps(
         {1: -7, 4: kid_for(key), 100: "probative/0.1", 101: "test-deployment"},
@@ -199,7 +199,7 @@ def test_profil_absent_rejete(verifier, nonces, key):
 
 def test_profil_capture_sans_position_rejete(verifier, nonces, key):
     """`position` est optionnelle au schéma, obligatoire dans le profil capture."""
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     del payload[3]
     env = sign_envelope(key, payload, nonce=nonce)
@@ -222,7 +222,7 @@ def test_s4_declassement_de_profil_par_le_nonce(verifier, nonces, key):
     nonce qui ferme la porte : le serveur a demandé une acquisition, il
     doit en recevoir une.
     """
-    nonce = _issue(nonces, profile=Profile.CAPTURE)
+    nonce = _issue(nonces, key, profile=Profile.CAPTURE)
     payload = make_payload(nonce=nonce, profile=PROFILE_CORE, media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce, profile=PROFILE_CORE)
 
@@ -240,7 +240,7 @@ def test_s4_profil_reecrit_apres_signature(verifier, nonces, key):
     qui l'arrête — ce qui est bien la raison de mettre le label en 102 et
     non dans la charge utile.
     """
-    nonce = _issue(nonces, profile=Profile.CORE)
+    nonce = _issue(nonces, key, profile=Profile.CORE)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce, profile="capture")
     declasse = cbor2.dumps(
@@ -273,7 +273,7 @@ def _reassemble(envelope: bytes, protected: bytes) -> bytes:
 
 
 def test_s1_mock_location_declare(verifier, nonces, key):
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST, mock_location=True)
     env = sign_envelope(key, payload, nonce=nonce)
 
@@ -285,7 +285,7 @@ def test_s1_mock_location_declare(verifier, nonces, key):
 
 def test_s1_incoherence_altimetrique(verifier, nonces, key):
     """Un GPS téléporté ne s'accompagne pas d'un baromètre cohérent."""
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(
         nonce=nonce, media_digest=MEDIA_DIGEST, altitude=112.0, baro_altitude=940.0
     )
@@ -298,7 +298,7 @@ def test_s1_incoherence_altimetrique(verifier, nonces, key):
 
 
 def test_s1_precision_trop_parfaite(verifier, nonces, key):
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST, h_accuracy=0.1)
     env = sign_envelope(key, payload, nonce=nonce)
 
@@ -308,7 +308,7 @@ def test_s1_precision_trop_parfaite(verifier, nonces, key):
 
 
 def test_s1_point_de_position_perime(verifier, nonces, key):
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST, fix_age_ms=90_000)
     env = sign_envelope(key, payload, nonce=nonce)
 
@@ -333,7 +333,7 @@ def test_s1_ios_sans_corroboration_inertielle(nonces, key):
         device_store=devices,
         attestation=NullAttestationVerifier(DeviceIntegrity.STRONG),
     )
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(
         nonce=nonce,
         platform="ios",
@@ -352,7 +352,7 @@ def test_s1_ios_sans_corroboration_inertielle(nonces, key):
 
 
 def test_s2_image_ne_correspond_pas_a_lempreinte(verifier, nonces, key):
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce)
 
@@ -364,7 +364,7 @@ def test_s2_image_ne_correspond_pas_a_lempreinte(verifier, nonces, key):
 
 def test_s2_latence_de_signature_anormale(verifier, nonces, key):
     """Une caméra virtuelle allonge le délai entre capture et signature."""
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(
         nonce=nonce, media_digest=MEDIA_DIGEST, sign_latency_ms=9_000
     )
@@ -379,7 +379,7 @@ def test_s2_latence_de_signature_anormale(verifier, nonces, key):
 
 
 def test_s3_nonce_rejoue(verifier, nonces, key):
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce)
 
@@ -392,7 +392,7 @@ def test_s3_nonce_rejoue(verifier, nonces, key):
 
 
 def test_s3_nonce_expire(verifier, nonces, key):
-    nonce = _issue(nonces, ttl_ms=1_000)
+    nonce = _issue(nonces, key, ttl_ms=1_000)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce)
 
@@ -453,7 +453,7 @@ def test_s3_compteur_declare_different_du_compteur_signe(nonces, key):
     est un rejet, pas un arbitrage silencieux en faveur de l'un des deux.
     """
     v = _ios_verifier(nonces, key, _CounterVerifier(3))
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, platform="ios", media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce, counter=9, freshness_kind="app-attest")
 
@@ -467,7 +467,7 @@ def test_s3_compteur_declare_different_du_compteur_signe(nonces, key):
 def test_compteur_signe_fait_foi_pour_lordonnancement(nonces, key):
     """Quand les deux concordent, c'est le compteur signé qui est retenu."""
     v = _ios_verifier(nonces, key, _CounterVerifier(4), counter=3)
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, platform="ios", media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce, counter=4, freshness_kind="app-attest")
 
@@ -493,7 +493,7 @@ def test_s3_compteur_assertion_en_regression(nonces, key):
         device_store=devices,
         attestation=NullAttestationVerifier(DeviceIntegrity.STRONG),
     )
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, platform="ios", media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce, counter=41, freshness_kind="app-attest")
 
@@ -504,7 +504,7 @@ def test_s3_compteur_assertion_en_regression(nonces, key):
 
 
 def test_s3_capture_hors_ligne_plafonnee(verifier, nonces, key):
-    nonce = _issue(nonces, ttl_ms=86_400_000, offline=True)
+    nonce = _issue(nonces, key, ttl_ms=86_400_000, offline=True)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce)
 
@@ -518,7 +518,7 @@ def test_s3_capture_hors_ligne_plafonnee(verifier, nonces, key):
 
 def test_s4_r1_defi_non_lie_au_contenu(verifier, nonces, key):
     """Jeton d'attestation authentique attaché à une charge utile forgée."""
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     env = sign_envelope(key, payload, nonce=nonce, bind_challenge=False)
 
@@ -529,7 +529,7 @@ def test_s4_r1_defi_non_lie_au_contenu(verifier, nonces, key):
 
 
 def test_s4_charge_utile_modifiee_apres_signature(verifier, nonces, key):
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST, lat=48.2973)
     forged = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST, lat=43.2965)
     env = sign_envelope(key, payload, nonce=nonce, tamper_payload_after_sign=forged)
@@ -541,7 +541,7 @@ def test_s4_charge_utile_modifiee_apres_signature(verifier, nonces, key):
 
 
 def test_s4_un_seul_octet_modifie(verifier, nonces, key):
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     env = bytearray(
         sign_envelope(key, make_payload(nonce=nonce, media_digest=MEDIA_DIGEST), nonce=nonce)
     )
@@ -553,8 +553,11 @@ def test_s4_un_seul_octet_modifie(verifier, nonces, key):
 
 
 def test_s4_cle_inconnue(verifier, nonces):
+    """Clé non enrôlée. Le nonce est émis pour *elle*, sinon le rejet
+    viendrait de la liaison à l'appareil et non de la clé inconnue —
+    et ce test ne testerait plus ce qu'il annonce."""
     autre = new_key()
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, autre)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
     env = sign_envelope(autre, payload, nonce=nonce)
 
@@ -564,13 +567,70 @@ def test_s4_cle_inconnue(verifier, nonces):
     assert "UNKNOWN_KEY" in res.flags
 
 
+# --- S3 : moisson de nonces ----------------------------------------------
+
+
+def test_s3_nonce_dun_autre_appareil_refuse(verifier, nonces, key, devices):
+    """Un nonce moissonné ne sert à aucun autre appareil, même enrôlé.
+
+    C'est la contre-mesure à la moisson : la route d'émission est la seule
+    qui crée de l'état sans preuve, et les lots hors ligne à durée de vie
+    étendue en font un gisement. Sans liaison au `kid`, un attaquant
+    disposant de son propre appareil enrôlé les consommerait.
+    """
+    autre = new_key()
+    devices.enroll(
+        DeviceRecord(
+            kid=kid_for(autre),
+            public_key=autre.public_key(),
+            platform="android",
+            hardware_backed=True,
+        )
+    )
+    nonce = _issue(nonces, key)  # émis pour le premier appareil
+    env = sign_envelope(autre, make_payload(nonce=nonce, media_digest=MEDIA_DIGEST), nonce=nonce)
+
+    res = verifier.verify(env, media_bytes=MEDIA)
+
+    assert res.level is Level.REJECTED
+    assert "NONCE_DEVICE_MISMATCH" in res.flags
+
+
+def test_s3_un_nonce_presente_par_le_mauvais_appareil_nest_pas_brule(
+    verifier, nonces, key, devices
+):
+    """Le détournement ne doit pas non plus servir de déni de service.
+
+    Si un nonce présenté sous un mauvais `kid` était consommé au passage,
+    il suffirait de le présenter une fois, avec une signature quelconque,
+    pour empêcher son propriétaire de s'en servir.
+    """
+    autre = new_key()
+    devices.enroll(
+        DeviceRecord(
+            kid=kid_for(autre),
+            public_key=autre.public_key(),
+            platform="android",
+            hardware_backed=True,
+        )
+    )
+    nonce = _issue(nonces, key)
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
+    verifier.verify(sign_envelope(autre, payload, nonce=nonce), media_bytes=MEDIA)
+
+    # Le propriétaire légitime s'en sert ensuite, sans encombre.
+    res = verifier.verify(sign_envelope(key, payload, nonce=nonce), media_bytes=MEDIA)
+
+    assert res.level is not Level.REJECTED, res.to_dict()
+
+
 def test_s4_integrite_appareil_en_echec(nonces, devices, key):
     v = Verifier(
         nonce_store=nonces,
         device_store=devices,
         attestation=NullAttestationVerifier(DeviceIntegrity.FAILED),
     )
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     env = sign_envelope(key, make_payload(nonce=nonce, media_digest=MEDIA_DIGEST), nonce=nonce)
 
     res = v.verify(env, media_bytes=MEDIA)
@@ -643,7 +703,7 @@ def test_s4_champ_mal_type_rejete(verifier, nonces, key, chemin, valeur):
     champ mal typé qui traverserait le calcul des grades sans être
     remarqué serait pire encore.
     """
-    nonce = _issue(nonces)
+    nonce = _issue(nonces, key)
     payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
 
     cible = payload
@@ -674,7 +734,7 @@ def test_version_de_spec_inconnue(verifier, key, nonces):
     original = factory.SPEC
     factory.SPEC = "probative/9.9"
     try:
-        nonce = _issue(nonces)
+        nonce = _issue(nonces, key)
         env = sign_envelope(key, make_payload(nonce=nonce), nonce=nonce)
     finally:
         factory.SPEC = original
