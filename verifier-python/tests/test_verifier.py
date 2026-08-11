@@ -413,6 +413,70 @@ def test_s3_nonce_inconnu(verifier, key):
     assert "UNKNOWN_NONCE" in res.flags
 
 
+class _CounterVerifier(NullAttestationVerifier):
+    """Substitut qui rend un compteur, comme le fera App Attest.
+
+    Le compteur d'App Attest provient de `authenticatorData`, couvert par
+    la signature de l'assertion. Celui de l'en-tête de fraîcheur ne l'est
+    par rien.
+    """
+
+    def __init__(self, counter: int) -> None:
+        super().__init__(DeviceIntegrity.STRONG)
+        self._counter = counter
+
+    def verify(self, **kw):  # type: ignore[override]
+        out = super().verify(**kw)
+        out.counter = self._counter
+        return out
+
+
+def _ios_verifier(nonces, key, attestation, counter=0):
+    devices = InMemoryDeviceStore()
+    devices.enroll(
+        DeviceRecord(
+            kid=kid_for(key),
+            public_key=key.public_key(),
+            platform="ios",
+            hardware_backed=True,
+            assertion_counter=counter,
+        )
+    )
+    return Verifier(nonce_store=nonces, device_store=devices, attestation=attestation)
+
+
+def test_s3_compteur_declare_different_du_compteur_signe(nonces, key):
+    """Le compteur de l'en-tête non protégé ne fait pas foi.
+
+    Un client qui annonce 9 alors que l'assertion signée porte 3
+    cherche à s'octroyer de la marge sur l'ordonnancement. Le désaccord
+    est un rejet, pas un arbitrage silencieux en faveur de l'un des deux.
+    """
+    v = _ios_verifier(nonces, key, _CounterVerifier(3))
+    nonce = _issue(nonces)
+    payload = make_payload(nonce=nonce, platform="ios", media_digest=MEDIA_DIGEST)
+    env = sign_envelope(key, payload, nonce=nonce, counter=9, freshness_kind="app-attest")
+
+    res = v.verify(env, media_bytes=MEDIA)
+
+    assert res.level is Level.REJECTED
+    assert "ASSERTION_COUNTER_REGRESSION" in res.flags
+    assert "signé" in res.level_reason
+
+
+def test_compteur_signe_fait_foi_pour_lordonnancement(nonces, key):
+    """Quand les deux concordent, c'est le compteur signé qui est retenu."""
+    v = _ios_verifier(nonces, key, _CounterVerifier(4), counter=3)
+    nonce = _issue(nonces)
+    payload = make_payload(nonce=nonce, platform="ios", media_digest=MEDIA_DIGEST)
+    env = sign_envelope(key, payload, nonce=nonce, counter=4, freshness_kind="app-attest")
+
+    res = v.verify(env, media_bytes=MEDIA)
+
+    assert res.properties[Property.TIME].grade is Grade.A
+    assert "assertion-counter-monotonic" in res.properties[Property.TIME].evidence
+
+
 def test_s3_compteur_assertion_en_regression(nonces, key):
     devices = InMemoryDeviceStore()
     devices.enroll(

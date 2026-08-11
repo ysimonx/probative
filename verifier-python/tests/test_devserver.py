@@ -15,6 +15,8 @@ import threading
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -64,6 +66,88 @@ def test_nonce_profil_inconnu_refuse():
 def test_nonce_profil_noyau_demandable():
     issued = DevService().nonce({"profile": "core"})
     assert issued["profile"] == "core"
+
+
+# --- Enrôlement attesté — phase D -----------------------------------------
+
+
+def _app_attest_vector() -> dict:
+    path = Path(__file__).parent / "device-vectors" / "appattest-c3-iphone16.json"
+    return json.loads(path.read_text())
+
+
+def _enroll_body(vector: dict) -> dict:
+    return {
+        "public_key_x962_b64": vector["signingKey"]["publicKeyX962"],
+        "platform": "ios",
+        "attestation_b64": vector["enrollment"]["attestation"],
+        "challenge_b64": base64.b64encode(
+            base64.b64decode(vector["enrollment"]["challenge"])
+        ).decode(),
+        "key_id_b64": vector["keyId"],
+    }
+
+
+def _attested_service(vector: dict) -> DevService:
+    # Le certificat feuille d'App Attest ne vaut que trois jours. Sans
+    # horloge fixée, ce test cesserait de passer un beau matin sans
+    # qu'aucune ligne de code n'ait changé — et on chercherait longtemps.
+    return DevService(
+        app_attest=("9SGKL7VUD3", vector["app"]["bundleId"], "development"),
+        now=lambda: datetime(2026, 8, 11, 12, tzinfo=UTC),
+    )
+
+
+def test_enrolement_atteste_retient_la_cle_app_attest():
+    """L'enrôlement ne prend plus la clé sur parole quand une attestation vient."""
+    vector = _app_attest_vector()
+    service = _attested_service(vector)
+
+    result = service.enroll(_enroll_body(vector))
+
+    assert result["attested"] is True
+    kid = base64.b64decode(result["kid_b64"])
+    record = service.devices.get(kid)
+    assert record.attestation_key is not None
+    assert record.attestation_key != base64.b64decode(vector["signingKey"]["publicKeyX962"]), (
+        "la clé App Attest et la clé de signature sont deux clés distinctes"
+    )
+    assert hashlib.sha256(record.attestation_key).digest() == base64.b64decode(vector["keyId"])
+
+
+def test_enrolement_atteste_refuse_un_defi_qui_nest_pas_le_sien():
+    """Rejouer une attestation obtenue ailleurs, contre un autre défi."""
+    vector = _app_attest_vector()
+    body = _enroll_body(vector) | {"challenge_b64": _b64(b"un-defi-qui-nest-pas-le-notre")}
+
+    with pytest.raises(BadRequest, match="attestation refusée"):
+        _attested_service(vector).enroll(body)
+
+
+def test_enrolement_atteste_expire_refuse():
+    """Hors période de validité, l'attestation ne vaut plus rien."""
+    vector = _app_attest_vector()
+    service = DevService(
+        app_attest=("9SGKL7VUD3", vector["app"]["bundleId"], "development"),
+        now=lambda: datetime(2027, 1, 1, tzinfo=UTC),
+    )
+    with pytest.raises(BadRequest, match="attestation refusée"):
+        service.enroll(_enroll_body(vector))
+
+
+def test_enrolement_sans_application_configuree_refuse_une_attestation():
+    """Mieux vaut refuser que faire semblant de valider."""
+    vector = _app_attest_vector()
+    with pytest.raises(BadRequest, match="App Attest"):
+        DevService().enroll(_enroll_body(vector))
+
+
+def test_enrolement_sans_attestation_reste_accepte_sur_parole():
+    """Le mode dégradé du serveur de développement, explicitement signalé."""
+    result = DevService().enroll(
+        {"public_key_x962_b64": _b64(_public_x962(new_key())), "platform": "ios"}
+    )
+    assert result["attested"] is False
 
 
 # --- Niveau HTTP : boucle complète ----------------------------------------

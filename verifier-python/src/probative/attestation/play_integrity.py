@@ -1,14 +1,23 @@
-"""Play Integrity — implémentation à compléter après le spike Android.
+"""Play Integrity — implémentation à compléter (phase B du spike).
 
-Points à valider sur appareil réel avant d'écrire ce module :
+La contrainte de taille sur `requestHash` est levée : base64url sans
+bourrage, 43 caractères pour un plafond de 500. Restent trois points, que
+seul le déchiffrement d'un jeton réel permettra de trancher :
 
-  * la contrainte de taille sur `requestHash` — si le condensat R1 de
-    32 octets ne passe pas tel quel, il faut un niveau d'indirection
-    (stocker le condensat côté serveur, transmettre une référence) ;
-  * la différence entre requêtes classiques et standard, et laquelle
-    autorise réellement la liaison au contenu ;
+  * **Play restitue-t-il la chaîne intacte ?** Une divergence d'encodage
+    entre client et serveur casserait R1 *silencieusement* — le pire mode
+    de défaillance, et la raison de ne pas figer ADR-0002 avant.
+  * **Où se déchiffre le jeton ?** Localement avec des clés détenues, ou
+    par un appel à Google. L'écart n'est pas mineur : un appel par
+    enveloppe ajoute une latence, une limite de débit et une dépendance
+    de disponibilité en plein chemin de vérification.
   * le taux d'échec sur appareils sains d'entrée de gamme, qui
     conditionne le critère de faux positifs du modèle de menace.
+
+Contrairement à App Attest, le verdict est **gradué** — l'appareil et
+l'application sont jugés séparément (`appRecognitionVerdict`,
+`deviceRecognitionVerdict`), et `AttestationOutcome` a été dessiné pour
+recevoir cette granularité.
 """
 
 from __future__ import annotations
@@ -24,5 +33,6 @@ class PlayIntegrityVerifier(AttestationVerifier):
         token: bytes,
         expected_challenge: bytes,
         key_id: bytes,
+        attestation_key: bytes | None = None,
     ) -> AttestationOutcome:
-        raise NotImplementedError("à implémenter après le spike Android")
+        raise NotImplementedError("à implémenter en phase B du spike")

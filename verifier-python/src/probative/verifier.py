@@ -114,6 +114,7 @@ class Verifier:
             token=freshness.token,
             expected_challenge=expected,
             key_id=sign1.kid,
+            attestation_key=device.attestation_key,
         )
 
         flags: list[str] = []
@@ -121,14 +122,30 @@ class Verifier:
             flags.append("ATTESTATION_UNAVAILABLE")
 
         # 6. compteur d'assertion strictement croissant (iOS)
+        #
+        # Le compteur de l'en-tête de fraîcheur n'est couvert par aucune
+        # signature : il est déclaratif. Celui que le fournisseur extrait
+        # de l'assertion, lui, est signé. Quand les deux existent, seul le
+        # second fait foi, et un désaccord est un rejet — un client qui
+        # annonce un compteur autre que celui qu'il a réellement obtenu
+        # cherche à influencer l'ordonnancement.
+        counter = att.counter if att.counter is not None else freshness.counter
+        if (
+            att.counter is not None
+            and freshness.counter is not None
+            and freshness.counter != att.counter
+        ):
+            raise AssertionCounterRegression(
+                f"compteur déclaré {freshness.counter}, compteur signé {att.counter}"
+            )
+
         counter_verified = False
-        if claims.posture.platform is Platform.IOS and freshness.counter is not None:
-            if freshness.counter <= device.assertion_counter:
+        if claims.posture.platform is Platform.IOS and counter is not None:
+            if counter <= device.assertion_counter:
                 raise AssertionCounterRegression(
-                    f"compteur reçu {freshness.counter}, "
-                    f"dernier connu {device.assertion_counter}"
+                    f"compteur reçu {counter}, dernier connu {device.assertion_counter}"
                 )
-            device.assertion_counter = freshness.counter
+            device.assertion_counter = counter
             counter_verified = True
 
         # 7. chaînage d'enveloppes (Android)

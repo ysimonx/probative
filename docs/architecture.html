@@ -1064,8 +1064,15 @@
     <div class="prose">
       <p>
         L'ordre n'est pas cosmétique : on écarte au plus vite et au moins cher. Les quatre
-        premières étapes sont locales et coûtent une milliseconde. La cinquième est le seul appel
-        réseau de tout le pipeline.
+        premières étapes sont locales et coûtent une milliseconde. La cinquième est le seul endroit
+        du pipeline où un appel réseau peut se produire.
+      </p>
+      <p>
+        <strong>Et il ne s'y produit que sur Android.</strong> Une assertion App Attest se vérifie
+        entièrement hors ligne : la clé publique a été retenue à l'enrôlement, et la chaîne
+        d'attestation se confronte à la racine publiée par Apple, versionnée à côté du code. Côté
+        Android, le jeton Play Integrity est chiffré et doit être ouvert — c'est là, et là seule,
+        que la dépendance sortante apparaît.
       </p>
       <p>
         Un vérificateur qui interrogerait Google ou Apple <em>avant</em> d'avoir vérifié la
@@ -1084,15 +1091,15 @@
       <div class="step"><span class="n">03</span><span>Signature valide sous la clé du <span class="m">kid</span> <span class="out">sinon rejeté</span></span></div>
       <div class="step"><span class="n">04</span><span>Recalcul de R1 et comparaison au défi <span class="out">sinon rejeté</span></span></div>
       <div class="zone">
-        <span class="zl">Réseau</span>
-        <span class="zr">le seul appel sortant</span>
+        <span class="zl">Réseau sur Android seulement</span>
+        <span class="zr">le seul appel sortant possible</span>
       </div>
-      <div class="step net"><span class="n">05</span><span>Validation du jeton auprès de Google ou Apple <span class="out">sinon non fiable</span></span></div>
+      <div class="step net"><span class="n">05</span><span>Validation de la preuve de fraîcheur <span class="out">sinon non fiable</span></span></div>
       <div class="zone">
         <span class="zl">Local</span>
         <span class="zr">ordonnancement, contenu, grades</span>
       </div>
-      <div class="step"><span class="n">06</span><span>iOS : compteur d'assertion strictement croissant <span class="out">sinon rejeté</span></span></div>
+      <div class="step"><span class="n">06</span><span>iOS : compteur d'assertion strictement croissant, celui de l'assertion <em>signée</em> <span class="out">sinon rejeté</span></span></div>
       <div class="step"><span class="n">07</span><span>Android : chaînage cohérent avec l'enveloppe précédente <span class="out">sinon signalé</span></span></div>
       <div class="step"><span class="n">08</span><span>Empreinte du contenu recalculée sur les octets reçus <span class="out">sinon rejeté</span></span></div>
       <div class="step"><span class="n">09</span><span>Cohérence de posture, position, corroboration <span class="out">grades des propriétés du profil</span></span></div>
@@ -1585,6 +1592,36 @@
         </div>
       </div>
 
+      <div class="faq-item">
+        <div class="faq-q">C'est une bibliothèque qu'on installe ?</div>
+        <div class="faq-a">
+          <p>
+            Pas seulement, et la nuance est celle qui décide de votre planning. C'est un
+            <strong>format</strong>, avec ses implémentations de référence des deux côtés : un
+            cœur mobile qui collecte et signe, un vérificateur serveur qui juge, et des vecteurs
+            de conformité qui garantissent qu'ils parlent la même langue au bit près.
+          </p>
+          <p>
+            <strong>Ajouter le SDK client à votre application ne produit rien d'opposable.</strong>
+            L'appareil ne conclut jamais — c'est le premier principe de cette page. Il faut donc
+            aussi exécuter un vérificateur, et lui faire persister les nonces émis, les clés
+            enrôlées et l'ordonnancement. Ce n'est pas un manque de maturité, c'est la conséquence
+            directe du fait que celui qui mesure ne juge pas.
+          </p>
+          <p>
+            La bonne nouvelle est ce que cela vous épargne : <strong>aucun abonnement, aucun appel
+            à un service tiers à l'exécution</strong>. Tout s'auto-héberge, sous licence
+            Apache-2.0. Les seules requêtes sortantes vont à Google ou Apple.
+          </p>
+          <div class="faq-note">
+            À ne pas confondre avec le serveur de développement fourni : stockages en mémoire,
+            enrôlement qui accepte la clé sans valider sa chaîne d'attestation, et substitut
+            d'attestation par défaut. Il donne aux appareils réels une cible HTTP pendant le
+            spike — il n'a jamais eu vocation à tourner en production.
+          </div>
+        </div>
+      </div>
+
     </div>
   </section>
 
@@ -1592,7 +1629,47 @@
   <section>
     <div class="sec-head">
       <div class="eyebrow">Le dépôt</div>
-      <h2>Où en est chaque morceau</h2>
+      <h2>Une spécification, une suite de conformité, des implémentations</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Le mot <em>bibliothèque</em> n'est pas faux, il est trop petit : il laisse croire qu'on
+        installe une dépendance. Ce dépôt produit quatre choses de natures différentes, et les
+        deux premières ont la durée de vie la plus longue.
+      </p>
+      <p>
+        <strong>Une spécification de format</strong>, normative, avec son schéma CDDL et ses
+        décisions motivées. <strong>Une suite de conformité</strong> — les vecteurs d'or, qui
+        figent les octets exacts que toute implémentation doit reproduire. Puis
+        <strong>un vérificateur de référence</strong> côté serveur, et <strong>deux cœurs
+        natifs</strong> livrés en artefacts autonomes.
+      </p>
+      <p>
+        Le vérificateur Python est <em>une</em> implémentation du juge, pas la seule possible.
+        Quelqu'un le réécrira en Go ou en Java, et c'est très bien : ce sont la spécification et
+        les vecteurs qui rendent cette réécriture sûre. La démonstration a déjà eu lieu — quand le
+        format a changé pour séparer le noyau du profil capture, trois implémentations
+        indépendantes ont convergé parce que les vecteurs les y ont forcées.
+      </p>
+    </div>
+
+    <div class="callout">
+      <div class="eyebrow">Ce que l'adoption exige</div>
+      <p>
+        <strong>Personne ne peut adopter ce format en ajoutant une dépendance à son
+        application.</strong> C'est un système à deux côtés, et c'est structurel : puisque
+        l'appareil ne juge jamais, l'adoptant doit exécuter un vérificateur.
+      </p>
+      <p>
+        Ce vérificateur doit <strong>persister trois états</strong> que le client ne peut par
+        construction pas détenir : les nonces émis, les clés publiques enrôlées, et l'ordonnancement
+        — compteur d'assertion sur iOS, condensat de la dernière enveloppe sur Android. La
+        consommation d'un nonce doit en outre être atomique, sous peine de rejeu par course.
+      </p>
+      <p>
+        En contrepartie, il n'y a <strong>aucune dépendance à un service tiers à l'exécution</strong> :
+        l'ensemble s'auto-héberge. Les seuls appels sortants vont à Google ou Apple, à l'étape 5.
+      </p>
     </div>
 
     <div class="repo">
@@ -1628,7 +1705,7 @@
       </div>
       <div class="repo-row">
         <span class="path">verifier-python/</span>
-        <span class="what">Le vérificateur serveur. Pipeline complet des dix étapes, 60 tests au vert, chaque test d'attaque référencé au modèle de menace.</span>
+        <span class="what">Le vérificateur serveur. Pipeline complet des dix étapes, 93 tests au vert, chaque test d'attaque référencé au modèle de menace.</span>
         <span class="chip done">fonctionnel</span>
       </div>
       <div class="repo-row">
@@ -1637,8 +1714,13 @@
         <span class="chip done">fonctionnel</span>
       </div>
       <div class="repo-row">
-        <span class="path">…/attestation/play_integrity.py<br>…/attestation/app_attest.py</span>
-        <span class="what">Les deux adaptateurs vers Google et Apple. Interfaces posées, corps en <span class="m">NotImplementedError</span> — l'isolement derrière une interface garde tout le reste testable hors ligne.</span>
+        <span class="path">…/attestation/app_attest.py</span>
+        <span class="what">Apple. L'attestation d'enrôlement est validée <strong>jusqu'à la racine publiée par Apple</strong>, versionnée à côté du code ; l'assertion de chaque enveloppe est vérifiée sous la clé App Attest extraite du certificat feuille. Éprouvé contre une capture d'iPhone 16 réelle.</span>
+        <span class="chip done">fonctionnel</span>
+      </div>
+      <div class="repo-row">
+        <span class="path">…/attestation/play_integrity.py</span>
+        <span class="what">Google. Interface posée, corps en <span class="m">NotImplementedError</span> — l'isolement derrière une interface garde tout le reste testable hors ligne. Le vecteur Android réel est en main ; reste le compte de service pour déchiffrer un jeton.</span>
         <span class="chip wip">à écrire</span>
       </div>
       <div class="repo-row">

@@ -79,7 +79,7 @@ C'est leur seule raison d'être — ne rien y loger qui appartienne au cœur.
 cd verifier-python
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest              # 60 tests doivent passer
+pytest              # 93 tests doivent passer
 ruff check .
 mypy src
 ```
@@ -146,8 +146,9 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Noyau et profils (ADR-0005) | **Fait de bout en bout** : spec §2.5, CDDL, vérificateur, vecteurs, et les deux cœurs natifs |
-| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 60 tests au vert |
-| `PlayIntegrityVerifier`, `AppAttestVerifier` | Interfaces posées, `NotImplementedError`. **Vecteurs réels disponibles** — phases B et D n'ont plus d'excuse pour être écrites à l'aveugle |
+| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 93 tests au vert |
+| `AppAttestVerifier` — **phase D faite** | Attestation d'enrôlement validée **jusqu'à la racine publiée par Apple**, assertion validée par enveloppe. Éprouvé contre le vecteur iPhone 16 réel, 26 tests |
+| `PlayIntegrityVerifier` | Interface posée, `NotImplementedError`. **Vecteur réel disponible** — la phase B n'a plus d'excuse pour être écrite à l'aveugle |
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
 | Vecteurs d'appareil | Android (chaîne à 4 certificats, SM-X200) et iOS (App Attest, iPhone 16) versionnés dans `tests/device-vectors/` |
 | Cœur natif Android | A1–A3 et **A5 faites, validées sur SM-X200**. `:demo` restauré, porte la sonde A5. Prochaine : A4, capture CameraX |
@@ -173,11 +174,28 @@ Il faut distinguer deux preuves de nature différente, souvent confondues :
   n'est pas passer un contrôle** — le verdict qu'il contient dit très
   probablement que l'application n'est pas reconnue.
 
-Idem côté iOS : l'objet App Attest est en main, sa cohérence interne vérifiée,
-la signature d'Apple jamais. C'est exactement ce qu'apportent les phases B et D,
-et pourquoi aucune ne peut être déclarée faite.
+Ces deux réserves valent **pour Android uniquement**. Côté iOS, la phase D les a
+levées : la chaîne d'attestation App Attest est confrontée à
+`attestation/roots/apple-app-attest-root-ca.pem`, la racine publiée par Apple, et
+l'assertion de chaque enveloppe est vérifiée sous la clé App Attest extraite du
+certificat feuille. **Apple a signé, et on l'a vérifié.**
 
-Et **aucune photo n'a encore été prise** : A4 et C4 restent à faire.
+Trois points appris en écrivant D, qui valent d'être retenus :
+
+- **Deux clés distinctes vivent dans l'appareil.** La clé de signature du format
+  (Secure Enclave, désignée par le `kid`) et la clé App Attest (gérée par
+  `DCAppAttestService`, incapable de signer autre chose qu'une assertion). Les
+  confondre bloque net. `DeviceRecord.attestation_key` porte la seconde.
+- **R1 est vérifiée cryptographiquement sur iOS, pas par comparaison de champ.**
+  Le `clientDataHash` ne circule pas dans l'enveloppe : le serveur le recalcule, et
+  la signature de l'assertion ne se vérifie que s'il est identique. Un contenu
+  forgé fait échouer la signature, pas un test d'égalité.
+- **Le compteur d'assertion de l'en-tête de fraîcheur n'est signé par rien.**
+  Celui de `authenticatorData` l'est. Quand les deux existent, seul le second fait
+  foi et un désaccord est un rejet — faiblesse réelle du pipeline, fermée par D.
+
+Restent **la phase B** et le fait qu'**aucune photo n'a encore été prise** : A4 et
+C4 sont à faire.
 
 ## Prochaine étape
 
@@ -213,22 +231,34 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    **capture elle-même**, à mesurer en A4/C4.
 3. **Chaînage Android** (spec §9) : inchangée, non instruite.
 
-### Trois chantiers ouverts, aucun bloqué
+### Deux chantiers ouverts, aucun bloqué
 
-**Phase B — `PlayIntegrityVerifier`.** Celle qui ferme le plus de réserves : la
+**Phase B — `PlayIntegrityVerifier`.** Celle qui ferme les réserves restantes : la
 racine Google jamais confrontée, l'aller-retour du `requestHash`, et le
-déchiffrement du jeton. Elle dispose du vecteur Android réel. Demande un compte de
-service Google pour l'API de déchiffrement.
+déchiffrement du jeton. Elle dispose du vecteur Android réel. **Demande un compte
+de service Google** — démarche à lancer en premier, c'est de l'attente pure.
 
-**Phase D — `AppAttestVerifier`.** Symétrique, avec le vecteur App Attest en main.
-Réserve connue : le vecteur est en environnement `appattestdevelop`, la production
-utilise une autre racine.
+Point à trancher, et l'écart n'est pas mineur : le jeton se déchiffre-t-il
+localement avec des clés détenues, ou faut-il appeler Google à chaque enveloppe ?
+Un appel par enveloppe ajouterait une latence, une limite de débit et une
+dépendance de disponibilité en plein chemin de vérification — et entamerait
+l'argument d'auto-hébergement.
 
 **A4 / C4 — la capture.** La seule qui mettra enfin une photo sous le sceau, et le
 vrai sujet de mesure de latence. Rien ne la bloque ; c'est aussi la plus longue.
 
-Ordre suggéré : **B ou D d'abord**. Tant qu'aucun vérificateur ne juge, les preuves
-collectées ne valent rien d'opposable, et A4 en produirait simplement davantage.
+### Ce que la phase D n'a pas couvert
+
+Elle valide l'attestation et l'assertion **isolément**, jamais une enveloppe
+complète de bout en bout. La sonde C3 a signé une charge utile de substitution, pas
+un `COSE_Sign1` : le pipeline ne peut donc pas rejouer ce vecteur. Faire juger une
+enveloppe réelle par le vérificateur suppose que le cœur iOS produise une vraie
+enveloppe — c'est C4, ou une itération de C3.
+
+Deux points restés hors périmètre, volontairement : le **reçu** App Attest est
+conservé mais non validé (cela exige un appel à Apple), et le certificat feuille ne
+vaut que **trois jours** — d'où l'horloge injectable de `verify_attestation` et de
+`DevService`, sans laquelle tout test de chaîne devient une bombe à retardement.
 
 ## Angle mort assumé
 

@@ -21,6 +21,7 @@ class NullAttestationVerifier(AttestationVerifier):
         token: bytes,
         expected_challenge: bytes,
         key_id: bytes,
+        attestation_key: bytes | None = None,
     ) -> AttestationOutcome:
         # Le jeton factice transporte le défi en clair : on vérifie
         # malgré tout R1, pour que les tests couvrent cette branche.

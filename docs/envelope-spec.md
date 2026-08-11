@@ -266,7 +266,7 @@ L'ordre importe : on écarte au plus vite et au moins cher.
 3. Signature `COSE_Sign1` valide sous la clé du `kid` → sinon `REJECTED`
 4. Recalcul de R1, comparaison au défi contenu dans le jeton → sinon `REJECTED`
 5. Validation du jeton d'intégrité auprès de Google ou Apple → sinon `UNTRUSTED`
-6. iOS : compteur d'assertion strictement croissant → sinon `REJECTED`
+6. iOS : compteur d'assertion strictement croissant → sinon `REJECTED`. Le compteur qui fait foi est celui que le fournisseur extrait de l'assertion signée, jamais celui de l'en-tête non protégé ; un désaccord entre les deux est un rejet.
 7. Android : chaînage cohérent avec la dernière enveloppe connue → sinon signalement
 8. Empreinte du payload recalculée sur les octets reçus → sinon `REJECTED`
 9. Cohérence de posture, position, corroboration → grades des **propriétés du profil**

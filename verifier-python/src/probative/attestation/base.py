@@ -40,10 +40,17 @@ class AttestationVerifier(ABC):
         token: bytes,
         expected_challenge: bytes,
         key_id: bytes,
+        attestation_key: bytes | None = None,
     ) -> AttestationOutcome:
         """Valide le jeton auprès du fournisseur et normalise le verdict.
 
         `expected_challenge` est le résultat de la règle R1. Une
         implémentation qui ne le compare pas au défi contenu dans le
         jeton est incorrecte, quelle que soit sa validation par ailleurs.
+
+        `attestation_key` est la clé publique retenue à l'enrôlement pour
+        valider les preuves de fraîcheur, distincte de la clé qui signe
+        l'enveloppe. iOS en a besoin — l'assertion App Attest est signée
+        par la clé de `DCAppAttestService`, pas par celle du `kid`.
+        Android l'ignore : le jeton Play Integrity est signé par Google.
         """

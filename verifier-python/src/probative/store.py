@@ -53,6 +53,15 @@ class DeviceRecord:
     hardware_backed: bool
     assertion_counter: int = 0
     last_envelope_digest: bytes | None = None
+    attestation_key: bytes | None = None
+    """Clé publique de fraîcheur retenue à l'enrôlement, X9.62 non compressée.
+
+    Distincte de `public_key`, qui vérifie la signature de l'enveloppe.
+    Sur iOS, l'assertion App Attest est signée par la clé de
+    `DCAppAttestService`, que le serveur ne connaît que pour l'avoir
+    extraite du certificat feuille de l'attestation. Android n'en a pas
+    besoin : le jeton Play Integrity est signé par Google.
+    """
 
 
 class NonceStore(ABC):
