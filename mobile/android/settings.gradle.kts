@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "probative-android"
 
 include(":core")
+include(":demo")

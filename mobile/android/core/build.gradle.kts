@@ -41,6 +41,12 @@ kotlin {
 }
 
 dependencies {
+    // Fraîcheur Play Integrity (règle R1). Seule dépendance d'exécution de
+    // l'AAR : contrairement à DeviceCheck côté iOS, ce n'est pas un framework
+    // système. C'est le seul chemin vers une attestation d'application sur
+    // Android — assumé, et à ne pas laisser grossir.
+    implementation("com.google.android.play:integrity:1.6.0")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.google.code.gson:gson:2.11.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
