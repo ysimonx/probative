@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Aucune permission declaree a l'etape A1.
+
+  Les permissions de position et de camera arrivent en A4, portees par le coeur
+  lui-meme : une application consommatrice qui les oublierait produirait des
+  enveloppes silencieusement amputees de leurs proprietes.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

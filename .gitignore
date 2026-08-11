@@ -15,8 +15,11 @@ venv/
 # Mobile
 mobile/**/build/
 mobile/**/.gradle/
+mobile/**/.kotlin/
 mobile/**/Pods/
 mobile/**/*.xcuserdatad/
+# Chemin du SDK Android, propre a chaque poste
+mobile/**/local.properties
 # Ne jamais versionner de materiel cryptographique reel
 *.p8
 *.p12

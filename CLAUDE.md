@@ -1,4 +1,4 @@
-# attested-capture
+# probative
 
 ## Pourquoi ce projet existe
 
@@ -37,7 +37,7 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 |---|---|
 | `docs/architecture.html` | Vue d'ensemble illustrée du mécanisme, séquences et FAQ. Point d'entrée pour comprendre ; ne fait pas autorité. Les deux diagrammes de séquence sont générés par `tools/gen_sequences.py` — ne pas les éditer à la main. |
 | `docs/threat-model.md` | Spécification de référence. Toute fonctionnalité doit répondre à une menace identifiée. |
-| `docs/envelope-spec.md` | Format `ac/0.1`, règles de liaison R1/R2/R3, ordre de vérification |
+| `docs/envelope-spec.md` | Format `probative/0.1`, règles de liaison R1/R2/R3, ordre de vérification |
 | `docs/decisions/` | ADR. Les compléter plutôt que revenir silencieusement sur un choix. |
 | `spec/envelope-v0.1.cddl` | Extrait de la spec, **ne pas éditer à la main** |
 
@@ -45,10 +45,11 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 
 ```
 docs/             Modèle de menace, spec d'enveloppe, ADR, vue d'ensemble
-spec/             Schéma CDDL normatif (généré)
-tools/            Génération des figures de la documentation
+spec/             Schéma CDDL normatif — extrait de docs/envelope-spec.md, à garder
+                  synchronisé à la main (pas de générateur à ce jour)
+tools/            Génération des figures de la documentation et des vecteurs d'or
 verifier-python/  Vérificateur serveur
-mobile/android/   Cœur natif Kotlin (AAR) — non commencé
+mobile/android/   Cœur natif Kotlin (AAR) — squelette A1 posé
 mobile/ios/       Cœur natif Swift (XCFramework) — non commencé
 bindings/         Liaisons minces : plugin Flutter fédéré, module React Native — non commencées
 ```
@@ -62,6 +63,16 @@ pip install -e ".[dev]"
 pytest              # 50 tests doivent passer
 ruff check .
 mypy src
+python -m probative.devserver        # serveur de dev, http://127.0.0.1:8765
+```
+
+```bash
+cd mobile/android
+export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
+./gradlew :core:assembleRelease      # AAR autonome
+./gradlew :demo:installDebug         # démonstration sur l'appareil branché
+./gradlew :core:dependencies --configuration releaseRuntimeClasspath
+                                     # doit ne montrer que kotlin-stdlib (ADR-0003)
 ```
 
 ## Conventions
@@ -81,9 +92,11 @@ mypy src
 | Composant | État |
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
-| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 40 tests au vert |
+| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 50 tests au vert |
+| Vecteurs d'or, serveur de développement | Phase 0 du spike terminée |
 | `PlayIntegrityVerifier`, `AppAttestVerifier` | Interfaces posées, `NotImplementedError` |
-| Cœurs natifs Android / iOS | Non commencés |
+| Cœur natif Android | Squelette A1 : AAR autonome, constantes de spec seulement |
+| Cœur natif iOS | Non commencé |
 | Liaisons Flutter / React Native | Non commencées |
 | Banc de triche | Non commencé |
 
@@ -99,6 +112,10 @@ Les cœurs du spike doivent être livrés comme artefacts autonomes (AAR, XCFram
 sans dépendance à un framework : c'est la condition de la stratégie multi-frameworks
 Flutter + React Native (ADR-0003). Tout le chemin critique reste natif ; le pont
 Dart/JS ne reçoit que l'enveloppe signée, opaque.
+
+**Tâche en cours : A2** — encodeur CBOR canonique et `COSE_Sign1` en Kotlin, validé
+octet à octet contre les vecteurs d'or. Les vecteurs contiennent les trois largeurs de
+flottants : la demi-précision n'est pas optionnelle.
 
 Deux inconnues à lever pendant le spike, susceptibles de forcer une révision de la spec :
 

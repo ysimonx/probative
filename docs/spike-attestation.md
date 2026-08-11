@@ -7,7 +7,7 @@ silencieusement. Ce qui relève d'une décision durable part en ADR à la clôtu
 ## Objectif et critère de sortie
 
 Produire, depuis un appareil réel — Android d'abord, iOS ensuite — une enveloppe
-`ac/0.1` que le vérificateur Python accepte. Critère binaire : la boucle
+`probative/0.1` que le vérificateur Python accepte. Critère binaire : la boucle
 « capture sur appareil → enveloppe → vérification serveur » passe au vert avec la
 validation d'attestation **réelle** (étape 5 du pipeline), pas le substitut.
 
@@ -62,7 +62,7 @@ Câblage du `Verifier` existant, aucune décision de validité nouvelle.
 - [x] Socle retenu : **bibliothèque standard** (`http.server`), corps JSON avec
       octets en base64 — ~~extra optionnel `[devserver]` (FastAPI + uvicorn)~~
       abandonné : zéro dépendance nouvelle pour trois routes, cohérent avec la
-      surface minimale d'ADR-0001. Module `attested_capture.devserver`, hors API
+      surface minimale d'ADR-0001. Module `probative.devserver`, hors API
       publique.
 - [x] `POST /enroll` : clé publique X9.62 + plateforme → calcul du `kid`
       (SHA-256, comme `factory.kid_for`), `DeviceRecord` en mémoire. La chaîne
@@ -91,12 +91,25 @@ module `:demo`, application minimale qui consomme l'AAR et parle au serveur de d
 
 ### A1 — Squelette du projet
 
-- [ ] `settings.gradle.kts`, `:core` (bibliothèque Android, Kotlin pur autant que
-      possible), `:demo` (application).
-- [ ] Fixer `minSdk` (proposition : 26 — StrongBox et Play Integrity standard le
-      requièrent de fait ; à confirmer et noter ici).
-- [ ] `./gradlew :core:assembleRelease` produit un AAR consommable seul — c'est la
-      condition ADR-0003, elle se vérifie dès le squelette.
+- [x] `settings.gradle.kts`, `:core` (bibliothèque Android, Kotlin pur), `:demo`
+      (application). `:core` n'a aucune dépendance déclarée ; `:demo` n'a que `:core`,
+      pas même AndroidX — la démonstration doit rester trop pauvre pour qu'on soit
+      tenté d'y loger de la logique appartenant au cœur.
+- [x] `minSdk` fixé à **26**. ~~StrongBox et Play Integrity standard le requièrent de
+      fait~~ — **motif corrigé** : StrongBox est API 28 et reste facultatif (l'appareil
+      de test n'en a pas), et Play Integrity standard descend à 21. Le motif réel est le
+      CDD Android : keystore adossé au matériel et attestation de clé sont *exigés* des
+      appareils livrés en 8.0 ou au-delà. En dessous, la propriété « signé par ce
+      capteur » n'est plus adossée au matériel et le format perd son fondement.
+- [x] `./gradlew :core:assembleRelease` produit un AAR de 4 Ko dont la seule dépendance
+      d'exécution est `kotlin-stdlib` (vérifié par `:core:dependencies`, pas par le seul
+      succès du build). `:demo` installé et lancé sur appareil réel : il lit les
+      constantes depuis l'AAR — la condition ADR-0003 est vérifiée de bout en bout.
+
+Chaîne d'outils retenue : AGP 8.13.1, Gradle 8.14.3, Kotlin 2.2.21, JDK 17,
+`compileSdk`/`targetSdk` 36 (palier exigé par Google Play depuis août 2026, et une piste
+interne est de toute façon nécessaire pour Play Integrity). Surface Kotlin en
+`explicitApi()`.
 
 ### A2 — Encodeur CBOR canonique + COSE_Sign1 en Kotlin
 
@@ -254,16 +267,46 @@ XCFramework autonome.
 - [ ] Application déclarée dans la Play Console (piste interne suffisante) et
       projet Google Cloud lié pour l'API standard Play Integrity.
 - [ ] Appareil Android réel d'entrée de gamme + un milieu de gamme (émulateur non
-      représentatif pour Play Integrity et StrongBox).
+      représentatif pour Play Integrity et StrongBox). **Entrée de gamme obtenue** le
+      2026-08-11, voir ci-dessous ; milieu de gamme toujours à fournir.
 - [ ] Compte développeur Apple payant.
 - [ ] Appareil iOS réel (App Attest indisponible sur simulateur).
+
+### Banc d'essai — appareil n° 1
+
+Samsung **SM-X200** (Galaxy Tab A8 Wi-Fi), Unisoc T618, Android 14 / API 34, correctif
+2025-08. Relevé le 2026-08-11. Ce qui pèse sur le plan :
+
+| Constat | Conséquence |
+|---|---|
+| `hardware_keystore=4`, **pas** de `strongbox_keystore` | A3 : le repli TEE n'est pas un cas dégradé théorique, c'est le chemin nominal ici. Le test instrumenté doit accepter `TRUSTED_ENVIRONMENT` sans échouer, et le grade ne doit pas dépendre de StrongBox. |
+| Pas de `sensor.barometer` | A6 : `baro` et `baro-alt` omises. Occasion d'éprouver pour de vrai la règle « capteur absent → réclamation omise, jamais simulée ». |
+| `accelerometer`, `gyroscope`, `stepcounter` présents | A6 : `motion`, `steps`, `activity` exploitables. |
+| `location.gps` et `location.network` présents | A4 : position réelle disponible malgré le modèle Wi-Fi. |
+| `verifiedbootstate=green`, bootloader verrouillé, Play Services 26.29 | A5 et B : verdicts Play Integrity et attestation de clé nominaux attendus — c'est le cas de référence, pas un cas limite. |
+| Unisoc T618, entrée de gamme | A7 : cible de mesure de `media.6` (inconnue n° 2). |
 
 ## Journal
 
 - 2026-08-06 : plan rédigé, phases 0/A/B/C/D définies. Rien de commencé.
 - 2026-08-06 : **phase 0 terminée.** Vecteurs d'or (`tests/vectors/`, générateur
   `tools/gen_vectors.py`, signature RFC 6979) et serveur de dev
-  (`attested_capture.devserver`, socle stdlib au lieu de FastAPI — zéro dépendance
+  (`probative.devserver`, socle stdlib au lieu de FastAPI — zéro dépendance
   nouvelle). 50 tests au vert. Trouvaille utile pour A2/C2 : les vecteurs
   contiennent du float16, du float32 et du float64 — la demi-précision CBOR est
   incontournable côté natif. Prochaine étape : phase A (squelette Gradle A1).
+- 2026-08-11 : **projet renommé `attested-capture` → `probative`** — au sens juridique,
+  « qui tend à prouver » : une pièce a une valeur probante *appréciée par un tiers*,
+  jamais autoproclamée, ce qui est exactement l'invariant n° 1. Suivent le paquet
+  Python, le tag de format `probative/0.1` (label 100), l'extension `.prbv`, le type
+  MIME `application/vnd.probative+cose` et la règle CDDL `probative-envelope`. Les
+  vecteurs d'or ont dû être régénérés : l'en-tête protégé entre dans `Sig_structure`,
+  donc les signatures changent aussi — c'est précisément le genre de couplage que les
+  vecteurs servent à rendre visible. 50 tests, ruff et mypy au vert après renommage.
+  Espace de noms `org.probative` ; `probative.org` est libre, `probative.io` était déjà
+  déposé par un tiers.
+- 2026-08-11 : **A1 terminé.** Squelette Gradle, AAR autonome (4 Ko, `kotlin-stdlib`
+  pour seule dépendance d'exécution), démonstration installée et lancée sur SM-X200.
+  Deux constats d'appareil pèsent sur la suite : ni StrongBox ni baromètre. Prochaine
+  étape : **A2**, encodeur CBOR canonique et `COSE_Sign1` en Kotlin, validé octet à
+  octet contre les vecteurs d'or — dont la demi-précision flottante relevée en phase 0.

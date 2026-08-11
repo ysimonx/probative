@@ -1,0 +1,18 @@
+[versions]
+agp = "8.13.1"
+kotlin = "2.2.21"
+
+# Cible de compilation et plancher d'execution.
+#
+# minSdk 26 n'est pas un seuil de confort : le CDD Android impose un keystore adosse au
+# materiel et l'attestation de cle aux appareils livres en 8.0 ou au-dela. En dessous,
+# la propriete « signe par ce capteur » ne s'appuie plus sur le materiel et le format
+# perd son fondement. Voir docs/spike-attestation.md, tache A1.
+compileSdk = "36"
+minSdk = "26"
+targetSdk = "36"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
