@@ -40,6 +40,7 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 | `docs/envelope-spec.md` | Format `ac/0.1`, règles de liaison R1/R2/R3, ordre de vérification |
 | `docs/decisions/` | ADR. Les compléter plutôt que revenir silencieusement sur un choix. |
 | `spec/envelope-v0.1.cddl` | Extrait de la spec, **ne pas éditer à la main** |
+| `docs/etat-de-l-art.md` | Solutions voisines (Approov, Guardsquare, Truepic, C2PA, ProofMode) et ce qui distingue réellement ce dépôt. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier les faits avant de s'en servir. |
 
 ## Structure
 

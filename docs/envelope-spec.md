@@ -276,4 +276,9 @@ Un vérificateur accepte les versions mineures qu'il ne connaît pas et signale 
 | Nom de package | `attested_capture`, `proofshot`, `veracapture` — vérifier la disponibilité sur pub.dev et PyPI simultanément | Cette semaine |
 | Chaînage Android | Chaîne de hachage locale, ou compteur monotone stocké dans le Keystore | Après le spike |
 | Fenêtre inertielle | 10 s fixes, ou adaptative selon l'activité détectée | Après mesure de l'impact sur la taille d'enveloppe |
-| Alignement C2PA | Enveloppe native puis passerelle, ou manifeste C2PA dès le départ | v0.3 |
+
+### Arrêtées
+
+| Sujet | Décision | Date |
+|---|---|---|
+| Alignement C2PA | ~~Enveloppe native puis passerelle, ou manifeste C2PA dès le départ~~ → **passerelle, jamais autorité**, manifeste produit côté serveur après le verdict. Voir `docs/decisions/ADR-0004-c2pa-passerelle.md`. Conséquence normative : `media[2]` et `media[4]` désignent **définitivement** les octets bruts du capteur, jamais un fichier porteur d'un manifeste. | 2026-08-11 |
