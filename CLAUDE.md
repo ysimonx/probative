@@ -21,26 +21,27 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 2. **La règle R1 ne s'assouplit pas.** Le défi soumis au service d'attestation vaut
    exactement `SHA-256(payload_bytes || nonce)`. Sans elle, l'enveloppe atteste
    seulement qu'un appareil sain existe quelque part — ce qui ne prouve rien.
-3. **Le verdict ne dépend jamais du canal.** L'enveloppe s'authentifie par elle-même :
-   R2 établit déjà quel appareil l'a produite, au niveau du message. Une sécurité de
-   canal — mTLS, certificat client, jeton de session — relève du déploiement et ne doit
-   jamais entrer dans le jugement, sous peine de rendre la preuve invérifiable une fois
-   la session close. Voir spec §6.
-4. **Aucun vocabulaire métier dans ce dépôt.** Pas de « chantier », pas de nom de
+3. **Aucun vocabulaire métier dans ce dépôt.** Pas de « chantier », pas de nom de
    client, pas de domaine applicatif. Uniquement `capture`, `subject`, `evidence`.
    Cette règle protège la réutilisabilité et l'antériorité du code ; elle prime sur
    la lisibilité d'un exemple.
-5. **Le format raisonne en propriétés, pas en plateformes.** Android et iOS atteignent
+4. **Le format raisonne en propriétés, pas en plateformes.** Android et iOS atteignent
    le même niveau par des chemins différents. Aucun champ obligatoire propre à une
    plateforme.
-6. **Le résultat de vérification est structuré par propriété**, jamais un score seul.
+5. **Le résultat de vérification est structuré par propriété**, jamais un score seul.
    `level_reason` est obligatoire : un rejet sans motif exploitable est ingérable en
    support. Depuis ADR-0005, **l'ensemble des propriétés notées dépend du profil
    déclaré** — le résultat porte donc `profile`, et un profil inconnu fait refuser de
    juger plutôt que se replier sur le noyau.
-7. **Le noyau ignore le type de contenu.** Un besoin propre à un médium se traite par un
+6. **Le noyau ignore le type de contenu.** Un besoin propre à un médium se traite par un
    champ optionnel, jamais par du code qui suppose une image. Un nouveau profil ne se
    justifie que si une propriété apparaît, disparaît, ou change de règle de notation.
+7. **Le verdict ne dépend jamais du canal.** L'enveloppe s'authentifie par elle-même :
+   R2 établit déjà quel appareil l'a produite, au niveau du message. Une sécurité de
+   canal — mTLS, certificat client, jeton de session — relève du déploiement et ne doit
+   jamais entrer dans le jugement, sous peine de rendre la preuve invérifiable une fois
+   la session close. Voir spec §6. *Placé en fin de liste à dessein : insérer un
+   invariant au milieu décale la numérotation et fait mentir les renvois des ADR.*
 
 ## Documents de référence — à lire avant toute modification de fond
 
@@ -50,7 +51,7 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 | `docs/threat-model.md` | Spécification de référence. Toute fonctionnalité doit répondre à une menace identifiée. |
 | `docs/envelope-spec.md` | Format `probative/0.1`, noyau et profils (§2.5), règles de liaison R1/R2/R3, ordre de vérification |
 | `docs/decisions/` | ADR. Les compléter plutôt que revenir silencieusement sur un choix. |
-| `spec/envelope-v0.1.cddl` | Extrait de la spec, **ne pas éditer à la main** |
+| `spec/envelope-v0.1.cddl` | Extrait normatif de la spec. **Aucun générateur** : à tenir synchrone à la main, dans les deux sens. Un test le vérifierait mieux qu'une consigne — non écrit à ce jour. |
 | `docs/etat-de-l-art.md` | Solutions voisines (Approov, Guardsquare, Truepic, C2PA, ProofMode) et ce qui distingue réellement ce dépôt. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier les faits avant de s'en servir. |
 
 ## Structure
@@ -84,7 +85,7 @@ C'est leur seule raison d'être — ne rien y loger qui appartienne au cœur.
 cd verifier-python
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest              # 96 tests doivent passer
+pytest              # 102 tests doivent passer
 ruff check .
 mypy src
 ```
@@ -140,7 +141,10 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 - Les commentaires expliquent *pourquoi*, pas *quoi*.
 - Tout seuil de décision va dans les constantes en tête de `grading.py`, jamais en
   dur dans le code : ils seront recalibrés sur données réelles.
-- Chaque test d'attaque référence la surface du modèle de menace (`test_s1_`, `test_s4_`…).
+- Chaque test d'attaque référence une surface d'attaque du modèle de menace, **définies en
+  `docs/threat-model.md` §4 bis** : `test_s1_` position, `test_s2_` contenu, `test_s3_` temps,
+  `test_s4_` client. Un test qui ne se rattache à aucune surface signale soit un test mal
+  cadré, soit une surface manquante dans le modèle.
 - Entrée hostile : décodage défensif via `Mapping` / `Sequence`, jamais `dict` / `list`
   (cbor2 en mode canonique restitue des types immuables).
 - Aucun matériel cryptographique réel versionné. Voir `.gitignore`.
@@ -151,7 +155,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Noyau et profils (ADR-0005) | **Fait de bout en bout** : spec §2.5, CDDL, vérificateur, vecteurs, et les deux cœurs natifs |
-| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 96 tests au vert |
+| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 102 tests au vert |
 | `AppAttestVerifier` — **phase D faite** | Attestation d'enrôlement validée **jusqu'à la racine publiée par Apple**, assertion validée par enveloppe. Éprouvé contre le vecteur iPhone 16 réel, 26 tests |
 | `PlayIntegrityVerifier` | Interface posée, `NotImplementedError`. **Vecteur réel disponible** — la phase B n'a plus d'excuse pour être écrite à l'aveugle |
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |

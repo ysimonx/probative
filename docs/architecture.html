@@ -1095,7 +1095,7 @@
         <span class="zl">Réseau sur Android seulement</span>
         <span class="zr">le seul appel sortant possible</span>
       </div>
-      <div class="step net"><span class="n">05</span><span>Validation de la preuve de fraîcheur <span class="out">sinon non fiable</span></span></div>
+      <div class="step net"><span class="n">05</span><span>Validation de la preuve de fraîcheur <span class="out">sinon non fiable, pas rejeté</span></span></div>
       <div class="zone">
         <span class="zl">Local</span>
         <span class="zr">ordonnancement, contenu, grades</span>
@@ -1113,6 +1113,14 @@
         réinsère des enveloppes. iOS l'obtient gratuitement avec le compteur d'assertion d'App
         Attest, strictement croissant. Android doit le reconstruire en chaînant chaque enveloppe
         à l'empreinte de la précédente.
+      </p>
+      <p>
+        L'étape 5 distingue deux issues qu'on confond souvent. <strong>Ce qui est illisible est
+        rejeté ; ce qui est un verdict sur l'appareil ou l'application est retourné comme
+        tel</strong> — et vaut « non fiable », pas « rejeté ». Les deux ne disent pas la même
+        chose à l'appelant : l'un signifie « ne regardez même pas », l'autre « la pièce existe et
+        n'est pas digne de foi ». Une preuve de fraîcheur malformée relève du premier cas ; une
+        liaison au contenu non établie, du second.
       </p>
       <p>
         L'étape 2 mérite un mot, parce qu'elle ferme une porte que la signature ne ferme pas.
@@ -1143,6 +1151,13 @@
         profil, c'est ignorer ce qui a été jugé</strong>. Sur une enveloppe du noyau, la position
         est absente du résultat — et non présente avec un grade neutre, qui laisserait croire
         qu'elle a été évaluée.
+      </p>
+      <p>
+        Et si une enveloppe du noyau <em>porte</em> quand même une position, le drapeau
+        <span class="m">UNGRADED_FIELDS</span> le signale. Ces octets sont signés, donc
+        d'apparence fiable, et n'ont subi aucun contrôle — ni indicateur de position simulée, ni
+        précision, ni corroboration. On ne les rejette pas, ils ne sont pas malformés ; on ne les
+        laisse pas passer en silence non plus.
       </p>
       <p>
         Le serveur appelant doit pouvoir savoir <em>laquelle</em> est faible, pas seulement qu'un
@@ -1312,12 +1327,22 @@
             S'y ajoute une limite déjà connue : un appareil dépourvu des services Google Play ne
             peut pas être attesté du tout.
           </p>
+          <p>
+            <strong>Deux affirmations sont ici confondues, et il faut les séparer</strong> :
+            « ce binaire n'a pas été altéré » et « ce binaire vient du magasin officiel ». Android
+            ne sait dire la première qu'à travers la seconde ; iOS les sépare. C'est la seule
+            asymétrie entre les deux plateformes qui contraigne le <em>déploiement</em> plutôt que
+            la sécurité.
+          </p>
           <div class="faq-note">
             Conséquence directe sur le code : aujourd'hui le vérificateur met la note la plus basse
             dès que le binaire n'est pas reconnu, ce qui revient à refuser toute diffusion hors
-            Play. C'est une politique, pas une fatalité — elle gagnerait à devenir un réglage de
-            déploiement. L'état exact du support des binaires distribués hors Play est à vérifier
-            sur appareil pendant le spike.
+            Play. C'est une <strong>politique</strong>, pas une conséquence du modèle de menace —
+            trois options restent ouvertes : la conserver, dégrader d'un cran, ou en faire un
+            réglage par déploiement. Elle est désormais nommée dans le code
+            (<span class="m">UNRECOGNIZED_APP_GRADE</span>) et inscrite comme décision à trancher
+            au §7, limite 7, du modèle de menace. À décider quand le déchiffrement d'un jeton réel
+            aura montré ce qu'il contient.
           </div>
         </div>
       </div>
@@ -1757,7 +1782,7 @@
       </div>
       <div class="repo-row">
         <span class="path">verifier-python/</span>
-        <span class="what">Le vérificateur serveur. Pipeline complet des dix étapes, 96 tests au vert, chaque test d'attaque référencé au modèle de menace.</span>
+        <span class="what">Le vérificateur serveur. Pipeline complet des dix étapes, 102 tests au vert, chaque test d'attaque référencé au modèle de menace.</span>
         <span class="chip done">fonctionnel</span>
       </div>
       <div class="repo-row">

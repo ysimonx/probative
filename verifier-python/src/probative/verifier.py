@@ -205,11 +205,23 @@ class Verifier:
 
         for p in properties.values():
             p.evidence.extend(att.evidence)
+            # Les notes du fournisseur portent le motif *précis* — liaison
+            # R1 non établie, application inattendue, substitut actif. Sans
+            # cette ligne elles étaient perdues, et `level_reason` ne
+            # gardait que le motif générique de `grade_origin`. Un rejet
+            # sans motif exploitable est ingérable en support.
+            p.notes.extend(att.notes)
 
         # Réclamations non reconnues : signalées, jamais pénalisantes.
         known = {"baro", "baro-alt", "motion", "steps", "activity"}
         if any(c.type not in known for c in claims.claims):
             flags.append("UNKNOWN_CLAIMS")
+
+        # Champs présents que le profil déclaré ne note pas. Ils sont
+        # signés, donc d'apparence fiable, et n'ont subi aucun contrôle.
+        ungraded = profiles.ungraded_fields(profile, claims)
+        if ungraded:
+            flags.append("UNGRADED_FIELDS")
 
         level, reason = grading.overall_level(properties, offline=nonce_rec.offline)
 

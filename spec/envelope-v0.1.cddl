@@ -1,6 +1,13 @@
 ; Enveloppe attestee -- specification probative/0.1
-; Extrait automatiquement de docs/envelope-spec.md -- ne pas editer a la main.
-; Source de verite : docs/envelope-spec.md
+;
+; Source de verite : docs/envelope-spec.md. Ce fichier en est l'extrait
+; normatif, tenu synchrone A LA MAIN -- il n'existe aucun generateur a ce
+; jour, et l'en-tete a longtemps pretendu le contraire. Toute modification
+; ici doit etre reportee dans la specification, et reciproquement.
+;
+; Deux ecarts de forme sont assumes et n'ont pas a etre corriges : ce
+; fichier est en ASCII sans accents, et il nomme les regles que la
+; specification inline pour rester lisible en prose.
 
 probative-envelope = #6.18(COSE_Sign1)
 

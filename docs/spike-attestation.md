@@ -305,15 +305,30 @@ XCFramework autonome.
 
 ## Phase D — `AppAttestVerifier` serveur
 
-- [ ] Implémenter `attestation/app_attest.py` : validation de l'objet d'attestation
-      à l'enrôlement (chaîne x5c jusqu'à la racine App Attest d'Apple, `keyId`,
-      compteur initial), vérification des assertions à la capture.
-- [ ] Compteur strictement croissant (étape 6 du pipeline), état dans
-      `DeviceRecord`.
-- [ ] Tests d'attaque : assertion rejouée, compteur en recul, `clientDataHash`
-      d'une autre charge utile.
+- [x] `attestation/app_attest.py` : chaîne x5c validée **jusqu'à la racine publiée
+      par Apple**, versionnée dans `attestation/roots/`. Défi d'enrôlement retrouvé
+      dans l'extension `1.2.840.113635.100.8.2`, `keyId`, `rpIdHash`, compteur
+      initial à zéro et `aaguid` contrôlés. Vérification des assertions à la
+      capture. Éprouvé contre le vecteur iPhone 16 réel.
+- [x] Compteur strictement croissant (étape 6). **Correction apportée au passage :**
+      le compteur de l'en-tête de fraîcheur n'est signé par rien ; celui
+      d'`authenticatorData` l'est. Seul le second fait foi, un désaccord est un rejet.
+- [x] Tests d'attaque : racine contrefaite au même sujet, défi d'enrôlement étranger,
+      autre application, autre équipe, environnement de production contre clé de
+      développement, certificat expiré, algorithme de signature hostile, compteur
+      déclaré ≠ compteur signé, `clientDataHash` d'une autre charge utile.
+- [ ] **Assertion rejouée** : couverte indirectement par R3 au niveau de l'enveloppe,
+      pas par un test dédié au niveau de l'assertion.
+- [ ] **Reçu App Attest** conservé mais non validé — sa vérification exige un appel
+      à Apple, hors périmètre retenu.
+- [ ] **Révocation** : Apple publie une liste pour App Attest, non consultée. La
+      durée de vie de trois jours du certificat feuille en limite fortement l'enjeu.
 
-**Sortie de phase D :** boucle iOS complète au vert — fin du spike.
+**Sortie de phase D — atteinte à une réserve près, qui n'est pas mince.** Attestation
+et assertion sont validées **isolément**, jamais une enveloppe complète de bout en
+bout : la sonde C3 a signé une charge utile de substitution et non un `COSE_Sign1`,
+donc le pipeline ne peut pas rejouer ce vecteur. Ce n'est donc **pas** la fin du
+spike : il y faut une itération de C3, ou C4.
 
 ---
 

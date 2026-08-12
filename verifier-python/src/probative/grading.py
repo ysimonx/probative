@@ -33,6 +33,20 @@ MAX_SIGN_LATENCY_MS = 3_000    # au-delà, une manipulation intermédiaire est p
 MAX_CLOCK_SKEW_MS = 300_000    # écart toléré entre horloge murale et horloge serveur
 BARO_ALT_TOLERANCE_M = 60.0    # écart toléré entre altitude GNSS et barométrique
 
+# Politique de distribution, et non conséquence du modèle de menace.
+#
+# Sur Android, « binaire reconnu » signifie très précisément *ce binaire est
+# celui que Google Play distribue*. Une application diffusée hors Play ne
+# l'obtient jamais, même saine et même déclarée en Play Console. Mettre F
+# revient donc à refuser toute diffusion hors magasin — ce qui est un choix,
+# pas une fatalité. iOS n'a pas cette limite : App Attest ignore le canal.
+#
+# Trois options restent ouvertes (modèle de menace §7, limite 7) : conserver
+# le refus, dégrader d'un cran, ou en faire un réglage par déploiement. À
+# trancher quand la phase B aura montré ce que le jeton déchiffré contient.
+# La constante existe pour que ce jour-là il n'y ait qu'une ligne à changer.
+UNRECOGNIZED_APP_GRADE = Grade.F
+
 # Plafond structurel du profil capture : la recapture analogique n'est pas
 # détectée en v0.1. Photographier un écran et enregistrer un haut-parleur
 # qui rejoue un enregistrement sont la même attaque — position
@@ -72,8 +86,11 @@ def grade_origin(
     if att.app_recognized:
         r.evidence.append("app-recognized")
     else:
-        r.grade = Grade.F
-        r.notes.append("binaire non reconnu par le fournisseur d'attestation")
+        r.grade = UNRECOGNIZED_APP_GRADE
+        r.notes.append(
+            "binaire non reconnu par le fournisseur d'attestation — reconditionné, "
+            "ou simplement distribué hors du magasin officiel"
+        )
         return r
 
     if att.integrity is DeviceIntegrity.FAILED:

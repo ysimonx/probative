@@ -56,8 +56,10 @@ header-protected = {
   4   => bstr,          ; kid : SHA-256 de la clé publique attestée
   100 => "probative/0.1",      ; version de spécification
   101 => tstr,          ; identifiant de déploiement (multi-tenant)
-  102 => "core" / "capture",   ; profil — voir §2.5
+  102 => profile,       ; profil déclaré, obligatoire — voir §2.5
 }
+
+profile = "core" / "capture"
 ```
 
 Le label 102 est **obligatoire** et vit dans l'en-tête *protégé*. Les deux points sont normatifs : un profil déduit de la présence des champs permettrait de retirer `position` d'une acquisition pour la faire juger avec le jeu de règles du noyau, et un profil absent supposerait un défaut plausible là où le format n'en admet aucun.
@@ -200,6 +202,8 @@ Passé au test, l'audio ne justifie pas de profil propre — mêmes propriétés
 
 **Un vérificateur qui ne connaît pas un profil doit refuser de juger.** Se replier sur les règles du noyau rendrait un verdict d'apparence complète en ayant silencieusement omis les propriétés du profil et son plafond.
 
+**Les champs présents qu'un profil ne note pas sont signalés par le drapeau `UNGRADED_FIELDS`**, sans être rejetés. Le cas concret : une enveloppe `core` portant une `position`. Elle est signée, donc d'apparence fiable, et n'a subi aucun contrôle — ni indicateur de position simulée, ni précision, ni corroboration barométrique. Le résultat omet la propriété `position`, ce qu'un lecteur attentif remarque ; le drapeau le dit à celui qui l'est moins. On signale plutôt qu'on rejette, parce que ces champs ne sont pas malformés et que la tolérance aux champs inconnus est ce qui rend les versions mineures non cassantes (§8) — mais on ne les laisse pas passer en silence.
+
 ---
 
 ## 3. Règles de liaison — le cœur du format
@@ -271,7 +275,11 @@ L'ordre importe : on écarte au plus vite et au moins cher.
 2. Nonce connu, non consommé, non expiré, **émis pour ce `kid` et pour ce profil** → sinon `REJECTED`
 3. Signature `COSE_Sign1` valide sous la clé du `kid` → sinon `REJECTED`
 4. Recalcul de R1, comparaison au défi contenu dans le jeton → sinon `REJECTED`
-5. Validation du jeton d'intégrité auprès de Google ou Apple → sinon `UNTRUSTED`
+5. Validation de la preuve de fraîcheur auprès de Google ou Apple → sinon `UNTRUSTED`
+
+   **Règle qui départage `UNTRUSTED` de `REJECTED`, et que toute implémentation de vérificateur d'attestation doit suivre : ce qui est illisible lève, ce qui est un verdict sur l'appareil ou l'application retourne un résultat en échec.** Une preuve de fraîcheur malformée est structurelle, donc `REJECTED` ; une liaison R1 non établie, une application inattendue ou une absence de clé enrôlée sont des verdicts, donc `UNTRUSTED`. Les deux niveaux ne disent pas la même chose à l'appelant — l'un signifie « ne regardez même pas », l'autre « la pièce existe et n'est pas digne de foi ».
+
+   Le motif rendu par le fournisseur doit atteindre `level_reason`. Sans lui, un rejet ne porte que le motif générique de la propriété, et devient ingérable en support.
 6. iOS : compteur d'assertion strictement croissant → sinon `REJECTED`. Le compteur qui fait foi est celui que le fournisseur extrait de l'assertion signée, jamais celui de l'en-tête non protégé ; un désaccord entre les deux est un rejet.
 7. Android : chaînage cohérent avec la dernière enveloppe connue → sinon signalement
 8. Empreinte du payload recalculée sur les octets reçus → sinon `REJECTED`

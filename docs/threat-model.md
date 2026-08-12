@@ -75,6 +75,35 @@ Accès physique prolongé à un appareil dont le démarrage sécurisé est compr
 
 ---
 
+## 4 bis. Surfaces d'attaque
+
+*Section ajoutée après coup, numérotée « 4 bis » à dessein : insérer un §5 décalerait tout ce qui suit et ferait mentir les renvois d'autres documents — `envelope-spec.md` pointe déjà vers le §6 de celui-ci.*
+
+Les profils du §4 disent **qui** attaque, les propriétés du §2 disent **ce que l'on prouve**. Il manquait un troisième axe, celui que les tests utilisent depuis le début sans qu'il soit défini nulle part : **ce qui est falsifié**.
+
+| # | Surface | L'attaquant falsifie… | Propriété visée | Atteinte par |
+|---|---|---|---|---|
+| **S1** | Position | les coordonnées, leur précision, ou leur fraîcheur | P2 | A1 · A2 · A3 |
+| **S2** | Contenu | les octets scellés, ou ce que le capteur a réellement acquis | P1 · P4 | A1 · A2 · A3 |
+| **S3** | Temps | l'instant, l'ordre des captures, ou la fraîcheur du défi | P3 | A2 · A3 |
+| **S4** | Client | le binaire, l'appareil, ou les preuves qu'il produit | P1 · P4 | A2 · A3 |
+
+**S1 — Falsification de position.** Application de simulation du magasin, injection dans le fournisseur de position, simulateur GNSS matériel. Contrée par l'indicateur système de position simulée, les bornes de précision et d'ancienneté du point, et surtout la corroboration barométrique — qu'un simulateur GPS ne falsifie jamais. Le simulateur matériel reste hors de portée du client seul (§7, limite 1).
+
+**S2 — Falsification du contenu.** Substituer un fichier aux octets du capteur, injecter des trames dans la caméra virtuelle, ou présenter au capteur un contenu déjà enregistré. Contrée par l'empreinte calculée en natif sur les octets bruts, la latence de signature, et la règle R1. La **recapture analogique** — photographier un écran, enregistrer un haut-parleur — n'est pas détectée en v0.1 : c'est l'angle mort du §7, limite 2, et la raison du plafond au grade B dans le profil `capture`.
+
+**S3 — Falsification temporelle.** Rejouer une enveloppe, réordonner ou retirer des captures d'une série, moissonner des nonces pour s'en constituer un stock. Contrées respectivement par l'unicité du nonce, l'ordonnancement — compteur d'assertion sur iOS, chaînage sur Android — et la liaison du nonce à l'appareil qui l'a demandé (règle R3).
+
+**S4 — Compromission du client.** Deux familles, qu'il faut séparer.
+
+*Altérer le client lui-même* : détourner son exécution par instrumentation dynamique ou module d'injection (profil A2) ; ou le **reconditionner** — décompiler, modifier le code de collecte, resigner, redistribuer. Le reconditionnement est l'attaque la plus rentable de la famille, puisqu'elle produit une application qui ment sur tout le reste sans avoir à falsifier quoi que ce soit d'autre. Contrée par le verdict d'application : `PLAY_RECOGNIZED` côté Android, App Attest lié à l'App ID côté iOS — un binaire resigné change d'identité et ne peut plus attester. Voir §7, limite 7, pour ce que la distribution hors magasin change à cette parade.
+
+*Forger les preuves qu'il produit* : recoller un jeton d'attestation authentique sur une charge utile forgée, fabriquer une chaîne de certificats cohérente mais rattachée à une fausse racine, déclarer un profil moins exigeant que celui demandé, présenter la clé d'un autre appareil. Contrées par R1, par la confrontation à l'ancre publiée par le constructeur, par le profil signé et exigé par le nonce, et par R2.
+
+Ces identifiants sont **normatifs pour la nomenclature des tests** : `test_s1_…` désigne la surface S1 de ce tableau. Un test d'attaque qui ne se rattache à aucune surface signale soit un test mal cadré, soit une surface manquante ici.
+
+---
+
 ## 5. Preuves par propriété
 
 Pour chaque propriété, les moyens dont dispose chaque plateforme. Le grade indique la force de la preuve, pas la quantité de signaux.
@@ -85,11 +114,14 @@ Pour chaque propriété, les moyens dont dispose chaque plateforme. Le grade ind
 |---|---|---|
 | Capture | CameraX / Camera2, bytes bruts empreintés en natif avant tout passage en Dart | AVFoundation, idem |
 | Accès galerie | Aucune permission de lecture du stockage | Aucune permission photothèque |
-| Binaire authentique | Play Integrity, verdict `PLAY_RECOGNIZED` | App Attest, attestation liée à l'App ID |
+| Binaire non altéré | Play Integrity : le condensat du binaire correspond à celui publié | App Attest : l'attestation est liée à l'App ID et à l'équipe — un binaire resigné change d'identité |
+| Canal de distribution | **Compte dans le verdict** : hors Play, `PLAY_RECOGNIZED` n'est pas délivré | **Indifférent** : App Attest ne s'intéresse pas au canal, seulement à l'identité de l'application |
 | Caméra virtuelle | Détectée indirectement via l'échec d'intégrité de l'appareil | Nécessite un jailbreak → heuristiques + échec App Attest |
 | **Grade atteignable** | **B** | **B** |
 
 *Plafonné à B sur les deux plateformes tant que la photographie d'écran n'est pas traitée.*
+
+**Deux affirmations distinctes, souvent confondues.** « Ce binaire n'a pas été altéré » et « ce binaire vient du magasin officiel » ne sont pas la même chose. Android ne sait dire la première qu'à travers la seconde ; iOS les sépare. La conséquence pour un déploiement hors Play est traitée au §7, limite 7.
 
 ### P2 — Position
 
@@ -148,6 +180,9 @@ Aucun niveau ne dépend du système d'exploitation. Un appareil Android et un iP
 4. Sur iOS, la détection de jailbreak relève de l'heuristique et se contourne. La garantie repose donc sur l'échec d'App Attest, pas sur cette détection.
 5. Un appareil compromis n'est pas empêché de fonctionner ; il est détecté et refusé. Si la détection est contournée, la garantie tombe entièrement.
 6. La bibliothèque ne prouve pas l'**identité** de l'opérateur. Elle prouve qu'un appareil donné était à un endroit donné à un instant donné.
+7. **La distribution hors du Play Store prive du verdict d'application, pas de celui d'appareil.** Le verdict le plus fort sur Android — « binaire reconnu » — signifie très précisément *ce binaire correspond à celui que Google Play distribue*. Une application diffusée par vos propres moyens ne l'obtient pas, même déclarée dans la Play Console et même sur un appareil parfaitement sain. On conserve alors la moitié qui dit « ni rooté, ni émulé » et on perd celle qui dit « ce binaire n'a pas été reconditionné ». **iOS n'a pas cette limite** : App Attest ne s'intéresse pas au canal de distribution, seulement à l'identité de l'application — TestFlight et diffusion interne fonctionnent. C'est la seule asymétrie de plateforme qui contraigne le *déploiement* plutôt que la sécurité.
+
+   *À trancher, et non tranché à ce jour :* le vérificateur met aujourd'hui la note la plus basse dès que le binaire n'est pas reconnu, ce qui revient à refuser toute diffusion hors Play. C'est une **politique**, pas une conséquence du modèle — et elle est en dur dans `grading.py` alors que la convention du dépôt veut que tout seuil de décision soit une constante nommée. Trois options : la conserver, la dégrader d'un cran au lieu de la refuser, ou en faire un réglage par déploiement. À décider quand la phase B aura montré ce que le jeton déchiffré contient réellement.
 
 ## 8. Exigences non fonctionnelles
 

@@ -2,8 +2,10 @@
 
 Les tests sont organisés en deux blocs : les cas nominaux, et les
 scénarios d'attaque du modèle de menace. Chaque test d'attaque référence
-la surface concernée (S1 à S4) pour que la traçabilité avec le document
-reste vérifiable.
+la surface concernée — **S1 position, S2 contenu, S3 temps, S4 client**,
+définies en `docs/threat-model.md` §4 bis. Une même surface peut ouvrir
+plusieurs sections ici : le titre porte alors la surface *puis* le
+scénario, pour qu'aucune section ne se fasse passer pour la définition.
 """
 
 from __future__ import annotations
@@ -165,6 +167,85 @@ def test_profil_noyau_atteint_strong(verifier, nonces, key):
     assert Property.POSITION not in res.properties, "le noyau ne note pas la position"
 
 
+def test_le_motif_du_fournisseur_atteint_level_reason(verifier, nonces, key):
+    """Les notes du vérificateur d'attestation doivent sortir du pipeline.
+
+    Elles étaient purement et simplement perdues : seule `evidence` était
+    reversée dans les propriétés. L'avertissement du substitut —
+    « aucune attestation réelle » — n'apparaissait donc **nulle part**, et
+    on pouvait faire tourner le faux vérificateur en production sans
+    qu'aucun résultat ne le signale.
+    """
+    nonce = _issue(nonces, key)
+    env = sign_envelope(key, make_payload(nonce=nonce, media_digest=MEDIA_DIGEST), nonce=nonce)
+
+    res = verifier.verify(env, media_bytes=MEDIA)
+
+    assert any("NullAttestationVerifier" in n for n in res.properties[Property.ORIGIN].notes)
+    assert "NullAttestationVerifier" in res.level_reason
+
+
+def test_profil_noyau_signale_les_champs_non_notes(verifier, nonces, key):
+    """Une position portée par une enveloppe `core` n'est jugée par rien.
+
+    Elle est signée, donc d'apparence fiable, et n'a subi aucun contrôle —
+    ni indicateur de position simulée, ni précision, ni corroboration. Le
+    résultat omet la propriété `position`, ce qu'un lecteur attentif
+    remarque ; le drapeau le dit à celui qui l'est moins.
+    """
+    nonce = _issue(nonces, key, profile=Profile.CORE)
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)  # forme capture
+    env = sign_envelope(key, payload, nonce=nonce, profile=PROFILE_CORE)
+
+    res = verifier.verify(env, media_bytes=MEDIA)
+
+    assert res.profile == "core"
+    assert Property.POSITION not in res.properties
+    assert "UNGRADED_FIELDS" in res.flags
+
+
+def test_profil_noyau_sans_champs_surnumeraires_ne_signale_rien(verifier, nonces, key):
+    nonce = _issue(nonces, key, profile=Profile.CORE)
+    payload = make_payload(nonce=nonce, profile=PROFILE_CORE, media_digest=MEDIA_DIGEST)
+    env = sign_envelope(key, payload, nonce=nonce, profile=PROFILE_CORE)
+
+    res = verifier.verify(env, media_bytes=MEDIA)
+
+    assert "UNGRADED_FIELDS" not in res.flags
+
+
+def test_profil_capture_accepte_une_duree_au_lieu_de_dimensions(verifier, nonces, key):
+    """Le cas audio, qui justifie de ne pas lui ouvrir un profil propre.
+
+    Un son n'a pas de dimensions mais une durée. Le profil `capture` exige
+    l'un **ou** l'autre — c'est précisément ce qui fait tenir l'audio, la
+    vidéo et l'image dans un seul profil, sans registre de types MIME.
+    """
+    nonce = _issue(nonces, key)
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
+    del payload[2][5]           # pas de largeur/hauteur
+    payload[2][7] = 12_000      # mais une durée
+    payload[2][3] = "audio/m4a"
+
+    res = verifier.verify(sign_envelope(key, payload, nonce=nonce), media_bytes=MEDIA)
+
+    assert res.profile == "capture"
+    assert res.level is Level.STANDARD
+    assert res.properties[Property.ORIGIN].grade is Grade.B, "le plafond vaut aussi pour le son"
+
+
+def test_profil_capture_sans_dimensions_ni_duree_rejete(verifier, nonces, key):
+    """Une acquisition qui ne décrit ni étendue ni durée ne décrit rien."""
+    nonce = _issue(nonces, key)
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
+    del payload[2][5]
+
+    res = verifier.verify(sign_envelope(key, payload, nonce=nonce), media_bytes=MEDIA)
+
+    assert res.level is Level.REJECTED
+    assert "durée" in res.level_reason
+
+
 def test_profil_inconnu_refuse_de_juger(verifier, nonces, key):
     """Un profil non reconnu est un refus, jamais un repli sur le noyau.
 
@@ -211,7 +292,7 @@ def test_profil_capture_sans_position_rejete(verifier, nonces, key):
     assert "position" in res.level_reason
 
 
-# --- S4 : déclassement de profil ----------------------------------------
+# --- S4 : compromission du client — déclassement de profil ---------------
 
 
 def test_s4_declassement_de_profil_par_le_nonce(verifier, nonces, key):
@@ -348,7 +429,7 @@ def test_s1_ios_sans_corroboration_inertielle(nonces, key):
     assert res.properties[Property.POSITION].grade is Grade.C
 
 
-# --- S2 : falsification de l'image --------------------------------------
+# --- S2 : falsification du contenu --------------------------------------
 
 
 def test_s2_image_ne_correspond_pas_a_lempreinte(verifier, nonces, key):
@@ -513,7 +594,7 @@ def test_s3_capture_hors_ligne_plafonnee(verifier, nonces, key):
     assert res.level is Level.DEGRADED
 
 
-# --- S4 : compromission du client ---------------------------------------
+# --- S4 : compromission du client — forge de preuves --------------------
 
 
 def test_s4_r1_defi_non_lie_au_contenu(verifier, nonces, key):
@@ -567,7 +648,7 @@ def test_s4_cle_inconnue(verifier, nonces):
     assert "UNKNOWN_KEY" in res.flags
 
 
-# --- S3 : moisson de nonces ----------------------------------------------
+# --- S3 : falsification temporelle — moisson de nonces -------------------
 
 
 def test_s3_nonce_dun_autre_appareil_refuse(verifier, nonces, key, devices):

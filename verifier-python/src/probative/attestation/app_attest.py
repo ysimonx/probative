@@ -36,6 +36,7 @@ from typing import Any
 import cbor2
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature as _CryptoInvalidSignature
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
@@ -71,7 +72,7 @@ class AppAttestEnrollment:
     """Ce que l'attestation établit, une fois pour l'installation."""
 
     key_id: bytes
-    """Identifiant App Extest : SHA-256 de la clé publique du certificat feuille."""
+    """Identifiant App Attest : SHA-256 de la clé publique du certificat feuille."""
 
     public_key_x962: bytes
     """Clé publique App Attest, seule capable de vérifier les assertions."""
@@ -134,12 +135,26 @@ def _verify_chain(x5c: Sequence[Any], root: x509.Certificate, now: datetime) -> 
         pub = issuer.public_key()
         if not isinstance(pub, ec.EllipticCurvePublicKey):
             raise AttestationRejected(f"certificat {nom} : émetteur non ECDSA")
+
+        # L'algorithme de signature est choisi par l'émetteur du
+        # certificat, donc par l'attaquant pour tout ce qui vient de
+        # `x5c`. Une signature Ed25519 rend `signature_hash_algorithm`
+        # nul, et un OID exotique lève `UnsupportedAlgorithm` : dans les
+        # deux cas il faut un rejet motivé, pas une exception qui remonte
+        # au serveur appelant sous forme de 500.
         try:
-            pub.verify(
-                cert.signature,
-                cert.tbs_certificate_bytes,
-                ec.ECDSA(cert.signature_hash_algorithm),  # type: ignore[arg-type]
+            algorithme = cert.signature_hash_algorithm
+        except UnsupportedAlgorithm as exc:
+            raise AttestationRejected(
+                f"certificat {nom} : algorithme de signature non supporté"
+            ) from exc
+        if algorithme is None:
+            raise AttestationRejected(
+                f"certificat {nom} : signature sans condensat, ECDSA attendu"
             )
+
+        try:
+            pub.verify(cert.signature, cert.tbs_certificate_bytes, ec.ECDSA(algorithme))
         except _CryptoInvalidSignature as exc:
             raise AttestationRejected(
                 f"certificat {nom} : signature invalide sous son émetteur"
@@ -281,6 +296,26 @@ def verify_attestation(
     )
 
 
+def _verdict_defavorable(motif: str) -> AttestationOutcome:
+    """Échec de fraîcheur rendu **comme un verdict**, non comme une levée.
+
+    La spécification §5 est explicite : un échec de l'étape 5 vaut
+    `UNTRUSTED`, pas `REJECTED`. Les deux niveaux ne disent pas la même
+    chose à l'appelant — `REJECTED` signifie « ne regardez même pas »,
+    `UNTRUSTED` signifie « la pièce existe et n'est pas digne de foi ».
+
+    D'où la règle qui départage, dans ce module comme dans tout autre
+    `AttestationVerifier` : **ce qui est illisible lève, ce qui est un
+    verdict sur l'appareil ou l'application retourne.**
+    """
+    return AttestationOutcome(
+        integrity=DeviceIntegrity.FAILED,
+        app_recognized=False,
+        hardware_backed=False,
+        notes=[f"app-attest : {motif}"],
+    )
+
+
 class AppAttestVerifier(AttestationVerifier):
     """Valide l'assertion accompagnant chaque enveloppe.
 
@@ -304,12 +339,17 @@ class AppAttestVerifier(AttestationVerifier):
         key_id: bytes,
         attestation_key: bytes | None = None,
     ) -> AttestationOutcome:
+        # Câblage, pas verdict : ce vérificateur n'a rien à dire d'une
+        # enveloppe Android. On lève, parce que rendre un échec laisserait
+        # croire que l'appareil a été jugé.
         if platform != "ios":
             raise AttestationRejected(f"App Attest ne s'applique pas à la plateforme {platform!r}")
+
         if attestation_key is None:
-            # Sans clé App Attest, il n'y a rien à vérifier. Rendre un
-            # verdict favorable ici annulerait toute la phase.
-            raise AttestationRejected("aucune clé App Attest enrôlée pour cet appareil")
+            # L'appareil a été enrôlé sans attestation : rien ne permet
+            # d'établir la fraîcheur. L'enveloppe reste jugeable, et son
+            # verdict est qu'elle n'est pas digne de foi.
+            return _verdict_defavorable("aucune clé enrôlée pour cet appareil")
 
         assertion = _decode(token, "assertion")
         auth_data = _blob(assertion, "authenticatorData", "assertion")
@@ -317,13 +357,16 @@ class AppAttestVerifier(AttestationVerifier):
 
         ad = _AuthenticatorData.parse(auth_data, with_credential=False)
         if ad.rp_id_hash != self._rp_id_hash:
-            raise AttestationRejected("assertion émise pour une autre application")
+            # Verdict sur l'application : ce n'est pas la nôtre.
+            return _verdict_defavorable("assertion émise pour une autre application")
 
         try:
             public_key = ec.EllipticCurvePublicKey.from_encoded_point(
                 ec.SECP256R1(), attestation_key
             )
         except ValueError as exc:
+            # État serveur corrompu, pas faute du client : la clé vient de
+            # notre propre validation d'enrôlement. Illisible, donc levée.
             raise AttestationRejected("clé App Attest enrôlée illisible") from exc
 
         # Règle R1, appliquée cryptographiquement et non par comparaison
@@ -334,10 +377,10 @@ class AppAttestVerifier(AttestationVerifier):
         nonce = hashlib.sha256(auth_data + expected_challenge).digest()
         try:
             public_key.verify(signature, nonce, ec.ECDSA(hashes.SHA256()))
-        except _CryptoInvalidSignature as exc:
-            raise AttestationRejected(
-                "assertion invalide : la liaison R1 au contenu n'est pas établie"
-            ) from exc
+        except _CryptoInvalidSignature:
+            # Le cas que le substitut traite déjà en verdict, et que la
+            # spécification §5 range sous UNTRUSTED.
+            return _verdict_defavorable("liaison R1 au contenu non établie")
 
         return AttestationOutcome(
             integrity=DeviceIntegrity.STRONG,

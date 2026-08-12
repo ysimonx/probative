@@ -45,6 +45,32 @@ def properties_for(profile: Profile) -> tuple[Property, ...]:
     return _PROPERTIES[profile]
 
 
+def ungraded_fields(profile: Profile, claims: CaptureClaims) -> list[str]:
+    """Champs présents dans la charge utile que ce profil ne note pas.
+
+    Le cas qui compte : une enveloppe `core` portant une position. Elle
+    est signée, donc d'apparence fiable, et n'a subi **aucun** contrôle —
+    ni indicateur de position simulée, ni précision, ni corroboration
+    barométrique. Le résultat omet la propriété `position`, ce qu'un
+    lecteur attentif remarque ; un lecteur pressé lira une latitude signée
+    et la croira jugée.
+
+    On signale plutôt qu'on rejette : ces champs ne sont pas malformés, et
+    la tolérance aux champs inconnus est ce qui rend les versions mineures
+    non cassantes (spec §8). Mais on ne les laisse pas passer en silence —
+    une donnée qui traverse le calcul des grades sans être remarquée est
+    précisément ce que ce dépôt refuse.
+    """
+    if profile is Profile.CAPTURE:
+        return []
+    presents = []
+    if claims.position is not None:
+        presents.append("position")
+    if claims.claims:
+        presents.append("corroboration")
+    return presents
+
+
 def require_fields(profile: Profile, claims: CaptureClaims) -> None:
     """Vérifie que la charge utile porte ce que le profil exige.
 

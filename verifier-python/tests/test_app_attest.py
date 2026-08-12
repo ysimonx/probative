@@ -19,15 +19,17 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import cbor2
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.hazmat.primitives.serialization import Encoding
 
+from probative import grading
 from probative.attestation import (
     APPLE_ROOT_PEM,
     AppAttestVerifier,
@@ -36,6 +38,11 @@ from probative.attestation import (
     verify_attestation,
 )
 from probative.errors import AttestationRejected
+from probative.model import Grade, Level, Profile, Property
+
+# Charge utile minimale : `grade_origin` ne lit que la latence, et les
+# verdicts défavorables sortent avant même de l'atteindre.
+_CLAIMS_MINIMALES = SimpleNamespace(media=SimpleNamespace(sign_latency_ms=0))
 
 VECTOR = Path(__file__).parent / "device-vectors" / "appattest-c3-iphone16.json"
 
@@ -177,6 +184,36 @@ def test_certificat_expire_refuse(enroll_args):
         verify_attestation(**enroll_args | {"now": tard})
 
 
+def test_s4_algorithme_de_signature_hostile_rejete_proprement(enroll_args):
+    """L'algorithme de signature d'un certificat de `x5c` est choisi par l'attaquant.
+
+    Une signature Ed25519 laisse `signature_hash_algorithm` à `None` et
+    faisait remonter un `TypeError` jusqu'à l'appelant — soit un 500 avec
+    trace sur la route d'enrôlement, là où un rejet motivé est attendu.
+    """
+    vraie = x509.load_pem_x509_certificate(APPLE_ROOT_PEM)
+    imposteur = ed25519.Ed25519PrivateKey.generate()
+    inter = (
+        x509.CertificateBuilder()
+        .subject_name(vraie.subject)
+        .issuer_name(vraie.subject)
+        .public_key(imposteur.public_key())
+        .serial_number(vraie.serial_number)
+        .not_valid_before(vraie.not_valid_before_utc)
+        .not_valid_after(vraie.not_valid_after_utc)
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(imposteur, None)
+    )
+    forge = _retamper(
+        enroll_args["attestation"],
+        lambda o: o["attStmt"].__setitem__(
+            "x5c", [o["attStmt"]["x5c"][0], inter.public_bytes(Encoding.DER)]
+        ),
+    )
+    with pytest.raises(AttestationRejected, match="condensat"):
+        verify_attestation(**enroll_args | {"attestation": forge})
+
+
 def test_s4_chaine_tronquee_refusee(enroll_args):
     tronquee = _retamper(
         enroll_args["attestation"], lambda o: o["attStmt"].__setitem__("x5c", o["attStmt"]["x5c"][:1])
@@ -230,6 +267,31 @@ def test_assertion_reelle_acceptee_et_r1_etablie(verifier, assertion_args, vecto
     assert out.counter == 1, "le compteur vient de authenticatorData, pas de l'enveloppe"
 
 
+def _assert_verdict_defavorable(out, motif: str) -> None:
+    """Un échec de fraîcheur est un **verdict**, pas une levée.
+
+    La spécification §5 range les échecs de l'étape 5 sous `UNTRUSTED` et
+    non `REJECTED`. On vérifie donc les deux choses qui en découlent : le
+    verdict est défavorable, et il porte son motif précis — sans quoi
+    `level_reason` ne garderait que le motif générique de `grade_origin`.
+    """
+    assert out.integrity is DeviceIntegrity.FAILED
+    assert out.app_recognized is False
+    assert any(motif in n for n in out.notes), out.notes
+
+    # Et il descend bien en UNTRUSTED plutôt qu'en REJECTED.
+    r = grading.grade_origin(_CLAIMS_MINIMALES, out, Profile.CAPTURE)
+    assert r.grade is Grade.F
+    # Miroir de `Verifier._verify` : c'est le pipeline qui reverse les
+    # notes du fournisseur dans celles des propriétés, avant le calcul du
+    # niveau. `test_le_motif_du_fournisseur_atteint_level_reason` le
+    # vérifie de bout en bout.
+    r.notes.extend(out.notes)
+    niveau, raison = grading.overall_level({Property.ORIGIN: r}, offline=False)
+    assert niveau is Level.UNTRUSTED
+    assert motif in raison, "le motif précis doit atteindre level_reason"
+
+
 def test_r1_est_verifiee_par_la_signature_et_non_par_comparaison(verifier, assertion_args, vector):
     """Le `clientDataHash` ne circule pas : le vecteur le prouve.
 
@@ -241,31 +303,37 @@ def test_r1_est_verifiee_par_la_signature_et_non_par_comparaison(verifier, asser
     a = vector["assertion"]
     forge = hashlib.sha256(b64(a["payload"]) + b"\x00" + b64(a["nonce"])).digest()
 
-    with pytest.raises(AttestationRejected, match="R1"):
-        verifier.verify(**assertion_args | {"expected_challenge": forge})
+    out = verifier.verify(**assertion_args | {"expected_challenge": forge})
+
+    _assert_verdict_defavorable(out, "liaison R1 au contenu non établie")
 
 
 def test_s4_assertion_sans_cle_enrolee_refusee(verifier, assertion_args):
-    """Sans clé App Attest, il n'y a rien à vérifier — donc rien à accorder."""
-    with pytest.raises(AttestationRejected, match="aucune clé"):
-        verifier.verify(**assertion_args | {"attestation_key": None})
+    """Sans clé App Attest, rien n'établit la fraîcheur — donc rien à accorder."""
+    out = verifier.verify(**assertion_args | {"attestation_key": None})
+
+    _assert_verdict_defavorable(out, "aucune clé enrôlée")
 
 
 def test_s4_assertion_sous_une_autre_cle_refusee(verifier, assertion_args, vector):
     """La clé de signature du format ne valide pas les assertions."""
-    with pytest.raises(AttestationRejected, match="R1|invalide"):
-        verifier.verify(
-            **assertion_args | {"attestation_key": b64(vector["signingKey"]["publicKeyX962"])}
-        )
+    out = verifier.verify(
+        **assertion_args | {"attestation_key": b64(vector["signingKey"]["publicKeyX962"])}
+    )
+
+    _assert_verdict_defavorable(out, "liaison R1 au contenu non établie")
 
 
 def test_s4_assertion_dune_autre_application_refusee(assertion_args, vector):
     autre = AppAttestVerifier(team_id=TEAM_ID, bundle_id="org.probative.autre")
-    with pytest.raises(AttestationRejected, match="autre application"):
-        autre.verify(**assertion_args)
+
+    out = autre.verify(**assertion_args)
+
+    _assert_verdict_defavorable(out, "autre application")
 
 
-def test_plateforme_android_refusee(verifier, assertion_args):
+def test_plateforme_android_leve(verifier, assertion_args):
+    """Câblage et non verdict : rendre un échec laisserait croire qu'on a jugé."""
     with pytest.raises(AttestationRejected, match="plateforme"):
         verifier.verify(**assertion_args | {"platform": "android"})
 
