@@ -190,22 +190,76 @@ Le cœur sait déjà tout faire : son encodeur CBOR et sa couche COSE reproduise
 vecteurs d'or **octet à octet** depuis A2. Ce qui manque est l'assemblage sur
 appareil.
 
-- [ ] **Câbler le vrai `PlayIntegrityVerifier` dans le serveur de dev.** Son
+- [x] **Câbler le vrai `PlayIntegrityVerifier` dans le serveur de dev.** Son
       `main()` construit toujours le substitut ; il lui faut le nom de paquet et le
       chemin du compte de service, deux valeurs de déploiement dont le `.env` est le
       logement (voir `.env.example`). Sans ce câblage, l'étape ne peut pas viser
       mieux que le substitut.
+- [x] Point d'entrée `seal(bytes)` dans le cœur — `envelope/Sealer.kt`. Assemble et
+      signe : empreinte des octets remis, collecte `timing`/`posture`, R1, jeton,
+      `COSE_Sign1`. La fraîcheur passe par l'interface `FreshnessSource`, pour que
+      l'assemblage ne dépende ni de Play Integrity ni de ce qui viendra.
+- [x] Charge utile identique champ à champ à `factory.make_payload(profile="core")`
+      — c'est l'oracle d'acceptation, et si le natif produit autre chose, c'est le
+      natif qui s'écarte. **Épinglé par un test d'hôte** (`CorePayloadVectorTest`) :
+      `CorePayload.build`, celui qu'appelle `Sealer`, reproduit `core.payload.cbor`
+      octet à octet. Distinct de `GoldenVectorsTest`, qui bâtit sa charge utile à la
+      main et n'éprouve donc que l'encodeur.
 - [ ] Séquence sur appareil : nonce depuis `/nonce` → charge utile CBOR →
       R1 = `SHA-256(payload ‖ nonce)` → jeton Play Integrity sur ce R1 →
       `COSE_Sign1` signé par la clé Keystore enrôlée → `POST /verify`.
-- [ ] Charge utile identique champ à champ à `factory.make_payload(profile="core")`
-      — c'est l'oracle d'acceptation, et si le natif produit autre chose, c'est le
-      natif qui s'écarte.
+      **Exercée de bout en bout sur émulateur le 2026-08-13**, verdict rendu ;
+      reste à la lancer sur SM-X200, seul appareil qui puisse cocher le critère
+      de sortie — un émulateur n'a ni clé matérielle ni verdict d'appareil.
+
+**Deux champs de `posture` sont omis, et l'omission est le comportement correct.**
+L'indicateur de position simulée (label 7) ne se lit que sur un point de
+localisation, qu'un scellement d'octets remis n'a pas ; la liste de paquets
+suspects (label 8) suppose `QUERY_ALL_PACKAGES`, que l'acquisition paiera. Émettre
+`false` et `[]` reviendrait à affirmer « j'ai regardé, il n'y a rien » — la
+réclamation simulée qu'interdit la règle d'A6, et que le serveur ne pourrait pas
+distinguer d'une vraie mesure. Les deux champs sont optionnels au CDDL : la charge
+utile reste conforme.
+
+**Ce que `media[6]` mesure ici, et ce qu'il ne mesure pas.** Le champ est *dans* ce
+qui est encodé, donc il ne peut pas compter ce qui vient après lui — le jeton de
+fraîcheur et la signature restent dehors. Pour des octets remis, l'instant d'origine
+est l'entrée dans `seal`, ce qui est la seule chose honnête : le cœur ignore l'âge de
+ce qu'on lui donne. `seal` prend malgré tout cet instant en paramètre, parce que
+l'acquisition y passera celui de l'obturateur — c'est là seulement que le champ
+discrimine une injection.
+
+**Forme validée sur l'hôte avant campagne.** Une charge utile de cette forme exacte
+— posture sans 7 ni 8, `text/plain`, sans chaînage — passe le pipeline : `STANDARD`,
+`integrity` A, `origin` A, `time` **B** avec le drapeau `CHAIN_ABSENT`. Le B est
+attendu et non un défaut : `time` n'atteint A que par ordonnancement vérifié, donc
+par chaînage côté Android (A6), et une première enveloppe n'a par construction pas
+de précédente.
 
 **Critère de sortie d'A4.1, et il dépasse ce que la phase A demandait.** Le plan
 prévoyait une enveloppe acceptée « avec substitut d'attestation ». La phase B étant
 close, on peut l'obtenir **sans substitut** — donc atteindre le critère de sortie du
 spike, jamais atteint sur aucune plateforme à ce jour.
+
+**Commandes de la campagne.** Le `.env` doit porter `PROBATIVE_ANDROID_PACKAGE` et
+`PROBATIVE_SERVICE_ACCOUNT`, sans quoi le serveur annonce au démarrage qu'il tombe
+sur le substitut — et une campagne qui croirait valider une attestation réelle sans
+en valider aucune serait le pire des résultats. **Lancer le serveur depuis la racine
+du dépôt** : les chemins du `.env` y sont relatifs, et depuis `verifier-python/` le
+fichier n'est simplement pas trouvé — le repli est alors annoncé, mais il faut le
+lire.
+
+```bash
+python -m probative.devserver --port 8765   # à la RACINE du dépôt
+adb reverse tcp:8765 tcp:8765
+
+cd mobile/android
+ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew :demo:installDebug \
+  -Pprobative.cloudProjectNumber=487335590129
+adb logcat -c
+adb shell am start -n org.probative.demo/.MainActivity
+adb logcat -d -s PROBATIVE_A41
+```
 
 #### A4.2 — La collecte
 
@@ -667,3 +721,96 @@ spike : il y faut une itération de C3, ou C4.
   (`kotlin-stdlib` seul), XCFramework reconstruit en `ProbativeCore.xcframework`.
   Espace de noms `org.probative` ; `probative.org` est libre, `probative.io` était
   déjà déposé par un tiers.
+
+- 2026-08-13 : **A4.1 écrite, non encore exécutée sur appareil.** Le cœur Android
+  sait désormais assembler et signer une enveloppe complète : `payload/Payload.kt`
+  (construction pure, sans dépendance Android), `payload/DeviceState.kt` (collecte
+  `timing`/`posture`, **aucune permission**), `freshness/FreshnessSource.kt`
+  (l'assemblage ne connaît plus Play Integrity, seulement une interface) et
+  `envelope/Sealer.kt`, qui est le point d'entrée `seal(bytes)` de la spec §2.5.
+
+  Le contrôle qui compte est passé sur l'hôte : `CorePayload.build`, celui-là même
+  qu'appelle `Sealer`, reproduit `core.payload.cbor` **octet à octet**. La
+  différence avec `GoldenVectorsTest` n'est pas cosmétique — là-bas la charge utile
+  est bâtie à la main dans le test, ce qui éprouve l'encodeur et non le code
+  d'appareil. Un décalage entre les deux échouait jusqu'ici sur une SM-X200, sous
+  la forme d'un `SIGNATURE_INVALID` sans cause visible.
+
+  Deuxième dérisquage avant campagne : une charge utile de la forme exacte que
+  produit `Sealer` — posture sans les labels 7 et 8, `text/plain`, sans chaînage —
+  a été passée au pipeline. `STANDARD`, `integrity` A, `origin` A, `time` **B**,
+  drapeau `CHAIN_ABSENT`. Le B est structurel : `time` n'atteint A que par
+  ordonnancement vérifié, donc par chaînage sur Android, et une première enveloppe
+  n'a pas de précédente. C'est A6, pas un défaut d'A4.1.
+
+  Deux décisions valent d'être retenues, parce qu'elles se prendront à l'identique
+  côté iOS :
+
+  - **une mesure non faite s'omet, elle ne se simule pas.** Position simulée et
+    paquets suspects sont absents de la posture, faute d'un point de localisation
+    et de `QUERY_ALL_PACKAGES`. Émettre `false` et `[]` affirmerait « j'ai regardé,
+    il n'y a rien », que le serveur ne saurait pas distinguer d'une vraie mesure ;
+  - **`media[6]` ne peut pas mesurer ce qui vient après lui**, puisqu'il est dans
+    ce qui est encodé. Jeton de fraîcheur et signature restent dehors. Pour des
+    octets remis, l'instant d'origine est l'entrée dans `seal` — le cœur ignore
+    l'âge de ce qu'on lui donne, et prétendre le contraire serait la première
+    contre-vérité du format.
+
+  La sonde `:demo` remplace A5, dont elle est un sur-ensemble strict. Reste la seule
+  case qui compte : la lancer sur SM-X200. Aucun appareil branché à ce poste ce
+  jour-là.
+
+  Vérifié : Kotlin 17 tests unitaires au vert, `:demo:assembleDebug` compilé.
+
+- 2026-08-13 : **A4.1 exercée de bout en bout sur émulateur.** Pixel_6a, image
+  Google Play, Android 17 arm64. Ce n'est pas la campagne — un émulateur n'a ni clé
+  matérielle ni verdict d'appareil — mais elle rapporte trois choses qu'on ne
+  savait pas.
+
+  **Le contrôle négatif de l'attestation de clé est passé pour de vrai.** Enrôlement
+  refusé, `HTTP 400` : *« racine de la chaîne absente des racines publiées par
+  Google : chaîne cohérente mais non ancrée »*. La chaîne était pourtant produite
+  par un vrai Keystore et parfaitement cohérente — c'est exactement le cas que la
+  phase B devait intercepter, et jusqu'ici seule une chaîne forgée en test l'avait
+  vérifié.
+
+  **R1 est vérifiée de bout en bout sur une enveloppe réellement assemblée par le
+  cœur.** Le résultat porte `play-integrity:r1-bound` : le condensat a traversé
+  l'encodage Kotlin, le `requestHash` base64url, les serveurs de Google, puis le
+  recalcul Python depuis les octets reçus, sans dériver. L'inconnue n° 1 était close
+  sur un jeton isolé ; elle l'est désormais sur le chemin complet, qui est le seul
+  où une divergence d'encodage aurait cassé R1 en silence.
+
+  **La boucle entière tient en moins d'une seconde.** Charge utile 131 octets,
+  enveloppe **742 octets**, scellement **18–28 ms**, vérification **396 ms** — dont
+  l'essentiel est l'aller-retour `decodeIntegrityToken` chez Google, coût structurel
+  du mode de déchiffrement tranché en phase B. `prepare` : 1 365 ms à froid, 153 ms
+  à chaud, cohérent avec les 1 313 / 533 ms de la SM-X200.
+
+  Verdict `UNTRUSTED`, et c'est la bonne réponse : `origin` **F** — binaire installé
+  par `adb`, donc signé par la clé de débogage et non par le certificat de
+  déploiement Play — et *« réponse sans verdict d'appareil : Google n'atteste pas
+  cet appareil »*, ce qu'un émulateur mérite. `integrity` C, `time` B,
+  `CHAIN_ABSENT`.
+
+  **Mode répétition, ajouté pour ceci** (`-Pprobative.rehearsal=true`, jamais par
+  défaut, bannière en tête de sonde) : la clé est enrôlée sur parole, faute de
+  pouvoir l'attester. Premier jet **flatteur et donc faux** — le serveur suppose
+  `hardware_backed` vrai quand le client ne dit rien, si bien qu'une clé logicielle
+  d'émulateur ressortait `key-attested-hardware` et hissait `integrity` en **A**. Le
+  démenti est désormais explicite, et la note retombe à **C**. Une répétition qui
+  flatte le résultat est pire qu'une répétition qui échoue.
+
+  Piège de parcours, noté dans les commandes : le serveur doit être lancé **depuis
+  la racine du dépôt**, les chemins du `.env` y étant relatifs. Depuis
+  `verifier-python/`, il tombe sur le substitut — en l'annonçant, mais l'annonce se
+  perd si la sortie est redirigée sans `python -u`.
+
+  Défaut d'affichage trouvé en regardant l'écran, et non le journal : la version
+  du binaire n'apparaissait pas. Premier diagnostic — le `TextView` sélectionnable
+  prend le focus et le `ScrollView` défile pour le suivre — **faux**. La cause est
+  le **bord à bord imposé depuis `targetSdk 35`** : la fenêtre occupe l'écran
+  entier et les premières lignes se dessinaient sous la barre système. Corrigé par
+  un recul aux insets, et l'identité est désormais épinglée hors de la zone
+  défilante. Ce n'est pas cosmétique : lire un verdict sans savoir quel binaire
+  l'a produit est précisément ce qu'A5 avait signalé.

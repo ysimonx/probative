@@ -13,6 +13,29 @@ plugins {
 // sur un zéro silencieux.
 val cloudProjectNumber = (findProperty("probative.cloudProjectNumber") as String?) ?: "0"
 
+// Serveur de développement joignable depuis l'appareil. Le défaut suppose
+// `adb reverse tcp:8765 tcp:8765`, préférable à une adresse IP : rien à
+// relever, aucun réseau commun exigé, et le serveur reste sur la boucle
+// locale de l'hôte plutôt qu'exposé au réseau.
+//
+//   ./gradlew :demo:installDebug -Pprobative.devserver=http://127.0.0.1:8765
+val devserverUrl =
+    (findProperty("probative.devserver") as String?) ?: "http://127.0.0.1:8765"
+
+// Mode répétition — pour émulateur uniquement, et jamais par défaut.
+//
+//   ./gradlew :demo:installDebug -Pprobative.rehearsal=true
+//
+// Un émulateur ne produit qu'une clé logicielle : sa chaîne d'attestation est
+// cohérente mais ne s'ancre à aucune racine publiée par Google, et le serveur
+// la refuse — à raison. Ce drapeau enrôle alors la clé **sur parole**, ce qui
+// n'atteste rien mais laisse exercer tout ce qui vient après : assemblage,
+// R1, signature, verdict.
+//
+// Il ne dégrade jamais en silence : la sonde affiche une bannière, et le
+// résultat obtenu sous ce drapeau ne vaut pas campagne.
+val rehearsal = (findProperty("probative.rehearsal") as String?) == "true"
+
 // Clé de téléversement Play — secret d'exploitation, hors dépôt.
 //
 // Lu depuis `mobile/android/keystore.properties`, **et non** depuis
@@ -48,9 +71,11 @@ android {
         applicationId = "org.probative.demo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.1.3"
+        versionCode = 5
+        versionName = "0.1.4"
         buildConfigField("long", "CLOUD_PROJECT_NUMBER", "${cloudProjectNumber}L")
+        buildConfigField("String", "DEVSERVER_URL", "\"$devserverUrl\"")
+        buildConfigField("boolean", "REHEARSAL", "$rehearsal")
     }
 
     buildFeatures {

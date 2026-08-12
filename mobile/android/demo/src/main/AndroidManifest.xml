@@ -1,12 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Play Integrity interroge les serveurs de Google. Aucune autre
-         permission : la capture (A4) en demandera, pas cette étape. -->
+    <!-- Play Integrity interroge les serveurs de Google, et la sonde A4.1
+         parle au serveur de développement. Aucune autre permission : sceller
+         des octets remis n'en demande pas, et c'est un trait du profil `core`
+         plus qu'une économie. L'acquisition (A4.2) en demandera. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- `usesCleartextTraffic` : le serveur de développement est en HTTP sur la
+         boucle locale via `adb reverse`. Un attribut plutôt qu'un fichier de
+         configuration réseau, pour que la démonstration reste sans ressources.
+         À ne jamais recopier dans une application réelle. -->
     <application
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:label="probative demo"
         android:supportsRtl="true">
 

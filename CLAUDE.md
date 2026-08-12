@@ -108,11 +108,16 @@ adb logcat -c && ./gradlew :core:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=org.probative.core.keys.KeystoreVectorDeviceTest
 adb logcat -d -s PROBATIVE_VECTOR
 
-# Sonde A5 — Play Integrity. Le numéro de projet Google Cloud est une donnée de
-# compte, passée en propriété et jamais écrite dans le code.
+# Sonde A4.1 — boucle complète appareil → enveloppe → verdict, profil `core`.
+# Elle remplace la sonde A5, dont elle est un sur-ensemble strict. Le numéro de
+# projet Google Cloud est une donnée de compte, passée en propriété et jamais
+# écrite dans le code. Le serveur de dev doit tourner sur l'hôte, et `adb reverse`
+# évite d'avoir à relever une adresse IP ou à exposer le serveur au réseau.
+python -m probative.devserver --port 8765   # dans verifier-python, autre terminal
+adb reverse tcp:8765 tcp:8765
 ./gradlew :demo:installDebug -Pprobative.cloudProjectNumber=487335590129
-adb shell am start -n org.probative.demo/.MainActivity
-adb logcat -d -s PROBATIVE_A5
+adb logcat -c && adb shell am start -n org.probative.demo/.MainActivity
+adb logcat -d -s PROBATIVE_A41
 ```
 
 ### iOS — appareil réel et compte payant requis pour App Attest
@@ -166,7 +171,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 | `PlayIntegrityVerifier` — **phase B faite** | Jeton déchiffré par `decodeIntegrityToken`, `requestHash` recalculé et confronté, verdicts traduits. Chaîne d'attestation de clé ancrée à la racine Google (`key_attestation.py`). 35 tests |
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
 | Vecteurs d'appareil | Android (chaîne à 4 certificats, SM-X200) et iOS (App Attest, iPhone 16) versionnés dans `tests/device-vectors/` |
-| Cœur natif Android | A1–A3 et **A5 faites, validées sur SM-X200**. `:demo` restauré, porte la sonde A5. Prochaine : A4, capture CameraX |
+| Cœur natif Android | A1–A3 et **A5 faites, validées sur SM-X200**. **A4.1 écrite** — `seal(bytes)`, profil `core` : le cœur assemble et signe une enveloppe complète, épinglée au vecteur d'or par un test d'hôte. **Jamais exécutée sur appareil** : c'est la seule case qui reste pour le critère de sortie du spike. Puis A4.2, capture CameraX |
 | Cœur natif iOS | C1–C3 faites ; **C3 validée sur appareil réel** (iPhone 16, iOS 26.6), assertion R1 exercée. Prochaine : C4, capture AVFoundation |
 | Liaisons Flutter / React Native | Non commencées |
 | Banc de triche | Non commencé |
@@ -251,12 +256,12 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
 
 ### Où en sont les inconnues
 
-1. **`requestHash` Play Integrity — levée sur la taille.** base64url sans bourrage :
-   43 caractères pour un plafond de 500. Aucun niveau d'indirection nécessaire.
-   *Reste* : confirmer que Play restitue la chaîne intacte, ce qui exige de
-   déchiffrer un jeton — donc la phase B. Une divergence d'encodage entre client et
-   serveur casserait R1 **silencieusement** : c'est le pire mode de défaillance, à
-   traiter avant de figer ADR-0002.
+1. **`requestHash` Play Integrity — close le 2026-08-12.** base64url sans bourrage :
+   43 caractères pour un plafond de 500, aucun niveau d'indirection. L'aller-retour
+   est vérifié — un jeton réel déchiffré par Google restitue un `requestHash`
+   identique au R1 recalculé côté serveur. Une divergence d'encodage aurait cassé R1
+   **silencieusement**, le pire mode de défaillance ; c'est écarté. *Reste* une
+   formalité : rendre l'encodage normatif dans ADR-0002.
 2. **Latence — déplacée, pas levée.** La fraîcheur ne coûte rien : 36–39 ms sur
    SM-X200, 18 ms sur iPhone 16. Le préchauffage Play Integrity, lui, coûte 1 313 ms
    à froid et doit rester au démarrage. Conclusion : le sujet de `media.6` est la
@@ -291,12 +296,17 @@ donc un appel à Google par enveloppe, avec ses quatre conséquences assumées
 (`docs/play-integrity-service-account.md` §2), et l'authentification passe par la
 couture d'ADR-0006 pour ne rien imposer aux déploiements.
 
-*Reste à câbler* : la route d'enrôlement accepte encore la chaîne d'attestation
-sans appeler `verify_key_attestation`, et `DeviceRecord.hardware_backed` n'est donc
-pas encore renseigné depuis elle. Le module est prêt et éprouvé ; c'est du
-branchement.
+~~*Reste à câbler* : la route d'enrôlement accepte encore la chaîne d'attestation
+sans appeler `verify_key_attestation`.~~ **Câblé** : `/enroll` valide la chaîne
+jusqu'à la racine Google, vérifie qu'elle porte bien sur la clé présentée, et en
+tire `hardware_backed` — ce que le client déclare ne sert plus qu'au mode dégradé.
 
-**A4 / C4 — la capture.** La seule qui mettra enfin une photo sous le sceau, et le
+**A4.1 — l'enveloppe, écrite mais jamais exécutée.** Le cœur Android sait assembler
+et signer ; la sonde `:demo` enchaîne enrôlement, nonce, scellement et verdict.
+Manque le seul geste qui compte : brancher la SM-X200 et la lancer. C'est ce qui
+coche le critère de sortie du spike, jamais atteint sur aucune plateforme.
+
+**A4.2 / C4 — la capture.** La seule qui mettra enfin une photo sous le sceau, et le
 vrai sujet de mesure de latence. Rien ne la bloque ; c'est aussi la plus longue.
 
 ### Ce que la phase D n'a pas couvert
