@@ -19,6 +19,20 @@ d'attestation. Jamais en production.
 .venv/bin/python -m probative.devserver          # http://127.0.0.1:8765
 ```
 
+### Configuration
+
+Les réglages propres à un déploiement se donnent dans un `.env` à la racine du
+dépôt — `cp .env.example .env`, puis compléter. Le fichier est ignoré par git ;
+l'environnement réel prime sur lui. Aucun secret n'y entre : la clé de compte de
+service et la clé de téléversement Play vivent hors du dépôt (`install.sh`).
+
+Le serveur annonce au démarrage ce qu'il a chargé, et ce qu'il n'a pas :
+
+```
+Aucune empreinte déclarée (PROBATIVE_TRUSTED_APP_CERTS vide) : un binaire non
+reconnu par le magasin sera noté sans distinction d'origine.
+```
+
 Boucle complète avec `curl` (les octets binaires transitent en base64) :
 
 ```bash

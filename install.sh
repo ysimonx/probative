@@ -25,5 +25,19 @@ ln -sfn "$CLE_SERVICE" "$RACINE/service-account.json"
 chmod 600 "$SECRETS/keystore.properties" "$SECRETS/upload-keystore.jks"
 ln -sfn "$SECRETS/keystore.properties" "$RACINE/mobile/android/keystore.properties"
 
+# --- Fichier d'environnement, lu par le serveur de developpement ----------
+# CE FICHIER NE CONTIENT AUCUN SECRET : une empreinte de certificat est
+# publique, n'importe qui possedant l'application peut l'extraire d'un APK
+# livre. Le dire secret aurait un effet concret -- on hesiterait a le poser
+# dans une CI ou a le montrer dans un ticket, alors que c'est precisement ce
+# qu'on doit pouvoir faire d'une configuration.
+#
+# Les vrais secrets sont les deux fichiers ci-dessus, et ils n'y entrent
+# jamais. Voir .env.example, versionne, qui documente chaque reglage.
+chmod 644 "$SECRETS/env"
+ln -sfn "$SECRETS/env" "$RACINE/.env"
+
 echo "liens en place :"
-ls -l "$RACINE/service-account.json" "$RACINE/mobile/android/keystore.properties"
+ls -l "$RACINE/service-account.json" \
+      "$RACINE/mobile/android/keystore.properties" \
+      "$RACINE/.env"

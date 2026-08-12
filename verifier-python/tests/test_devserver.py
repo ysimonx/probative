@@ -406,3 +406,74 @@ def test_enrolement_android_sans_chaine_reste_degrade():
     reponse = _android_service().enroll(body)
 
     assert reponse["attested"] is False
+
+
+# --- Configuration de déploiement — .env et empreintes --------------------
+
+
+def test_dotenv_charge_sans_ecraser_l_environnement(tmp_path, monkeypatch):
+    """L'environnement réel prime : une CI doit pouvoir surcharger le fichier."""
+    from probative.devserver import _load_dotenv
+
+    fichier = tmp_path / ".env"
+    fichier.write_text(
+        "# commentaire ignoré\n"
+        "PROBATIVE_DEJA_POSEE=depuis-le-fichier\n"
+        "\n"
+        'PROBATIVE_NOUVELLE="entre guillemets"\n'
+        "ligne sans signe egal\n"
+    )
+    monkeypatch.setenv("PROBATIVE_DEJA_POSEE", "depuis-l-environnement")
+
+    charges = _load_dotenv(fichier)
+
+    assert charges == ["PROBATIVE_NOUVELLE"]
+    assert os.environ["PROBATIVE_DEJA_POSEE"] == "depuis-l-environnement"
+    assert os.environ["PROBATIVE_NOUVELLE"] == "entre guillemets"
+
+
+def test_dotenv_absent_ne_leve_pas(tmp_path):
+    """Le fichier est facultatif : son absence est le cas nominal."""
+    from probative.devserver import _load_dotenv
+
+    assert _load_dotenv(tmp_path / "inexistant") == []
+
+
+def test_politique_lue_depuis_l_environnement(monkeypatch):
+    from probative.devserver import ENV_TRUSTED_CERTS, _policy_from_env
+
+    monkeypatch.setenv(
+        ENV_TRUSTED_CERTS,
+        "63:14:CF:92:AA:93:83:DB:96:73:7D:0B:5A:11:F3:9C:"
+        "E0:3F:C6:9E:7D:84:0D:A3:26:58:93:5C:C1:08:1D:9F",
+    )
+
+    politique = _policy_from_env()
+
+    assert politique.trusted_app_certificates == (
+        "YxTPkqqTg9uWc30LWhHznOA_xp59hA2jJliTXMEIHZ8",
+    )
+
+
+def test_politique_vide_par_defaut(monkeypatch):
+    """Un déploiement qui ne configure rien garde le comportement d'origine."""
+    from probative.devserver import ENV_TRUSTED_CERTS, _policy_from_env
+
+    monkeypatch.delenv(ENV_TRUSTED_CERTS, raising=False)
+
+    assert _policy_from_env().trusted_app_certificates == ()
+    assert _policy_from_env().deviations() == []
+
+
+def test_empreinte_mal_formee_refusee(monkeypatch):
+    """Mieux vaut refuser de démarrer qu'une liste silencieusement incomplète.
+
+    Le symptôme serait un binaire légitime traité comme reconditionné — le
+    diagnostic le plus coûteux de toute la chaîne.
+    """
+    from probative.devserver import ENV_TRUSTED_CERTS, _policy_from_env
+
+    monkeypatch.setenv(ENV_TRUSTED_CERTS, "yTU-2irSW0V8yOgcrWGbGk1kukC4LYrK6uLfTNN60pQ")
+
+    with pytest.raises(ValueError, match="hexadécimal"):
+        _policy_from_env()

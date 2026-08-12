@@ -30,6 +30,7 @@ import os
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -42,6 +43,7 @@ from .attestation import (
     verify_key_attestation,
 )
 from .errors import AttestationRejected, UnknownKey
+from .grading import GradingPolicy, app_certificate_digest
 from .model import Profile
 from .store import DeviceRecord, InMemoryDeviceStore, InMemoryNonceStore
 from .verifier import Verifier
@@ -121,6 +123,7 @@ class DevService:
         *,
         attestation: AttestationVerifier | None = None,
         app_attest: tuple[str, str, str] | None = None,
+        policy: GradingPolicy | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         # (team_id, bundle_id, environnement) — données de compte, jamais
@@ -137,6 +140,7 @@ class DevService:
             nonce_store=self.nonces,
             device_store=self.devices,
             attestation=attestation or NullAttestationVerifier(DeviceIntegrity.STRONG),
+            policy=policy or GradingPolicy(),
         )
 
     def enroll(self, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -308,15 +312,108 @@ def make_server(
     return ThreadingHTTPServer((host, port), Handler)
 
 
+ENV_TRUSTED_CERTS = "PROBATIVE_TRUSTED_APP_CERTS"
+
+
+def _load_dotenv(chemin: Path) -> list[str]:
+    """Charge un `.env` **sans écraser** l'environnement réel.
+
+    Quinze lignes plutôt qu'une dépendance : `python-dotenv` ferait passer le
+    vérificateur de deux à trois paquets pour lire des `clé=valeur`
+    (ADR-0001, surface minimale).
+
+    L'environnement réel prime, comme le veut l'usage : un déploiement ou une
+    chaîne d'intégration doit pouvoir surcharger le fichier sans l'éditer.
+
+    **Seul le point d'entrée applicatif appelle ceci.** Une bibliothèque qui
+    lit un fichier ambiant devient impossible à tester et surprend son
+    intégrateur ; `GradingPolicy` et `DevService` ne connaissent que des
+    valeurs qu'on leur passe.
+    """
+    if not chemin.is_file():
+        return []
+    charges: list[str] = []
+    for ligne in chemin.read_text(encoding="utf-8").splitlines():
+        ligne = ligne.strip()
+        if not ligne or ligne.startswith("#") or "=" not in ligne:
+            continue
+        cle, _, valeur = ligne.partition("=")
+        cle = cle.strip()
+        valeur = valeur.strip().strip("\"'")
+        if cle and cle not in os.environ:
+            os.environ[cle] = valeur
+            charges.append(cle)
+    return charges
+
+
+def _policy_from_env() -> GradingPolicy:
+    """Politique de déploiement lue dans l'environnement.
+
+    `PROBATIVE_TRUSTED_APP_CERTS` porte les empreintes SHA-256 des
+    certificats de signature que **ce déploiement** reconnaît comme siens,
+    séparées par des virgules, dans la forme hexadécimale qu'affichent les
+    consoles :
+
+        PROBATIVE_TRUSTED_APP_CERTS="C9:35:3E:DA:…,AB:CD:…"
+
+    Cette valeur est **propre à chaque déploiement** : elle dépend du compte
+    Play Console qui publie l'application. Elle n'a donc rien à faire dans le
+    dépôt, et le défaut — aucune empreinte — laisse le comportement d'origine,
+    où un binaire non reconnu par le magasin tombe sur `unrecognized_app_grade`.
+
+    L'empreinte à fournir est celle du **certificat de déploiement**, que la
+    Play Console ne montre pas sur sa page mais livre dans l'archive de
+    « Télécharger des certificats ». Voir `docs/play-integrity-service-account.md`
+    §8.2 : les deux empreintes mises en évidence par la console ne conviennent
+    pas, et l'échec serait silencieux.
+    """
+    brut = os.environ.get(ENV_TRUSTED_CERTS, "").strip()
+    if not brut:
+        return GradingPolicy()
+    empreintes = tuple(
+        app_certificate_digest(morceau)
+        for morceau in brut.replace(";", ",").split(",")
+        if morceau.strip()
+    )
+    return GradingPolicy(trusted_app_certificates=empreintes)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Serveur de développement probative")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument(
+        "--env-file",
+        default=".env",
+        help="fichier de configuration ; l'environnement réel prime sur lui",
+    )
     args = parser.parse_args(argv)
 
-    server = make_server(DevService(), args.host, args.port)
+    charges = _load_dotenv(Path(args.env_file))
+    if charges:
+        print(f"{args.env_file} : {', '.join(charges)}")
+
+    try:
+        policy = _policy_from_env()
+    except ValueError as exc:
+        # Une empreinte mal formée doit arrêter le serveur, jamais le laisser
+        # démarrer avec une liste silencieusement incomplète : le symptôme
+        # serait un binaire légitime traité comme reconditionné.
+        raise SystemExit(f"{ENV_TRUSTED_CERTS} : {exc}") from exc
+
+    server = make_server(DevService(policy=policy), args.host, args.port)
     print(f"Serveur de développement : http://{args.host}:{server.server_address[1]}")
     print("ATTENTION : NullAttestationVerifier actif, aucune attestation réelle.")
+    if policy.trusted_app_certificates:
+        print(
+            f"{len(policy.trusted_app_certificates)} empreinte(s) de certificat "
+            f"déclarée(s) via {ENV_TRUSTED_CERTS}"
+        )
+    else:
+        print(
+            f"Aucune empreinte déclarée ({ENV_TRUSTED_CERTS} vide) : un binaire non "
+            "reconnu par le magasin sera noté sans distinction d'origine."
+        )
     server.serve_forever()
 
 
