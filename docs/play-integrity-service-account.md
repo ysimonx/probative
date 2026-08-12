@@ -404,23 +404,102 @@ Les trois portent le même sujet générique `CN=Android, O=Google Inc.` : c'est
 convention de Play App Signing, non le signe d'un certificat partagé entre
 applications. L'épinglage garde donc tout son pouvoir discriminant.
 
-**Deux méthodes fiables**, qui donnent la même valeur :
+### 8.2 bis Obtenir la valeur de `PROBATIVE_TRUSTED_APP_CERTS`
+
+De l'archive téléchargée jusqu'à la ligne du `.env`. Les sorties ci-dessous sont
+reproduites telles quelles, pas paraphrasées : leur forme exacte est justement ce
+sur quoi on se trompe.
+
+**1. Extraire l'empreinte.** Deux méthodes fiables, qui donnent la même valeur.
+
+Depuis l'archive de la Play Console (« Signature d'application » → *Télécharger des
+certificats*), prendre `deployment_cert.der` — **jamais** `hybrid_classical_cert` ni
+`hybrid_pqc_cert`, qui sont ceux que la page met en avant :
+
+```console
+$ openssl x509 -in deployment_cert.der -inform DER -noout -fingerprint -sha256
+sha256 Fingerprint=C9:35:3E:DA:…:A4
+```
+
+Ou depuis l'artefact réellement livré, qui ne ment jamais — c'est la méthode à
+préférer en cas de doute, puisqu'elle interroge le binaire installé plutôt que la
+console :
+
+```console
+$ adb pull $(adb shell pm path org.probative.demo | grep base.apk | sed 's/package://')
+$ apksigner verify --print-certs base.apk
+V2 Signer: certificate DN: C=US, O=Android, CN=Android Debug
+V2 Signer: certificate SHA-256 digest: c97c0f5895a6dcf6f91ed3d800e111ec64345ae381a598e82cf749c660c37662
+```
+
+Noter que les deux outils n'écrivent pas pareil : `openssl` majuscule et sépare par
+des deux-points, `apksigner` non. **Les deux formes conviennent** — la conversion
+normalise la casse et les séparateurs.
+
+**2. Retirer ce qui n'est pas l'empreinte.** Le préfixe `sha256 Fingerprint=`
+d'`openssl`, ou `V2 Signer: certificate SHA-256 digest:` d'`apksigner`, ne font pas
+partie de la valeur. Les laisser fait échouer le démarrage — proprement, mais il
+faut savoir pourquoi :
+
+```
+empreinte attendue en hexadécimal, telle que la Play Console l'affiche —
+reçu 'sha256 Fingerprint=C9:35:…'
+```
+
+**3. Écrire la valeur dans le `.env`, en hexadécimal.** C'est le point où l'on se
+trompe le plus, parce que le réflexe est de coller la forme que porte le jeton :
 
 ```bash
-# depuis l'archive de certificats de la Play Console
-openssl x509 -in deployment_cert.der -inform DER -noout -fingerprint -sha256
-
-# ou depuis l'artefact réellement livré, qui ne ment jamais
-adb pull $(adb shell pm path org.probative.demo | grep base.apk | sed 's/package://')
-apksigner verify --print-certs base.apk
+# .env — à la racine du dépôt
+PROBATIVE_TRUSTED_APP_CERTS=C9:35:3E:DA:…:A4
 ```
 
-Puis conversion vers la forme du jeton :
+**Ne pas convertir soi-même.** Le jeton Play Integrity rapporte l'empreinte en
+base64url sans bourrage, et c'est bien sous cette forme que `GradingPolicy` la
+détient — mais la conversion est faite **au chargement de l'environnement**, par
+`app_certificate_digest`. Coller la forme base64url dans le `.env` fait donc refuser
+le démarrage :
 
-```python
-from probative.grading import app_certificate_digest
-app_certificate_digest("C9:35:3E:DA:…")   # -> yTU-2irSW0V8yOgcrWGbGk1kukC4LYrK6uLfTNN60pQ
 ```
+PROBATIVE_TRUSTED_APP_CERTS : empreinte attendue en hexadécimal, telle que la
+Play Console l'affiche — reçu 'yTU-2irSW0V8yOgcrWGbGk1kukC4LYrK6uLfTNN60pQ'
+```
+
+Ce refus est délibéré. `app_certificate_digest` rejette tout ce qui n'est pas de
+l'hexadécimal de 32 octets, y compris une valeur *déjà convertie* : l'accepter
+rendrait la fonction idempotente en apparence et masquerait la confusion d'entrée,
+qui est précisément la classe d'erreur qu'on cherche à rendre impossible.
+
+**Plusieurs empreintes** se séparent par des virgules — le cas d'une rotation de clé
+de signature, où deux certificats coexistent le temps de la bascule :
+
+```bash
+PROBATIVE_TRUSTED_APP_CERTS=C9:35:3E:DA:…,93:CC:A8:D4:…
+```
+
+**4. Vérifier que la valeur a bien été prise.** Le serveur l'annonce au démarrage :
+
+```
+1 empreinte(s) de certificat déclarée(s) via PROBATIVE_TRUSTED_APP_CERTS
+```
+
+Et chaque verdict la porte, dans sa forme convertie — c'est le moyen sûr de
+confronter ce que le serveur détient à ce que le jeton rapporte, sans avoir à
+deviner laquelle des deux formes on regarde :
+
+```json
+"policy": ["trusted_app_certificates=('yTU-2irSW0V8yOgcrWGbGk1kukC4LYrK6uLfTNN60pQ',)"]
+```
+
+Cette traçabilité n'est pas décorative : un verdict calculé sous d'autres règles
+n'est pas comparable à un verdict calculé sous celles d'origine, et l'épinglage des
+certificats en fait partie.
+
+**Ce qui se passe si on ne renseigne rien.** Le comportement d'origine s'applique :
+aucune distinction d'origine, et un binaire non reconnu par le magasin tombe sur
+`unrecognized_app_grade`. Ce n'est pas une erreur de configuration — c'est le défaut
+pour un déploiement hors magasin, qui n'obtient de toute façon jamais
+`PLAY_RECOGNIZED`.
 
 ### 8.3 Le numéro de projet Cloud reste obligatoire
 

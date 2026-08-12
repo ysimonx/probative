@@ -370,7 +370,8 @@ def _policy_from_env() -> GradingPolicy:
     Play Console ne montre pas sur sa page mais livre dans l'archive de
     « Télécharger des certificats ». Voir `docs/play-integrity-service-account.md`
     §8.2 : les deux empreintes mises en évidence par la console ne conviennent
-    pas, et l'échec serait silencieux.
+    pas, et l'échec serait silencieux. La procédure complète, de l'archive à
+    cette variable, est en §8.2 bis.
     """
     brut = os.environ.get(ENV_TRUSTED_CERTS, "").strip()
     if not brut:
