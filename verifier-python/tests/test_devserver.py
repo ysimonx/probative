@@ -477,3 +477,76 @@ def test_empreinte_mal_formee_refusee(monkeypatch):
 
     with pytest.raises(ValueError, match="hexadécimal"):
         _policy_from_env()
+
+
+# --- Attestation réelle, ou substitut annoncé -----------------------------
+
+
+def test_sans_configuration_le_substitut_prend_le_relais(monkeypatch):
+    """Le repli est légitime — mais il doit être **dit**, jamais silencieux."""
+    from probative.devserver import (
+        ENV_ANDROID_PACKAGE,
+        ENV_SERVICE_ACCOUNT,
+        _attestation_from_env,
+    )
+
+    monkeypatch.delenv(ENV_ANDROID_PACKAGE, raising=False)
+    monkeypatch.delenv(ENV_SERVICE_ACCOUNT, raising=False)
+
+    verificateur, motif = _attestation_from_env()
+
+    assert verificateur is None
+    assert ENV_ANDROID_PACKAGE in motif and ENV_SERVICE_ACCOUNT in motif
+
+
+def test_configuration_partielle_ne_bascule_pas_a_moitie(monkeypatch):
+    """Un seul des deux réglages ne suffit pas, et le motif nomme le manquant."""
+    from probative.devserver import (
+        ENV_ANDROID_PACKAGE,
+        ENV_SERVICE_ACCOUNT,
+        _attestation_from_env,
+    )
+
+    monkeypatch.setenv(ENV_ANDROID_PACKAGE, "org.probative.demo")
+    monkeypatch.delenv(ENV_SERVICE_ACCOUNT, raising=False)
+
+    verificateur, motif = _attestation_from_env()
+
+    assert verificateur is None
+    assert ENV_SERVICE_ACCOUNT in motif
+    assert ENV_ANDROID_PACKAGE not in motif
+
+
+def test_chemin_de_cle_introuvable_arrete_le_serveur(monkeypatch, tmp_path):
+    """Une faute de configuration n'est pas une absence.
+
+    Retomber sur le substitut ici laisserait croire à une campagne qu'elle
+    valide une attestation réelle. Mieux vaut refuser de démarrer.
+    """
+    from probative.devserver import (
+        ENV_ANDROID_PACKAGE,
+        ENV_SERVICE_ACCOUNT,
+        _attestation_from_env,
+    )
+
+    monkeypatch.setenv(ENV_ANDROID_PACKAGE, "org.probative.demo")
+    monkeypatch.setenv(ENV_SERVICE_ACCOUNT, str(tmp_path / "absent.json"))
+
+    with pytest.raises(SystemExit, match="introuvable"):
+        _attestation_from_env()
+
+
+def test_cle_illisible_arrete_le_serveur(monkeypatch, tmp_path):
+    from probative.devserver import (
+        ENV_ANDROID_PACKAGE,
+        ENV_SERVICE_ACCOUNT,
+        _attestation_from_env,
+    )
+
+    faux = tmp_path / "service-account.json"
+    faux.write_text("{ pas du json de compte de service")
+    monkeypatch.setenv(ENV_ANDROID_PACKAGE, "org.probative.demo")
+    monkeypatch.setenv(ENV_SERVICE_ACCOUNT, str(faux))
+
+    with pytest.raises(SystemExit):
+        _attestation_from_env()

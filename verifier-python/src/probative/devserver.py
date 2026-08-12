@@ -37,8 +37,11 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from .attestation import (
     AttestationVerifier,
+    CredentialsError,
     DeviceIntegrity,
     NullAttestationVerifier,
+    PlayIntegrityVerifier,
+    ServiceAccountKeyProvider,
     verify_attestation,
     verify_key_attestation,
 )
@@ -313,6 +316,8 @@ def make_server(
 
 
 ENV_TRUSTED_CERTS = "PROBATIVE_TRUSTED_APP_CERTS"
+ENV_ANDROID_PACKAGE = "PROBATIVE_ANDROID_PACKAGE"
+ENV_SERVICE_ACCOUNT = "PROBATIVE_SERVICE_ACCOUNT"
 
 
 def _load_dotenv(chemin: Path) -> list[str]:
@@ -378,6 +383,48 @@ def _policy_from_env() -> GradingPolicy:
     return GradingPolicy(trusted_app_certificates=empreintes)
 
 
+def _attestation_from_env() -> tuple[AttestationVerifier | None, str]:
+    """Vérificateur d'attestation réel, si l'environnement le permet.
+
+    Rend `(None, motif)` quand la configuration est absente — le substitut
+    prend alors le relais, et le motif est affiché au démarrage. **Ne jamais
+    échouer silencieusement vers le substitut** : une campagne qui croit
+    valider une attestation réelle alors qu'elle n'en valide aucune est
+    exactement le no-op que ce dépôt traque.
+
+    Deux valeurs suffisent, toutes deux propres au déploiement :
+
+        PROBATIVE_ANDROID_PACKAGE=org.probative.demo
+        PROBATIVE_SERVICE_ACCOUNT=./service-account.json
+
+    Le chemin pointe vers la clé du compte de service, qui vit **hors du
+    dépôt** (voir `install.sh`). C'est le seul secret de la chaîne, et il
+    n'entre pas dans le `.env`, qui n'en contient aucun.
+    """
+    paquet = os.environ.get(ENV_ANDROID_PACKAGE, "").strip()
+    cle = os.environ.get(ENV_SERVICE_ACCOUNT, "").strip()
+    if not paquet or not cle:
+        manquantes = [
+            nom
+            for nom, valeur in ((ENV_ANDROID_PACKAGE, paquet), (ENV_SERVICE_ACCOUNT, cle))
+            if not valeur
+        ]
+        return None, f"{', '.join(manquantes)} absent(es)"
+
+    chemin = Path(cle).expanduser()
+    if not chemin.is_file():
+        # Un chemin fourni mais introuvable est une faute de configuration,
+        # pas une absence : on le dit, plutôt que de retomber sur le substitut.
+        raise SystemExit(f"{ENV_SERVICE_ACCOUNT} : fichier introuvable — {chemin}")
+
+    try:
+        identifiants = ServiceAccountKeyProvider(chemin)
+    except CredentialsError as exc:
+        raise SystemExit(f"{ENV_SERVICE_ACCOUNT} : {exc}") from exc
+
+    return PlayIntegrityVerifier(package_name=paquet, credentials=identifiants), ""
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Serveur de développement probative")
     parser.add_argument("--host", default="127.0.0.1")
@@ -401,9 +448,20 @@ def main(argv: list[str] | None = None) -> None:
         # serait un binaire légitime traité comme reconditionné.
         raise SystemExit(f"{ENV_TRUSTED_CERTS} : {exc}") from exc
 
-    server = make_server(DevService(policy=policy), args.host, args.port)
+    attestation, motif = _attestation_from_env()
+
+    server = make_server(
+        DevService(attestation=attestation, policy=policy), args.host, args.port
+    )
     print(f"Serveur de développement : http://{args.host}:{server.server_address[1]}")
-    print("ATTENTION : NullAttestationVerifier actif, aucune attestation réelle.")
+    if attestation is None:
+        print(f"ATTENTION : NullAttestationVerifier actif ({motif}).")
+        print("  Aucune attestation réelle n'est validée — voir .env.example.")
+    else:
+        print(
+            f"PlayIntegrityVerifier actif sur "
+            f"{os.environ[ENV_ANDROID_PACKAGE]} — attestation réelle."
+        )
     if policy.trusted_app_certificates:
         print(
             f"{len(policy.trusted_app_certificates)} empreinte(s) de certificat "

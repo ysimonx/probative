@@ -174,17 +174,60 @@ Voir phase B. Seule subsiste l'absence de StrongBox au banc.
 
 ### A4 — Capture et collecte
 
+**Coupée en deux le 2026-08-12.** La liste d'origine mêlait deux difficultés
+indépendantes : *assembler et signer une enveloppe*, que nul appareil n'a jamais
+fait, et *collecter des données de capteurs*. Les traiter ensemble ferait payer la
+première au prix des permissions et de l'appareil photo, alors qu'elle n'en a pas
+besoin — et repousserait d'autant le critère de sortie du spike.
+
+#### A4.1 — L'enveloppe, sans caméra
+
+Profil **`core`** (ADR-0005) : ni position, ni dimensions, ni réclamations.
+`media[2]` peut être l'empreinte de n'importe quels octets, le noyau n'affirmant
+rien du monde physique. **Aucune permission, aucun appareil photo.**
+
+Le cœur sait déjà tout faire : son encodeur CBOR et sa couche COSE reproduisent les
+vecteurs d'or **octet à octet** depuis A2. Ce qui manque est l'assemblage sur
+appareil.
+
+- [ ] **Câbler le vrai `PlayIntegrityVerifier` dans le serveur de dev.** Son
+      `main()` construit toujours le substitut ; il lui faut le nom de paquet et le
+      chemin du compte de service, deux valeurs de déploiement dont le `.env` est le
+      logement (voir `.env.example`). Sans ce câblage, l'étape ne peut pas viser
+      mieux que le substitut.
+- [ ] Séquence sur appareil : nonce depuis `/nonce` → charge utile CBOR →
+      R1 = `SHA-256(payload ‖ nonce)` → jeton Play Integrity sur ce R1 →
+      `COSE_Sign1` signé par la clé Keystore enrôlée → `POST /verify`.
+- [ ] Charge utile identique champ à champ à `factory.make_payload(profile="core")`
+      — c'est l'oracle d'acceptation, et si le natif produit autre chose, c'est le
+      natif qui s'écarte.
+
+**Critère de sortie d'A4.1, et il dépasse ce que la phase A demandait.** Le plan
+prévoyait une enveloppe acceptée « avec substitut d'attestation ». La phase B étant
+close, on peut l'obtenir **sans substitut** — donc atteindre le critère de sortie du
+spike, jamais atteint sur aucune plateforme à ce jour.
+
+#### A4.2 — La collecte
+
 - [ ] CameraX `ImageCapture` : octets JPEG bruts du capteur, SHA-256, type MIME,
       taille, dimensions — l'empreinte est calculée sur les octets qui partiront au
-      serveur, sans ré-encodage intermédiaire.
+      serveur, sans ré-encodage intermédiaire. **Piège :** décoder en `Bitmap` puis
+      ré-encoder change les octets ; le serveur rejetterait en
+      `MEDIA_DIGEST_MISMATCH` sans que la cause soit lisible. On hache le tampon tel
+      quel, et on envoie ce même tampon.
 - [ ] `timing` : horloge murale, `elapsedRealtime`, décalage UTC, synchronisation
       automatique de l'heure.
-- [ ] `position` : fused provider, précision, ancienneté du point au déclenchement
-      (`position.7`), nombre de satellites si disponible.
+- [ ] `position` : fused provider, précision, ancienneté du point **au
+      déclenchement** (`position.7`), nombre de satellites si disponible. C'est un
+      âge, pas un horodatage : il faut donc garder l'instant du point *et* celui de
+      l'obturateur.
 - [ ] `posture` : débogueur, émulateur suspecté, mode développeur, indicateur de
-      position simulée, paquets suspects.
-- [ ] Assemblage de la charge utile complète, identique champ à champ à ce que
-      `factory.make_payload` sait produire.
+      position simulée, paquets suspects. **Déclaratif, donc faible** — le client
+      collecte, le serveur juge (invariant 1) : aucune de ces valeurs ne conditionne
+      quoi que ce soit sur l'appareil.
+- [ ] Permissions d'exécution caméra et position, que `:demo` n'a pas aujourd'hui.
+- [ ] Capteur absent → réclamation **omise, jamais simulée** (règle d'A6, facile à
+      trahir avec une valeur par défaut).
 
 ### A5 — Fraîcheur Play Integrity (règle R1)
 
@@ -210,8 +253,11 @@ Voir phase B. Seule subsiste l'absence de StrongBox au banc.
       l'appareil. L'encodage ne diverge pas entre client et serveur : R1 ne casse pas
       en silence, ce qui était le pire mode de défaillance envisagé.
 - [ ] Rendre l'encodage normatif dans ADR-0002 — plus rien ne le bloque.
-- [ ] Jeton opaque dans `freshness[2]`, enveloppe complète signée, acceptée par le
-      serveur de dev avec substitut d'attestation.
+- [ ] ~~Jeton opaque dans `freshness[2]`, enveloppe complète signée, acceptée par le
+      serveur de dev avec substitut d'attestation.~~ **Déplacée en A4.1** le
+      2026-08-12 : c'est le même travail, et le regrouper là évite de le croire fait
+      parce qu'A5 est par ailleurs close. Visée revue à la hausse au passage — sans
+      substitut, la phase B le permet désormais.
 
 ### A6 — Chaînage et corroboration
 
@@ -226,6 +272,14 @@ Voir phase B. Seule subsiste l'absence de StrongBox au banc.
       conservée (médiane, p95), pas seulement une moyenne.
 - [ ] Mesure sur un appareil d'entrée de gamme et un milieu de gamme.
 - [ ] Reporter les distributions ici et calibrer les constantes de `grading.py`.
+
+**A7 fait plus que calibrer : elle tranche une décision de format.** La spec §9
+laisse ouverte la question d'une attestation de clé **par capture**, qui rendrait
+`RootOfTrust` vivant et donnerait à Android la vérification hors ligne qu'iOS a
+déjà. Deux coûts s'y opposent — 3 413 octets de chaîne contre 629 pour une
+enveloppe, et 38 ms de génération de clé à chaud. Si la latence de capture écrase
+ces 38 ms, l'argument de coût s'affaiblit ; sinon il tient. **Aucun raisonnement ne
+remplacera ce chiffre**, et c'est A7 qui le produit.
 
 **Sortie de phase A :** le `:demo` produit sur appareil réel une enveloppe acceptée
 par le serveur de dev (substitut d'attestation) ; AAR autonome ; latences mesurées.
