@@ -222,8 +222,15 @@ par le serveur de dev (substitut d'attestation) ; AAR autonome ; latences mesur�
 
 ## Phase B — `PlayIntegrityVerifier` serveur
 
-- [ ] Trancher le mode de déchiffrement du jeton : API Play Developer (Google
-      déchiffre) ou clés locales — noter la décision et sa justification ici.
+- [x] Trancher le mode de déchiffrement du jeton : ~~API Play Developer (Google
+      déchiffre) ou clés locales~~ — **tranché par contrainte le 2026-08-12, ce
+      n'était pas un choix.** Le déchiffrement local exige que l'application soit
+      disponible sur Google Play ; la nôtre ne l'est pas, et c'est précisément ce
+      qu'A5 a établi comme chemin pris en charge. Donc : **appel à Google par
+      enveloppe**, avec quatre conséquences à assumer (latence dans le chemin de
+      vérification, dépendance de disponibilité, plafond de 10 000 requêtes/jour
+      non négociable hors Play Store, argument d'auto-hébergement entamé côté
+      Android). Procédure et sources : `play-integrity-service-account.md`.
 - [ ] Implémenter `attestation/play_integrity.py` : déchiffrement, verdicts appareil
       et application, comparaison du `requestHash` au défi R1 recalculé (même
       encodage qu'en A5), mapping vers `AttestationOutcome`.
@@ -347,8 +354,20 @@ spike : il y faut une itération de C3, ou C4.
 
 ## Prérequis logistiques — à fournir, hors code
 
-- [ ] Application déclarée dans la Play Console (piste interne suffisante) et
-      projet Google Cloud lié pour l'API standard Play Integrity.
+- [ ] Application déclarée dans la Play Console (piste interne suffisante).
+      **Requise pour le déchiffrement, pas pour la délivrance** — distinction établie
+      par l'exécution du 2026-08-12 : `decodeIntegrityToken` répond
+      « App is not found » sur `org.probative.demo`, exactement comme sur un paquet
+      inexistant, là où un paquet publié répond `PERMISSION_DENIED`. A5 avait montré
+      que Google *délivre* un jeton sans Play Console ; il n'accepte pas de le
+      *déchiffrer* dans les mêmes conditions. Voir `play-integrity-service-account.md`
+      §7.
+- [x] Projet Google Cloud lié pour l'API standard Play Integrity. *(Projet
+      `probative`, 487335590129 ; API activée, confirmé par appel réel.)*
+- [x] **Compte de service** dans ce même projet Cloud, pour déchiffrer les jetons —
+      `probative-verifier@probative.iam.gserviceaccount.com`, créé et **exercé contre
+      l'API réelle le 2026-08-12** : jeton d'accès obtenu, aucun rôle IAM nécessaire.
+      Procédure dans `play-integrity-service-account.md`.
 - [ ] Appareil Android réel d'entrée de gamme + un milieu de gamme (émulateur non
       représentatif pour Play Integrity et StrongBox).
 - [x] Compte développeur Apple payant. *(équipe `9SGKL7VUD3` ; le profil joker
