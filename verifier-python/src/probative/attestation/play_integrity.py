@@ -38,6 +38,16 @@ ENDPOINT = "https://playintegrity.googleapis.com/v1/{package}:decodeIntegrityTok
 _VERDICT_STRONG = "MEETS_STRONG_INTEGRITY"
 _VERDICT_DEVICE = "MEETS_DEVICE_INTEGRITY"
 
+# Émulateur pourvu des services Google Play. Ce n'est pas un degré de
+# l'échelle ci-dessus mais une **nature d'environnement** : Google l'émet à
+# la place du verdict d'appareil physique, jamais en plus. Le verdict ne
+# change donc pas — un émulateur n'a ni objectif ni capteur, il échoue de
+# toute façon. Seul le motif change, et l'écart n'est pas cosmétique :
+# « appareil compromis » et « environnement virtuel » envoient le support
+# sur deux pistes opposées, et c'est une intégration en CI qui paie la
+# confusion.
+_VERDICT_VIRTUAL = "MEETS_VIRTUAL_INTEGRITY"
+
 
 class PlayIntegrityVerifier(AttestationVerifier):
     """Valide le jeton accompagnant chaque enveloppe Android.
@@ -203,16 +213,49 @@ def _device_integrity(device: Mapping[str, Any]) -> tuple[DeviceIntegrity, str]:
     conservateur assumé : ce verdict n'atteste pas un système non modifié,
     seulement un appareil plausible. Le retenir comme signal d'intégrité
     contredirait ce que le modèle de menace cherche à établir.
+
+    `MEETS_VIRTUAL_INTEGRITY` est examiné **avant** les verdicts physiques.
+    Google ne les mêle pas aujourd'hui, mais l'ordre inverse ferait dépendre
+    la lecture d'une exclusivité qu'aucun contrat n'écrit : une réponse
+    portant les deux serait notée sur le verdict physique, donc au bénéfice
+    de l'émulateur. Resserrer sur une hypothèse qui pourrait tomber coûte
+    ici un test ; desserrer coûterait une capture acceptée sans capteur.
+
+    **Réserve, mesurée le 2026-08-12 :** aucun jeton réel n'a jamais porté
+    `MEETS_VIRTUAL_INTEGRITY`. Un émulateur Play Store (API 33) délivre bien
+    un jeton, mais sa réponse ne contient **aucun** verdict d'appareil — voir
+    ci-dessous. Cette branche reste donc écrite d'après la documentation, et
+    testée seulement contre une réponse synthétique.
     """
     verdicts = device.get("deviceRecognitionVerdict")
     if verdicts is None:
-        # Champ absent : Google n'a pas évalué. Ce n'est pas un échec de
-        # l'appareil, et le confondre serait aussi faux que l'inverse.
-        return DeviceIntegrity.UNAVAILABLE, "verdict d'appareil absent de la réponse"
+        # Champ absent d'une réponse **déjà déchiffrée** : Google a parlé, et
+        # n'a rien attesté. Ce n'est pas une indisponibilité — celle-là est
+        # traitée en amont, quand l'appel lui-même échoue.
+        #
+        # La distinction n'est pas byzantine : rendre UNAVAILABLE ici lèverait
+        # le drapeau ATTESTATION_UNAVAILABLE et enverrait le support chercher
+        # une panne Google inexistante, quand la cause est l'appareil.
+        #
+        # Cas observé le 2026-08-12 sur émulateur Play Store : la réponse
+        # porte `"deviceIntegrity": {}` et `appRecognitionVerdict:
+        # UNEVALUATED`. Google délivre le jeton et refuse de se porter garant.
+        return (
+            DeviceIntegrity.FAILED,
+            "réponse sans verdict d'appareil : Google n'atteste pas cet appareil",
+        )
     if not isinstance(verdicts, Sequence) or isinstance(verdicts, str | bytes):
         raise AttestationRejected("deviceRecognitionVerdict : tableau attendu")
 
     valeurs = {v for v in verdicts if isinstance(v, str)}
+    if _VERDICT_VIRTUAL in valeurs:
+        return (
+            DeviceIntegrity.FAILED,
+            (
+                "environnement virtuel : émulateur pourvu des services Google "
+                "Play, sans capteur physique"
+            ),
+        )
     if _VERDICT_STRONG in valeurs:
         return DeviceIntegrity.STRONG, ""
     if _VERDICT_DEVICE in valeurs:

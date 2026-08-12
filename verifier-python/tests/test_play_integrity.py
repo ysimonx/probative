@@ -222,6 +222,45 @@ def test_s4_jeton_non_ascii_leve(repond) -> None:
         )
 
 
+# --- Surface S4 : client — l'émulateur ----------------------------------
+
+
+def test_s4_emulateur_avec_services_play_est_refuse(repond) -> None:
+    """Critère §9 du modèle de menace : « capture sur émulateur rejetée ».
+
+    L'émulateur pourvu des services Play passe les contrôles d'intégrité
+    système de Google et obtient donc un jeton **parfaitement valide** :
+    R1 tient, le paquet est le bon, rien ne cloche structurellement. Seul
+    `MEETS_VIRTUAL_INTEGRITY` le nomme, et c'est le seul signal de source
+    serveur à le faire — `posture.5` (spec §2.3) est déclaré par le client,
+    donc falsifiable par qui a intérêt à le falsifier.
+    """
+    out = _verdict(_reponse(device_verdicts=["MEETS_VIRTUAL_INTEGRITY"]), repond)
+
+    assert out.integrity is DeviceIntegrity.FAILED
+    assert any("virtuel" in n for n in out.notes)
+    assert not any("compromis" in n for n in out.notes), (
+        "un émulateur n'est pas un appareil rooté ; confondre les deux motifs "
+        "envoie le support chercher un rootage inexistant"
+    )
+
+
+@pytest.mark.parametrize("physique", ["MEETS_DEVICE_INTEGRITY", "MEETS_STRONG_INTEGRITY"])
+def test_s4_emulateur_prime_sur_un_verdict_physique(repond, physique: str) -> None:
+    """Les deux étiquettes ensemble : la virtuelle doit l'emporter.
+
+    Google ne les mêle pas aujourd'hui, et rien ne l'y engage par écrit. Ce
+    test fige le fait qu'on ne s'appuie pas sur cette exclusivité : sans
+    lui, une évolution de l'API ferait juger un émulateur sur son verdict
+    d'appareil — un desserrement silencieux, le mode de défaillance que ce
+    dépôt refuse partout ailleurs.
+    """
+    out = _verdict(_reponse(device_verdicts=[physique, "MEETS_VIRTUAL_INTEGRITY"]), repond)
+
+    assert out.integrity is DeviceIntegrity.FAILED
+    assert any("virtuel" in n for n in out.notes)
+
+
 # --- Verdicts d'appareil : le piège du tableau vide ---------------------
 
 
@@ -245,11 +284,72 @@ def test_meets_basic_integrity_seul_est_un_echec(repond) -> None:
     assert any("MEETS_BASIC_INTEGRITY" in n for n in out.notes)
 
 
-def test_verdict_d_appareil_absent_est_indisponible_pas_echec(repond) -> None:
-    """Champ absent : Google n'a pas évalué. Ce n'est pas un appareil fautif."""
+def test_verdict_d_appareil_absent_est_un_echec_pas_une_indisponibilite(repond) -> None:
+    """Google a répondu, et n'a rien attesté : c'est l'appareil qui est en cause.
+
+    Rendre `UNAVAILABLE` ici lèverait `ATTESTATION_UNAVAILABLE` et enverrait
+    le support chercher une panne Google inexistante. L'indisponibilité
+    réelle est traitée en amont, quand l'appel lui-même échoue.
+    """
     out = _verdict(_reponse(device_verdicts=None), repond)
 
-    assert out.integrity is DeviceIntegrity.UNAVAILABLE
+    assert out.integrity is DeviceIntegrity.FAILED
+    assert any("n'atteste pas cet appareil" in n for n in out.notes)
+
+
+# --- Émulateur réel — capture du 2026-08-12 -----------------------------
+
+
+def _reponse_emulateur() -> dict[str, Any]:
+    """Réponse **réellement obtenue** d'un émulateur Play Store, API 33.
+
+    Recopiée telle quelle, y compris ses absences, qui sont l'essentiel :
+    `deviceIntegrity` est un objet **vide**, et `appIntegrity` ne porte que
+    son verdict — ni `packageName`, ni `certificateSha256Digest`, ni
+    `versionCode`, ce que la documentation annonce pour `UNEVALUATED`.
+    """
+    return {
+        "tokenPayloadExternal": {
+            "requestDetails": {
+                "requestPackageName": PACKAGE,
+                "timestampMillis": "1786539622929",
+                "requestHash": _request_hash(),
+            },
+            "appIntegrity": {"appRecognitionVerdict": "UNEVALUATED"},
+            "deviceIntegrity": {},
+            "accountDetails": {"appLicensingVerdict": "UNEVALUATED"},
+        }
+    }
+
+
+def test_s4_emulateur_reel_est_en_echec(repond) -> None:
+    """Un émulateur obtient un jeton — mais Google ne se porte pas garant.
+
+    C'est le contre-exemple qui compte : le jeton existe, R1 est vérifiée,
+    et pourtant rien n'est attesté. Sans ce test, la branche « champ absent »
+    n'aurait jamais été exercée contre autre chose qu'une fixture inventée.
+    """
+    out = _verdict(_reponse_emulateur(), repond)
+
+    assert out.integrity is DeviceIntegrity.FAILED
+    assert out.app_recognized is False
+    assert out.app_certificate_digest is None, (
+        "appIntegrity n'est pas peuplé quand le verdict vaut UNEVALUATED"
+    )
+    # R1 tient malgré tout : la liaison au contenu ne dépend pas du verdict.
+    assert "play-integrity:r1-bound" in out.evidence
+
+
+def test_s4_emulateur_ne_porte_pas_le_verdict_virtuel(repond) -> None:
+    """Réserve inscrite dans le code : `MEETS_VIRTUAL_INTEGRITY` jamais observé.
+
+    Ce test échouera le jour où Google se mettra à l'émettre sur ce chemin —
+    et c'est voulu : il faudra alors relire la branche correspondante, qui
+    n'est aujourd'hui écrite que d'après la documentation.
+    """
+    device = _reponse_emulateur()["tokenPayloadExternal"]["deviceIntegrity"]
+
+    assert "deviceRecognitionVerdict" not in device
 
 
 # --- Disponibilité : une panne Google n'est pas un appareil compromis ----
