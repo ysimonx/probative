@@ -244,9 +244,18 @@ par le serveur de dev (substitut d'attestation) ; AAR autonome ; latences mesur�
       Google Cloud injecte `google-auth` et sa fédération d'identité. Éprouvé contre
       l'API réelle le 2026-08-12 dans le venv du projet : jeton réel déchiffré en
       HTTP 200, R1 confronté par recalcul.
-- [ ] Implémenter `attestation/play_integrity.py` : déchiffrement, verdicts appareil
-      et application, comparaison du `requestHash` au défi R1 recalculé (même
-      encodage qu'en A5), mapping vers `AttestationOutcome`.
+- [x] Implémenter `attestation/play_integrity.py` : déchiffrement par
+      `decodeIntegrityToken`, `requestHash` **recalculé** côté serveur et confronté au
+      jeton, contrôle du nom de paquet, traduction des verdicts vers
+      `AttestationOutcome`. 21 tests hors ligne, sur des réponses calquées sur la
+      réponse réelle du 2026-08-12.
+
+      Trois décisions inscrites dans le code plutôt que dans un commentaire de
+      passage : un `deviceRecognitionVerdict` **vide** est un échec explicite et non
+      un inconnu ; `MEETS_BASIC_INTEGRITY` seul est traité comme un échec, car il
+      n'atteste pas un système non modifié ; et **Google injoignable rend
+      `UNAVAILABLE`, jamais `FAILED`** — confondre panne et compromission
+      déclarerait tout un parc fautif le jour d'une panne Google.
 - [ ] Tests avec jetons réels capturés en phase A — **jamais versionnés**
       (`.gitignore`), chargés depuis un chemin local.
 - [ ] Tests d'attaque référencés au modèle de menace (`test_s*_`) : jeton rejoué,

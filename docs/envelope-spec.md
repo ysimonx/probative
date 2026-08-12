@@ -353,6 +353,8 @@ il signifie que le contrôle n'a pas pu être fait.
 | `envelope-chain-verified` | `time` | chaînage cohérent avec l'enveloppe précédente |
 | `app-attest:assertion-valid` | toutes | assertion App Attest vérifiée sous la clé d'attestation |
 | `app-attest:r1-bound` | toutes | `clientDataHash` recalculé et confirmé par la signature |
+| `play-integrity:token-valid` | toutes | jeton déchiffré par Google, émis pour l'application attendue |
+| `play-integrity:r1-bound` | toutes | `requestHash` recalculé côté serveur et identique à celui du jeton |
 
 Deux familles sont **dynamiques** et ne figurent donc pas dans ce tableau :
 
