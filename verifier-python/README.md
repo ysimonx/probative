@@ -23,12 +23,21 @@ Boucle complète avec `curl` (les octets binaires transitent en base64) :
 
 ```bash
 # 1. Enrôler une clé publique P-256 (X9.62 non compressée, 65 octets)
-#    iOS : joindre attestation_b64, challenge_b64 et key_id_b64 pour que la
-#    chaîne App Attest soit réellement validée jusqu'à la racine Apple.
+#    Sans attestation, la clé est acceptée SUR PAROLE : c'est le mode
+#    dégradé, et la réponse le dit (attested: false).
+#
+#    iOS      : joindre attestation_b64, challenge_b64 et key_id_b64 — la
+#               chaîne App Attest est validée jusqu'à la racine Apple.
+#    Android  : joindre attestation_chain_b64 (liste, feuille en tête) et
+#               challenge_b64 — la chaîne est validée jusqu'aux racines
+#               publiées par Google, et le niveau de sécurité en est tiré.
+#               Le drapeau hardware_backed du corps est alors ignoré.
 curl -s http://127.0.0.1:8765/enroll -d '{
-  "public_key_x962_b64": "'$PUBKEY_B64'", "platform": "android"
+  "public_key_x962_b64": "'$PUBKEY_B64'", "platform": "android",
+  "attestation_chain_b64": ["'$FEUILLE_B64'", "'$RACINE_B64'"],
+  "challenge_b64": "'$DEFI_B64'"
 }'
-# → {"kid_b64": "...", "kid_hex": "...", "attested": false}
+# → {"kid_b64": "...", "kid_hex": "...", "attested": true}
 
 # 2. Obtenir un nonce — émis POUR cet appareil, et inutilisable par un autre
 #    (règle R3). Un kid non enrôlé est refusé.

@@ -279,9 +279,17 @@ par le serveur de dev (substitut d'attestation) ; AAR autonome ; latences mesur�
       Les **deux** racines publiées sont versionnées, dont la EC P-384 « Key
       Attestation CA1 » effective depuis février 2026 : un appareil récent y
       chaînera.
-- [ ] Câbler cette validation sur la route d'enrôlement et retenir le niveau de
-      sécurité dans `DeviceRecord.hardware_backed`. Le module est prêt, la route
-      accepte encore la chaîne sans la valider.
+- [x] **Câblée sur la route d'enrôlement** (`attestation_chain_b64`), et
+      `DeviceRecord.hardware_backed` renseigné depuis l'attestation. Deux points
+      qui ne vont pas de soi :
+
+      - **La chaîne doit porter sur la clé qu'on enrôle.** Une attestation valide
+        ne prouve rien tant que ce lien n'est pas établi : sans lui, une chaîne
+        authentique obtenue pour une autre clé ferait enrôler n'importe laquelle.
+      - **L'attestation prime sur le drapeau déclaré par le client.** Le
+        `hardware_backed` du corps ne subsiste que pour le mode dégradé, celui où
+        aucune chaîne n'accompagne l'enrôlement. Un client qui ment sur son
+        matériel n'est pas cru dès lors qu'une chaîne est fournie.
 - [ ] Réviser ADR-0002 : encodage normatif du `requestHash` (inconnue n° 1).
 
 **Sortie de phase B :** boucle Android complète au vert **sans** substitut.

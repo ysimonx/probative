@@ -39,6 +39,7 @@ from .attestation import (
     DeviceIntegrity,
     NullAttestationVerifier,
     verify_attestation,
+    verify_key_attestation,
 )
 from .errors import AttestationRejected, UnknownKey
 from .model import Profile
@@ -71,6 +72,22 @@ def _b64_field(body: Mapping[str, Any], field: str) -> bytes:
         return base64.b64decode(v, validate=True)
     except binascii.Error as exc:
         raise BadRequest(f"champ {field} : base64 invalide") from exc
+
+
+def _b64_list_field(body: Mapping[str, Any], field: str) -> list[bytes]:
+    """Liste de chaînes base64 — la chaîne de certificats, feuille en tête."""
+    v = body.get(field)
+    if not isinstance(v, list) or not v:
+        raise BadRequest(f"champ {field} : liste base64 non vide attendue")
+    sortie: list[bytes] = []
+    for i, element in enumerate(v):
+        if not isinstance(element, str):
+            raise BadRequest(f"champ {field}[{i}] : chaîne base64 attendue")
+        try:
+            sortie.append(base64.b64decode(element, validate=True))
+        except binascii.Error as exc:
+            raise BadRequest(f"champ {field}[{i}] : base64 invalide") from exc
+    return sortie
 
 
 def _flag_field(body: Mapping[str, Any], field: str, default: bool) -> bool:
@@ -139,6 +156,42 @@ class DevService:
         # serveur ne fera jamais, et que la réponse signale.
         attestation_key: bytes | None = None
         attested = False
+        hardware_backed: bool | None = None
+
+        # Android : la chaîne d'attestation de clé est validée **jusqu'à la
+        # racine publiée par Google**. Une chaîne cohérente se fabrique de
+        # toutes pièces ; seule la confrontation à l'ancre prouve quelque
+        # chose. Contrairement à App Attest, aucun appel réseau n'est
+        # nécessaire : la puce a tout produit hors ligne.
+        if "attestation_chain_b64" in body:
+            if platform != "android":
+                raise BadRequest(
+                    "attestation_chain_b64 ne s'applique qu'à la plateforme android"
+                )
+            try:
+                attestation = verify_key_attestation(
+                    _b64_list_field(body, "attestation_chain_b64"),
+                    challenge=_b64_field(body, "challenge_b64"),
+                    now=self._now(),
+                )
+            except AttestationRejected as exc:
+                raise BadRequest(f"attestation de clé refusée : {exc.detail}") from exc
+
+            # Liaison décisive, et facile à omettre : une attestation valide
+            # ne dit rien tant qu'on n'a pas établi qu'elle porte sur **la
+            # clé qu'on enrôle**. Sans ce contrôle, une chaîne authentique
+            # obtenue pour une autre clé ferait enrôler n'importe laquelle.
+            if attestation.public_key_x962 != raw:
+                raise BadRequest(
+                    "la chaîne atteste une autre clé que celle présentée à l'enrôlement"
+                )
+
+            # Le niveau de sécurité vient de l'attestation, jamais d'un
+            # drapeau déclaré par le client : c'est tout l'objet de la
+            # manœuvre.
+            hardware_backed = attestation.hardware_backed
+            attested = True
+
         if "attestation_b64" in body:
             if self.app_attest is None:
                 raise BadRequest("aucune application App Attest configurée sur ce serveur")
@@ -164,7 +217,14 @@ class DevService:
                 kid=kid,
                 public_key=public_key,
                 platform=platform,
-                hardware_backed=attested or _flag_field(body, "hardware_backed", True),
+                # Ordre délibéré : ce qu'une attestation établit prime sur ce
+                # que le client déclare. Le drapeau ne sert qu'au mode dégradé,
+                # celui où aucune attestation n'accompagne l'enrôlement.
+                hardware_backed=(
+                    hardware_backed
+                    if hardware_backed is not None
+                    else attested or _flag_field(body, "hardware_backed", True)
+                ),
                 attestation_key=attestation_key,
             )
         )

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 from factory import make_payload, new_key, sign_envelope
 
 from probative.devserver import BadRequest, DevService, make_server
@@ -287,3 +288,121 @@ def test_enveloppe_charabia_rejetee_proprement(server_url):
     assert status == 200
     assert result["level"] == "REJECTED"
     assert "MALFORMED_ENVELOPE" in result["flags"]
+
+
+# --- Enrôlement attesté Android — phase B ---------------------------------
+
+
+def _keystore_vector() -> dict:
+    path = Path(__file__).parent / "device-vectors" / "keystore-a3-sm-x200.json"
+    return json.loads(path.read_text())
+
+
+def _android_enroll_body(vector: dict) -> dict:
+    return {
+        "public_key_x962_b64": vector["key"]["publicKeyX962"],
+        "platform": "android",
+        "attestation_chain_b64": vector["attestation"]["chain"],
+        "challenge_b64": vector["attestation"]["challenge"],
+    }
+
+
+def _android_service() -> DevService:
+    # Les certificats de la chaîne courent jusqu'en 2031. On fige l'horloge
+    # au jour de la capture : sans cela, ces tests deviendraient une bombe à
+    # retardement, exactement comme leur pendant App Attest.
+    fige = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
+    return DevService(now=lambda: fige)
+
+
+def test_enrolement_android_atteste_jusqu_a_la_racine_google():
+    """La chaîne du vecteur SM-X200 est ancrée, et la clé est bien la sienne."""
+    vector = _keystore_vector()
+    reponse = _android_service().enroll(_android_enroll_body(vector))
+
+    assert reponse["attested"] is True
+    assert reponse["kid_b64"] == vector["key"]["kid"]
+
+
+def test_enrolement_android_retient_le_niveau_de_securite_reel():
+    """`hardware_backed` vient de l'attestation, jamais du client."""
+    vector = _keystore_vector()
+    service = _android_service()
+    service.enroll(_android_enroll_body(vector))
+
+    kid = base64.b64decode(vector["key"]["kid"])
+    assert service.devices.get(kid).hardware_backed is True
+
+
+def test_enrolement_android_ignore_le_drapeau_declare():
+    """Un client qui ment sur son matériel ne doit pas être cru.
+
+    Le drapeau `hardware_backed` du corps est un mode dégradé, réservé au
+    cas où aucune attestation n'accompagne l'enrôlement. Dès qu'une chaîne
+    est fournie et validée, c'est elle qui fait foi.
+    """
+    vector = _keystore_vector()
+    body = _android_enroll_body(vector) | {"hardware_backed": False}
+    service = _android_service()
+    service.enroll(body)
+
+    kid = base64.b64decode(vector["key"]["kid"])
+    assert service.devices.get(kid).hardware_backed is True, (
+        "l'attestation doit primer sur la déclaration du client"
+    )
+
+
+def test_s4_chaine_attestant_une_autre_cle_refusee():
+    """Liaison décisive : la chaîne doit porter sur la clé qu'on enrôle.
+
+    Sans ce contrôle, une chaîne authentique obtenue pour une autre clé
+    ferait enrôler n'importe laquelle — y compris celle d'un attaquant.
+    """
+    vector = _keystore_vector()
+    autre = ec.generate_private_key(ec.SECP256R1())
+    body = _android_enroll_body(vector) | {
+        "public_key_x962_b64": _b64(_public_x962(autre))
+    }
+
+    with pytest.raises(BadRequest, match="atteste une autre clé"):
+        _android_service().enroll(body)
+
+
+def test_s4_chaine_avec_un_defi_etranger_refusee():
+    vector = _keystore_vector()
+    body = _android_enroll_body(vector) | {"challenge_b64": _b64(b"x" * 32)}
+
+    with pytest.raises(BadRequest, match="attestation de clé refusée"):
+        _android_service().enroll(body)
+
+
+def test_chaine_android_refusee_sur_plateforme_ios():
+    """Câblage erroné : refuser plutôt que de valider une chaîne hors sujet."""
+    vector = _keystore_vector()
+    body = _android_enroll_body(vector) | {"platform": "ios"}
+
+    with pytest.raises(BadRequest, match="ne s'applique qu'à la plateforme android"):
+        _android_service().enroll(body)
+
+
+@pytest.mark.parametrize(
+    "chaine", [[], "pas une liste", [123], ["%%%"]], ids=["vide", "chaine", "entier", "b64"]
+)
+def test_chaine_mal_formee_refusee(chaine):
+    vector = _keystore_vector()
+    body = _android_enroll_body(vector) | {"attestation_chain_b64": chaine}
+
+    with pytest.raises(BadRequest):
+        _android_service().enroll(body)
+
+
+def test_enrolement_android_sans_chaine_reste_degrade():
+    """Le mode dégradé subsiste : la clé est acceptée sur parole, et ça se voit."""
+    vector = _keystore_vector()
+    body = {
+        "public_key_x962_b64": vector["key"]["publicKeyX962"],
+        "platform": "android",
+    }
+    reponse = _android_service().enroll(body)
+
+    assert reponse["attested"] is False
