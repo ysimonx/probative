@@ -65,6 +65,33 @@ class GradingPolicy:
     # le canal de distribution. Voir modèle de menace §7, limite 7.
     unrecognized_app_grade: Grade = Grade.F
 
+    # Empreintes SHA-256, telles que le fournisseur les rend, des certificats
+    # de signature que ce déploiement reconnaît comme siens.
+    #
+    # Sans elles, « non reconnu par le magasin » recouvre deux situations que
+    # rien ne distingue : un binaire reconditionné, et notre propre build
+    # diffusée hors magasin. Le discriminant est solide — reconditionner
+    # oblige à resigner, donc change l'empreinte, et le client ne calcule pas
+    # cette empreinte lui-même.
+    #
+    # Un tuple et non un ensemble : l'ordre d'un frozenset varie d'une
+    # exécution à l'autre, ce qui rendrait `deviations()` instable et deux
+    # verdicts identiques incomparables.
+    trusted_app_certificates: tuple[str, ...] = ()
+
+    # Note d'un binaire que le magasin ne reconnaît pas mais dont l'empreinte
+    # de certificat figure ci-dessus. Inerte tant que la liste est vide : un
+    # déploiement qui ne configure rien retrouve exactement le comportement
+    # d'avant.
+    #
+    # C et non B, et le motif n'est pas cosmétique : dans le profil `capture`,
+    # `origin` est déjà plafonné à B par RECAPTURE_CAP. Une dégradation à B y
+    # serait donc *invisible au niveau* — le mécanisme n'aurait dégradé que
+    # sur le papier. C fait sortir le verdict en DEGRADED dans les deux
+    # profils, ce qui est précisément ce qu'on attend d'un binaire dont le
+    # magasin ne garantit pas les octets.
+    deployment_signed_app_grade: Grade = Grade.C
+
     def deviations(self) -> list[str]:
         """Réglages qui s'écartent du défaut, pour le résultat de vérification.
 
@@ -122,6 +149,19 @@ def grade_origin(
 
     if att.app_recognized:
         r.evidence.append("app-recognized")
+    elif (
+        att.app_certificate_digest is not None
+        and att.app_certificate_digest in policy.trusted_app_certificates
+    ):
+        # Le magasin ne se porte pas garant, mais la signature oui : ce binaire
+        # est bien celui que ce déploiement a produit. On dégrade sans arrêter
+        # les contrôles — l'application est authentifiée, pas blanchie.
+        r.grade = min(r.grade, policy.deployment_signed_app_grade, key=_grade_rank)
+        r.evidence.append("app-deployment-signed")
+        r.notes.append(
+            "binaire non reconnu par le magasin, mais signé par un certificat "
+            "déclaré par ce déploiement"
+        )
     else:
         r.grade = policy.unrecognized_app_grade
         r.notes.append(
@@ -136,7 +176,10 @@ def grade_origin(
         return r
 
     if claims.media.sign_latency_ms > policy.max_sign_latency_ms:
-        r.grade = Grade.C
+        # `min` et non une affectation : une note déjà plus basse ne doit pas
+        # remonter. Sans garde, un binaire signé par le déploiement et noté
+        # sous C par la politique se verrait *promu* par une latence anormale.
+        r.grade = min(r.grade, Grade.C, key=_grade_rank)
         r.notes.append(
             f"latence payload→signature anormale : {claims.media.sign_latency_ms} ms"
         )

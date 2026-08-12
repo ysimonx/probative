@@ -23,10 +23,34 @@ class DeviceIntegrity(str, Enum):
 
 @dataclass
 class AttestationOutcome:
+    """Faits normalisés rendus par le fournisseur. **Aucun jugement ici.**
+
+    `app_recognized` dit uniquement si le *magasin* reconnaît le binaire. Il
+    reste booléen à dessein : c'est le verdict du fournisseur, pas une note.
+    Savoir si un binaire non reconnu par le magasin est malgré tout le nôtre
+    relève d'une politique de déploiement — donc de `GradingPolicy`, qui
+    confronte `app_certificate_digest` à ses empreintes autorisées. Le
+    vérificateur rapporte, la notation juge.
+    """
+
     integrity: DeviceIntegrity
     app_recognized: bool
     hardware_backed: bool
     counter: int | None = None
+
+    # Empreinte SHA-256 du certificat de signature de l'application, telle que
+    # le fournisseur la calcule — donc non falsifiable par le client. C'est
+    # elle qui distingue un binaire reconditionné, forcément resigné avec une
+    # autre clé, d'une build authentique diffusée hors du magasin.
+    app_certificate_digest: str | None = None
+
+    # Instant que le fournisseur date lui-même. Sur Android, Play Integrity
+    # l'inscrit dans le jeton, lié à la charge utile par le même `requestHash`
+    # — donc une borne haute posée par un tiers, et non par le client. iOS n'a
+    # pas d'équivalent avant que les extensions d'iOS 27 ne soient exploitées :
+    # ce champ reste optionnel, et aucune propriété ne doit l'exiger.
+    provider_timestamp_ms: int | None = None
+
     evidence: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 

@@ -227,6 +227,79 @@ def test_politique_de_distribution_hors_magasin(nonces, devices, key):
     assert "unrecognized_app_grade=Grade.C" in res.policy
 
 
+def _sortie_non_reconnue(empreinte: str | None) -> AttestationOutcome:
+    return AttestationOutcome(
+        integrity=DeviceIntegrity.BASIC,
+        app_recognized=False,
+        hardware_backed=True,
+        app_certificate_digest=empreinte,
+    )
+
+
+def _verdict_avec(nonces, devices, key, sortie, policy):
+    faux = NullAttestationVerifier(DeviceIntegrity.STRONG)
+    faux.verify = lambda **kw: sortie  # type: ignore[method-assign]
+    nonce = _issue(nonces, key)
+    env = sign_envelope(
+        key, make_payload(nonce=nonce, media_digest=MEDIA_DIGEST), nonce=nonce
+    )
+    v = Verifier(
+        nonce_store=nonces, device_store=devices, attestation=faux, policy=policy
+    )
+    return v.verify(env, media_bytes=MEDIA)
+
+
+NOTRE_CERT = "YxTPkqqTg9uWc30LWhHznOA_xp59hA2jJliTXMEIHZ8"
+
+
+def test_binaire_signe_par_le_deploiement_est_degrade_pas_refuse(nonces, devices, key):
+    """Notre propre build hors magasin ne doit pas subir le sort d'un APK reconditionné.
+
+    Le magasin ne se porte pas garant des octets, mais la signature le fait :
+    reconditionner impose de resigner, donc change l'empreinte, et le client
+    ne calcule pas cette empreinte lui-même.
+    """
+    res = _verdict_avec(
+        nonces,
+        devices,
+        key,
+        _sortie_non_reconnue(NOTRE_CERT),
+        GradingPolicy(trusted_app_certificates=(NOTRE_CERT,)),
+    )
+
+    origin = res.properties[Property.ORIGIN]
+    assert origin.grade is Grade.C
+    assert "app-deployment-signed" in origin.evidence
+    # B ne conviendrait pas : le profil `capture` plafonne déjà `origin` à B,
+    # une dégradation à B y serait donc invisible au niveau.
+    assert res.level is Level.DEGRADED
+
+
+def test_binaire_reconditionne_reste_au_sort_commun(nonces, devices, key):
+    """Empreinte inconnue : c'est précisément le cas que la liste doit exclure."""
+    res = _verdict_avec(
+        nonces,
+        devices,
+        key,
+        _sortie_non_reconnue("empreinte-d-un-attaquant"),
+        GradingPolicy(trusted_app_certificates=(NOTRE_CERT,)),
+    )
+
+    origin = res.properties[Property.ORIGIN]
+    assert origin.grade is Grade.F
+    assert "app-deployment-signed" not in origin.evidence
+
+
+def test_sans_liste_declaree_le_comportement_est_inchange(nonces, devices, key):
+    """L'option resserre, elle ne desserre pas : liste vide = règles d'origine."""
+    res = _verdict_avec(
+        nonces, devices, key, _sortie_non_reconnue(NOTRE_CERT), GradingPolicy()
+    )
+
+    assert res.properties[Property.ORIGIN].grade is Grade.F
+    assert res.policy == [], "aucun écart ne doit être déclaré"
+
+
 def test_le_plafond_de_recapture_nest_pas_configurable():
     """Une option peut resserrer, jamais desserrer un angle mort assumé.
 
