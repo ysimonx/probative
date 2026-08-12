@@ -198,6 +198,22 @@ Passé au test, l'audio ne justifie pas de profil propre — mêmes propriétés
 
 **`capture` désigne l'acquisition d'un signal du monde physique par un capteur de l'appareil** — image, son, vidéo. Ni « capture d'image », ni « données de capteurs » au sens large : les mesures de corroboration de §2.4 restent des `claim`, quel que soit le profil. Le critère est *le payload est-il susceptible d'être rejoué devant le capteur ?* C'est ce qui rend `position` pertinente et le plafond nécessaire, dans le même mouvement.
 
+### Contenu acquis, contenu fourni
+
+Des octets atteignent le cœur de deux façons : il les **acquiert** lui-même, ou on les lui **remet**. Un intégrateur qui possède déjà son écran photo voudra la seconde, et c'est légitime — mais les deux ne produisent pas le même profil.
+
+**Des octets remis relèvent du noyau, jamais de `capture`.** L'enveloppe reste pleinement valide et prouve quelque chose de réel : *cet appareil, dans cet état, a signé ces octets-là à cet instant, sous une clé matérielle attestée*. R1, R2 et R3 fonctionnent à l'identique — R1 lie le condensat des octets au nonce, quelle que soit leur provenance.
+
+Ce qu'elle ne peut pas porter est mécanique, et c'est pourquoi le noyau n'a ni `position` ni `media[5]` :
+
+- **`media[6]`**, la latence acquisition→signature, ne mesure plus rien sur un fichier tiré d'une galerie — or c'est le discriminant d'injection ;
+- **`position`** serait celle de l'instant de *signature*, pas de la prise de vue. Une image d'hier signée aujourd'hui attesterait un lieu sans rapport ;
+- **le plafond de recapture** n'a plus d'objet, puisque plus rien n'est affirmé du monde physique.
+
+Le critère pour l'intégrateur tient en une question : **le cœur a-t-il observé l'acquisition ?** Sinon, c'est `core`, et l'enveloppe dit alors exactement ce qu'elle sait — ni moins, ni plus.
+
+**Ce que l'acquisition par le cœur n'apporte pas non plus.** Elle ne prouve pas l'origine capteur : sur un appareil compromis, une caméra virtuelle injecte des images dans le pipeline. Ce qu'elle apporte est un chemin **court et mesurable** entre capteur et signature — donc une attaque plus coûteuse et un `media[6]` exploitable. C'est une différence de degré, pas de nature, et c'est précisément pour cela que le plafond de `capture` existe.
+
 **Le nonce est émis pour un profil.** Le profil signé dit ce que le client a produit ; le profil du nonce dit ce que le serveur a demandé. Une enveloppe dont le profil diffère de celui du nonce est rejetée. Sans ce contrôle, un client compromis déclarerait `core` pour une acquisition et échapperait au plafond — le profil est signé, donc non modifiable en vol, mais rien n'empêche de le déclarer faux dès l'origine. C'est l'application de §6 : le contexte applicatif est lié par le nonce, côté serveur.
 
 **Un vérificateur qui ne connaît pas un profil doit refuser de juger.** Se replier sur les règles du noyau rendrait un verdict d'apparence complète en ayant silencieusement omis les propriétés du profil et son plafond.

@@ -229,6 +229,20 @@ spike, jamais atteint sur aucune plateforme à ce jour.
 - [ ] Capteur absent → réclamation **omise, jamais simulée** (règle d'A6, facile à
       trahir avec une valeur par défaut).
 
+**Deux points d'entrée, pas un.** L'acquisition par le cœur ne doit pas devenir le
+seul chemin : un intégrateur qui possède déjà son écran photo doit pouvoir sceller
+des octets qu'il fournit. Les deux existent, et ils ne produisent pas le même
+profil (spec §2.5, « contenu acquis, contenu fourni ») :
+
+- `capture()` — le cœur pilote la caméra, profil `capture` ;
+- `seal(bytes)` — le cœur scelle des octets remis, profil `core`.
+
+Le second n'est pas un mode dégradé mais une preuve **plus étroite**, et elle est
+honnête : ni `position`, ni `media[6]` exploitable, ni plafond de recapture, parce
+que rien n'est affirmé du monde physique. Le construire dès A4.1 coûte peu — c'est
+exactement ce que fait l'étape, une enveloppe `core` sur des octets quelconques — et
+l'omettre obligerait tout intégrateur à passer par la caméra du cœur ou à renoncer.
+
 ### A5 — Fraîcheur Play Integrity (règle R1)
 
 - [x] Intégration API standard (`StandardIntegrityManager`) — `core/freshness/
