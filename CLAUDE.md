@@ -248,9 +248,14 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    sécurité** — le nonce encadre déjà la capture des deux côtés, et un jeton
    d'horodatage ne resserre aucune borne. Relève de l'**opposabilité** : l'encadrement
    par le nonce est une preuve que le serveur se fabrique à lui-même, là où un jeton
-   de tiers accrédité se vérifie sans avoir à faire confiance à ce serveur. Deux
-   garde-fous déjà posés : jamais une propriété notée, et calculé sur l'empreinte de
-   l'enveloppe après signature, donc hors du chemin de capture.
+   de tiers accrédité se vérifie sans avoir à faire confiance à ce serveur. Trois
+   garde-fous déjà posés : jamais une propriété notée ; calculé sur l'empreinte de
+   l'enveloppe après signature, donc hors du chemin de capture ; et **l'appel à
+   l'autorité se fait depuis le serveur**, jamais depuis l'appareil — sans quoi les
+   identifiants de l'autorité descendraient dans un client posé comme hostile.
+   Corollaire noté en spec §9 : la forme complète est **deux** jetons, un sur le nonce
+   à l'émission et un sur l'enveloppe à la réception, faute de quoi la borne basse de
+   l'encadrement reste autoproclamée.
 
    C'est le seul manque qu'aucun travail cryptographique ne comblera — il est
    réglementaire. Si les cas d'usage visés sont ceux du constat de terrain, cela mérite

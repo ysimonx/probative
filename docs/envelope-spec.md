@@ -343,10 +343,15 @@ Un vérificateur accepte les versions mineures qu'il ne connaît pas et signale 
 
 Ce qu'il apporte est sur un autre axe : l'encadrement du nonce repose sur l'horloge et les journaux de *votre propre serveur*, une preuve que vous vous fabriquez à vous-même, alors qu'un jeton délivré par un tiers accrédité se vérifie sans avoir à vous faire confiance. C'est une propriété **probatoire, pas sécuritaire**.
 
-D'où deux garde-fous à poser dès maintenant, quelle que soit l'issue :
+D'où trois garde-fous à poser dès maintenant, quelle que soit l'issue :
 
 - un jeton d'horodatage ne devient **jamais une propriété notée**, puisqu'il ne dit rien de l'origine ni de la position. L'admettre dans le calcul des grades reviendrait à faire passer une garantie d'antériorité pour une garantie de provenance ;
-- il porte sur **l'empreinte de l'enveloppe**, obtenu après signature, donc hors du chemin critique de capture et sans effet sur `media[6]`.
+- il porte sur **l'empreinte de l'enveloppe**, obtenu après signature, donc hors du chemin critique de capture et sans effet sur `media[6]` ;
+- l'appel à l'autorité d'horodatage se fait **depuis le serveur**, jamais depuis l'appareil. Trois raisons, dont une décisive : une autorité qualifiée se contracte, et embarquer ses identifiants dans l'application déposerait un secret exploitable dans un client posé comme hostile par l'invariant n° 1 ; un appel réseau à la signature rendrait la capture dépendante du réseau, alors que l'attestation de clé, elle, est produite hors ligne ; et un jeton par enveloppe se paie et se contingente, là où le serveur horodate en un appel l'empreinte d'un lot — la technique de la transparence des certificats. Le lieu de l'appel ne change rien à la valeur du jeton, qui se vérifie identiquement quel que soit le demandeur : ce n'est pas une question de confiance mais de secrets, de disponibilité et de coût.
+
+**Quelle borne faire attester.** Poser la question du lieu de l'appel fait apparaître le vrai sujet. L'encadrement actuel est `[émission du nonce, réception de l'enveloppe]`, et **ses deux bornes reposent sur l'horloge et les journaux de votre propre serveur**. Un jeton sur l'enveloppe reçue ne corrige que la borne haute ; la borne basse — « cette capture est postérieure à tel instant », la plus utile en contradiction — resterait autoproclamée. La forme complète est donc **deux jetons, tous deux côté serveur** : un sur le nonce à son émission, un sur l'enveloppe à sa réception. L'intervalle devient alors attesté par un tiers aux deux bouts. Le gain d'opposabilité est là, pas dans le rapprochement du jeton de l'instant de capture.
+
+Si un besoin démontré exigeait un jour de resserrer la borne haute au plus près de la capture — enveloppe produite puis synchronisée des jours plus tard —, la forme correcte reste le **relais** : l'appareil demande au serveur, qui interroge l'autorité et retourne le jeton. Les identifiants ne descendent pas, et le client ne gagne aucun pouvoir.
 
 *Motivation externe, ajoutée le 2026-08-12 :* `docs/etat-de-l-art.md` §4 identifie l'admissibilité juridique comme le seul manque qu'aucun travail cryptographique ne comblera, un concurrent d'usage vendant signature qualifiée eIDAS et horodatage qualifié. Le raisonnement long est dans `architecture.html` §10.
 

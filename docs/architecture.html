@@ -1912,10 +1912,16 @@
       </p>
       <p>
         Sur le placement, un point ne souffre pas de discussion : <strong>l'horodatage est demandé
-        par le serveur à la réception, jamais par l'appareil</strong>. Le client est hostile, son
-        jeton ne serait qu'une déclaration de plus ; et un aller-retour supplémentaire pendant la
-        capture aggraverait la latence, déjà en tension avec son usage comme discriminant
-        d'origine.
+        par le serveur, jamais par l'appareil</strong>. Attention toutefois à ne pas s'en
+        convaincre pour la mauvaise raison : ce n'est <em>pas</em> parce que le client est hostile.
+        Un jeton RFC 3161 se vérifie identiquement quel que soit son demandeur — c'est toute sa
+        nature, et il ne devient pas « une déclaration de plus » parce qu'un appareil l'a réclamé.
+        Les vraies raisons sont ailleurs, et la première suffit : une autorité qualifiée se
+        contracte, donc placer l'appel dans l'application y déposerait ses identifiants, un secret
+        exploitable dans un client hostile. S'y ajoutent un aller-retour supplémentaire pendant la
+        capture — qui aggraverait la latence, déjà en tension avec son usage comme discriminant
+        d'origine, et rendrait tributaire du réseau une capture qui ne l'est pas — et le coût, un
+        jeton par enveloppe se payant là où le serveur horodate un lot entier en un appel.
       </p>
       <p>
         La conséquence est heureuse : <strong>aucun changement du format</strong>. Le jeton porte
