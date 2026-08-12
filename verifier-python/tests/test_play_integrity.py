@@ -149,8 +149,32 @@ def test_verdict_nominal(repond) -> None:
 
 
 def test_integrite_forte(repond) -> None:
-    out = _verdict(_reponse(device_verdicts=["MEETS_STRONG_INTEGRITY"]), repond)
+    # Les étiquettes sont **cumulatives** : un appareil qui atteint l'intégrité
+    # forte porte les trois échelons, confirmé sur l'exemple de la Play Console
+    # le 2026-08-12. Une fixture ne portant que `STRONG` décrirait une réponse
+    # que Google n'émet jamais — et laisserait passer une lecture qui
+    # retiendrait le premier échelon rencontré au lieu du plus élevé.
+    out = _verdict(
+        _reponse(
+            device_verdicts=[
+                "MEETS_BASIC_INTEGRITY",
+                "MEETS_DEVICE_INTEGRITY",
+                "MEETS_STRONG_INTEGRITY",
+            ]
+        ),
+        repond,
+    )
     assert out.integrity is DeviceIntegrity.STRONG
+
+
+def test_appareil_sain_ordinaire_est_basic(repond) -> None:
+    """Cumul sans l'échelon fort : c'est le cas de la SM-X200."""
+    out = _verdict(
+        _reponse(device_verdicts=["MEETS_BASIC_INTEGRITY", "MEETS_DEVICE_INTEGRITY"]),
+        repond,
+    )
+
+    assert out.integrity is DeviceIntegrity.BASIC
 
 
 def test_binaire_hors_magasin_reste_jugeable(repond) -> None:

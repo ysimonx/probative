@@ -1,6 +1,7 @@
 package org.probative.demo
 
 import android.app.Activity
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -49,6 +50,17 @@ public class MainActivity : Activity() {
         thread { probe() }
     }
 
+    /** Qui a installé ce binaire — `com.android.vending` pour le Play Store. */
+    private fun installerName(): String {
+        val nom = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            packageManager.getInstallSourceInfo(packageName).installingPackageName
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getInstallerPackageName(packageName)
+        }
+        return nom ?: "adb / inconnu"
+    }
+
     private fun report(text: String) {
         Log.i(TAG, text)
         lines.appendLine(text)
@@ -57,6 +69,16 @@ public class MainActivity : Activity() {
 
     private fun probe() {
         report("probative — sonde A5")
+        // Version affichée à l'écran, et pas seulement journalisée : une
+        // campagne sur trois versions successives a montré qu'on ne sait pas,
+        // à la lecture d'un verdict, quel binaire l'a produit. L'installateur
+        // est là pour la même raison — `com.android.vending` distingue une
+        // installation Play d'un `adb install`, et les deux ne portent pas la
+        // même signature, donc pas la même empreinte de certificat.
+        report(
+            "version        ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE})" +
+                " — installee par ${installerName()}",
+        )
         report("")
 
         // Défi R1 : SHA-256(payload ‖ nonce). Charge utile de substitution,
@@ -87,11 +109,17 @@ public class MainActivity : Activity() {
         report("               $requestHash")
 
         // ── Play Integrity ────────────────────────────────────────────────
+        //
+        // Le numéro est exigé par l'API standard **même** pour une application
+        // distribuée par Play et dont le projet est associé dans la console.
+        // Éprouvé le 2026-08-12 : sans lui, la requête ne se construit pas.
+        // Voir PlayIntegrity.prepare, qui porte la citation trompeuse et son
+        // démenti.
         val cloudProjectNumber = BuildConfig.CLOUD_PROJECT_NUMBER
         if (cloudProjectNumber <= 0L) {
             report("")
             report("Play Integrity SAUTE — numero de projet Google Cloud absent.")
-            report("  relancer avec -Pprobative.cloudProjectNumber=<numero>")
+            report("  reconstruire avec -Pprobative.cloudProjectNumber=<numero>")
             return
         }
 

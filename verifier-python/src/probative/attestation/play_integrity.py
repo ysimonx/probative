@@ -35,6 +35,18 @@ ENDPOINT = "https://playintegrity.googleapis.com/v1/{package}:decodeIntegrityTok
 # non modifié, seulement un appareil plausible. Le retenir comme signal
 # d'intégrité reviendrait à accepter un appareil vraisemblablement rooté —
 # voir `_device_integrity` pour le raisonnement complet.
+#
+# **Les étiquettes sont cumulatives, pas exclusives** — établi le 2026-08-12
+# sur l'exemple de réponse de la Play Console : un appareil qui atteint
+# l'échelon fort porte les trois. La lecture doit donc retenir le **plus
+# élevé** présent, jamais le premier rencontré. C'est ce que l'ordre des
+# tests ci-dessous garantit, et la raison pour laquelle il n'est pas
+# interchangeable.
+#
+# `MEETS_DEVICE_INTEGRITY` est le socle, toujours émis. `MEETS_BASIC_INTEGRITY`
+# et `MEETS_STRONG_INTEGRITY` sont **optionnels**, à activer dans la Play
+# Console — et tant qu'ils ne le sont pas, les branches correspondantes sont
+# inatteignables.
 _VERDICT_STRONG = "MEETS_STRONG_INTEGRITY"
 _VERDICT_DEVICE = "MEETS_DEVICE_INTEGRITY"
 

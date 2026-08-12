@@ -6,6 +6,11 @@ parce que la démarche est administrative, lente, et qu'elle conditionne la seul
 chose qui rende la boucle Android opposable : lire réellement le verdict d'un jeton
 au lieu de constater qu'un jeton a été délivré.
 
+Il couvre deux démarches distinctes : le **compte de service** qui permet de déchiffrer
+les jetons (§1 à §7), et la **publication en test interne** qui seule permet d'exercer
+`PLAY_RECOGNIZED` (§8). La seconde n'est pas nécessaire à la phase B ; elle l'est pour
+savoir ce que le chemin nominal produit.
+
 **Daté du 2026-08-12.** Les consoles Google et leur documentation bougent ; les faits
 cités sont sourcés en fin de document. Revérifier avant de s'appuyer sur un détail
 d'interface.
@@ -344,6 +349,166 @@ inutile.
 
 À retenir pour la phase B : **ne jamais conclure sur la forme d'un refus obtenu avec
 une entrée volontairement invalide.**
+
+---
+
+## 8. Publication en test interne — obtenir `PLAY_RECOGNIZED`
+
+**Exécuté le 2026-08-12.** Jusque-là, aucun jeton n'avait jamais porté autre chose
+qu'`UNRECOGNIZED_VERSION` : ni la SM-X200 en installation locale, ni l'émulateur. La
+seule façon d'exercer le chemin nominal est de faire distribuer l'application par
+Google Play — une **piste de test interne** suffit, la publication publique n'est pas
+nécessaire.
+
+### 8.1 Ce que la publication change, mesuré
+
+Même appareil, même sonde, même défi R1. Seul le canal d'installation diffère.
+
+| Champ | Build local, `adb install` | Build livré par Play |
+|---|---|---|
+| `appRecognitionVerdict` | `UNRECOGNIZED_VERSION` | **`PLAY_RECOGNIZED`** |
+| `versionCode` | `1` | **`4`** — celui du binaire installé |
+| `certificateSha256Digest` | `YxTPkqqTg9…` (clé de débogage) | **`yTU-2irSW0V8…`** |
+| `deviceRecognitionVerdict` | `[MEETS_DEVICE_INTEGRITY]` | `[BASIC, DEVICE, STRONG]` |
+| `appLicensingVerdict` | `UNEVALUATED` | **`LICENSED`** |
+
+`requestHash` reste identique et vérifié par recalcul dans les deux cas : la règle R1
+ne dépend ni du canal ni du verdict.
+
+**`versionCode` répond littéralement à la question « est-ce bien la version que j'ai
+diffusée ».** Google l'atteste, le client ne le déclare pas.
+
+### 8.2 Les trois certificats, et celui que la console cache
+
+C'est le piège le plus coûteux de la journée. **Play App Signing produit trois
+certificats**, et la page « Signature d'application » n'affiche en évidence que les
+deux qui ne servent pas :
+
+| Certificat | Empreinte SHA-256 | Rôle |
+|---|---|---|
+| `deployment_cert` | `C9:35:3E:DA:…` | **Signe les APK livrés. C'est celui que le jeton rapporte.** |
+| `hybrid_classical_cert` | `93:CC:A8:D4:…` | Affiché en gros sous « Clé classique » |
+| `hybrid_pqc_cert` | `77:2A:2E:FF:…` | Affiché en gros sous « Clé post-quantique » |
+
+Le certificat de déploiement n'apparaît **qu'en téléchargeant l'archive** (« Télécharger
+des certificats »). Copier l'empreinte affichée sur la page conduit donc à épingler une
+valeur que le jeton ne portera jamais — et **l'échec est silencieux** : le binaire
+passe pour non reconnu, exactement comme un reconditionnement.
+
+Les trois portent le même sujet générique `CN=Android, O=Google Inc.` : c'est la
+convention de Play App Signing, non le signe d'un certificat partagé entre
+applications. L'épinglage garde donc tout son pouvoir discriminant.
+
+**Deux méthodes fiables**, qui donnent la même valeur :
+
+```bash
+# depuis l'archive de certificats de la Play Console
+openssl x509 -in deployment_cert.der -inform DER -noout -fingerprint -sha256
+
+# ou depuis l'artefact réellement livré, qui ne ment jamais
+adb pull $(adb shell pm path org.probative.demo | grep base.apk | sed 's/package://')
+apksigner verify --print-certs base.apk
+```
+
+Puis conversion vers la forme du jeton :
+
+```python
+from probative.grading import app_certificate_digest
+app_certificate_digest("C9:35:3E:DA:…")   # -> yTU-2irSW0V8yOgcrWGbGk1kukC4LYrK6uLfTNN60pQ
+```
+
+### 8.3 Le numéro de projet Cloud reste obligatoire
+
+La documentation de Google affirme que *« for apps distributed on Google Play, the
+cloud project number is configured in the Play Console and need not be set on the
+request »*. **Cette phrase figure sur la référence d'`IntegrityTokenRequest`, l'API
+classique.** Elle ne vaut pas pour l'API standard.
+
+Éprouvé sur une application publiée, projet associé, installée depuis le Play Store :
+
+```
+IllegalStateException: Missing required properties: cloudProjectNumber
+```
+
+`PrepareIntegrityTokenRequest` refuse de bâtir la requête sans lui, quel que soit le
+canal de distribution. `PlayIntegrity.prepare` porte la citation trompeuse **et** son
+démenti, parce que quiconque lira cette phrase referait la même déduction.
+
+### 8.4 Les échelons d'intégrité sont cumulatifs
+
+`MEETS_DEVICE_INTEGRITY` est le socle, toujours émis. `MEETS_BASIC_INTEGRITY` et
+`MEETS_STRONG_INTEGRITY` sont **optionnels**, à activer dans *Paramètres de l'API Play
+Integrity → Modifier les réponses*. Tant qu'ils ne le sont pas, les branches
+correspondantes du vérificateur sont inatteignables.
+
+Une fois activés, un appareil porte **tous les échelons qu'il satisfait** — la SM-X200
+rend les trois. La lecture doit donc retenir le **plus élevé** présent, jamais le
+premier rencontré, et c'est ce que l'ordre des tests de `_device_integrity` garantit.
+
+Il n'existe **aucune bascule pour `MEETS_VIRTUAL_INTEGRITY`** : cette branche reste
+écrite d'après la documentation seule (§ voir aussi le constat émulateur).
+
+**Correction :** ce document a un temps affirmé que la SM-X200 « atteint
+`MEETS_DEVICE_INTEGRITY` mais pas `STRONG` », et en a tiré un point de calibration.
+C'était faux — l'étiquette n'était simplement pas activée. Une observation faite sous
+une configuration qu'on ignore ne vaut pas conclusion.
+
+### 8.5 Marche à suivre, et les pièges de parcours
+
+1. **Associer le projet Cloud** : *Protégé avec Play → API Play Integrity → Associer un
+   projet Cloud*. Vérifier le **numéro** `487335590129`. Action difficile à défaire :
+   au moins un projet doit rester associé ensuite. La Play Console ne liste que les
+   projets où le compte connecté est **Propriétaire** — un compte différent entre les
+   deux consoles est la première cause de « je ne vois pas mon projet ».
+2. **Activer les échelons** base et forte (§8.4). Laisser les quatre signaux
+   optionnels désactivés : ils changent la forme de la réponse et rien ne les consomme.
+3. **Téléverser l'AAB** sur la piste de test interne, puis **démarrer le déploiement**.
+   Téléverser ne distribue pas : une version qui reste en brouillon n'atteint aucun
+   appareil, sans que rien ne le signale.
+4. **S'ajouter comme testeur**, accepter l'invitation, installer depuis le lien. Une
+   piste interne n'est **jamais indexée** dans la recherche du Play Store : elle ne
+   s'atteint que par l'URL ou le lien d'adhésion. « Application introuvable » ne
+   signifie donc pas qu'elle n'est pas déployée.
+5. **Le Play Store met la fiche en cache.** Une version déployée peut rester invisible
+   sur l'appareil ; vider le cache de l'application Play Store fait apparaître le
+   bouton de mise à jour.
+6. **Vérifier ce qui tourne réellement**, plutôt que de le supposer :
+
+```bash
+adb shell dumpsys package org.probative.demo | grep -E "versionCode|installerPackageName"
+# versionCode=4 … installerPackageName=com.android.vending
+```
+
+`com.android.vending` distingue une installation Play d'un `adb install`. Les deux ne
+portent pas la même signature, donc pas la même empreinte de certificat — confondre
+les deux fausse toute l'interprétation. La sonde affiche désormais version et
+installateur en tête de son propre rapport, pour la même raison.
+
+### 8.6 Ce que cette campagne n'a pas tranché
+
+- **Le déchiffrement local.** L'application est désormais distribuée par Google Play,
+  ce qui était la condition affichée par la documentation (§2). Les réglages de
+  chiffrement des réponses n'ont pas été inspectés. Si les clés y sont devenues
+  téléchargeables, ADR-0006 est à rouvrir — l'enjeu est l'appel réseau par enveloppe,
+  le plafond de quota et l'auto-hébergement.
+- **Le quota.** Reste à 10 000 requêtes/jour ; l'augmentation devient demandable
+  maintenant que l'application est sur Google Play, mais elle n'a pas été demandée.
+- **Un APK authentique installé hors Play** reste-t-il `PLAY_RECOGNIZED` ? La
+  documentation le laisse entendre — le verdict porte sur les octets, pas sur le canal
+  — mais ce n'est pas vérifié, et la « Protection automatique » active sur la fiche
+  pourrait interférer.
+
+### 8.7 Leçon de méthode, la même que la §7
+
+Trois affirmations de ce document ont été démenties par l'expérience le même jour : le
+mur « App is not found », l'API standard qui se passerait du numéro de projet, et
+l'empreinte à copier depuis la console. **Dans les trois cas la source était réelle et
+décrivait autre chose** — un cas dégradé, une autre API, un autre certificat.
+
+D'où la règle, qui vaut au-delà de Play Integrity : **une lecture ne se transforme en
+conclusion qu'après confrontation à un artefact réel.** Le coût de la vérification se
+compte en minutes ; celui d'une conclusion fausse inscrite dans du code se compte en
+séances de diagnostic.
 
 ---
 

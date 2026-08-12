@@ -186,9 +186,14 @@ Il faut distinguer deux preuves de nature différente, souvent confondues :
 - **Le jeton Play Integrity** est bien obtenu **auprès des serveurs de Google**.
   ~~Mais il est chiffré et n'a jamais été ouvert.~~ **Levé le 2026-08-12** : un
   jeton réel de la SM-X200 a été déchiffré (HTTP 200), et le `requestHash` restitué
-  vaut exactement le R1 recalculé côté serveur. `appRecognitionVerdict` valait bien
-  `UNRECOGNIZED_VERSION`, comme prévu, et `deviceRecognitionVerdict`
-  `MEETS_DEVICE_INTEGRITY`.
+  vaut exactement le R1 recalculé côté serveur.
+
+  **Le chemin nominal a été exercé le même jour**, en publiant `org.probative.demo`
+  sur une piste de test interne : `PLAY_RECOGNIZED`, `versionCode` attesté par Google,
+  `LICENSED`, et les trois échelons d'intégrité cumulés. Voir
+  `docs/play-integrity-service-account.md` §8, qui porte aussi les trois pièges de
+  parcours — dont le **certificat de déploiement**, seul rapporté par le jeton et seul
+  que la Play Console n'affiche pas.
 
 **Les deux plateformes sont désormais ancrées.** Côté iOS depuis la phase D
 (`apple-app-attest-root-ca.pem`), côté Android depuis le 2026-08-12

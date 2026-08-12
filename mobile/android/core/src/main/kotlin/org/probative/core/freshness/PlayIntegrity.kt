@@ -62,10 +62,31 @@ object PlayIntegrity {
      *
      * Bloquant — à appeler hors du fil principal.
      */
+    /**
+     * Prépare le fournisseur de jetons.
+     *
+     * `cloudProjectNumber` est **toujours obligatoire**, quel que soit le canal
+     * de distribution — y compris pour une application publiée sur Google Play
+     * et dont le projet Cloud est déjà associé dans la Play Console.
+     *
+     * Ce point mérite un avertissement, parce que la documentation de Google
+     * dit le contraire *pour une autre API*. La phrase « for apps distributed
+     * on Google Play, the cloud project number is configured in the Play
+     * Console and need not be set on the request » figure sur la référence
+     * d'`IntegrityTokenRequest`, qui relève de l'API **classique**. Nous
+     * employons `PrepareIntegrityTokenRequest`, l'API **standard**, dont le
+     * constructeur refuse de bâtir la requête sans ce numéro :
+     *
+     *     IllegalStateException: Missing required properties: cloudProjectNumber
+     *
+     * Constaté le 2026-08-12 sur SM-X200, avec l'application installée depuis
+     * le Play Store et le projet associé — donc dans les conditions exactes où
+     * la phrase citée aurait dû s'appliquer.
+     */
     fun prepare(context: Context, cloudProjectNumber: Long): Provider {
         require(cloudProjectNumber > 0) {
-            "numéro de projet Google Cloud absent — voir la propriété Gradle " +
-                "probative.cloudProjectNumber"
+            "numéro de projet Google Cloud absent — l'API standard l'exige même " +
+                "pour une application distribuée par Play"
         }
         val manager = IntegrityManagerFactory.createStandard(context.applicationContext)
         return Provider(
