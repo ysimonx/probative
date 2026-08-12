@@ -395,6 +395,11 @@ des certificats »). Copier l'empreinte affichée sur la page conduit donc à é
 valeur que le jeton ne portera jamais — et **l'échec est silencieux** : le binaire
 passe pour non reconnu, exactement comme un reconditionnement.
 
+<a href="images/pc-09-signature-application.png"><img src="images/pc-09-signature-application.png" alt="Page Signature d'application : deux colonnes de boutons, Clé classique et Clé cryptographique post-quantique, et le lien discret Télécharger des certificats qui seul donne accès au certificat de déploiement" width="760"></a>
+
+*Les deux empreintes proposées en évidence sont celles qui ne servent pas. Le bouton
+qui compte est le discret « Télécharger des certificats », à gauche.*
+
 Les trois portent le même sujet générique `CN=Android, O=Google Inc.` : c'est la
 convention de Play App Signing, non le signe d'un certificat partagé entre
 applications. L'épinglage garde donc tout son pouvoir discriminant.
@@ -441,6 +446,21 @@ démenti, parce que quiconque lira cette phrase referait la même déduction.
 Integrity → Modifier les réponses*. Tant qu'ils ne le sont pas, les branches
 correspondantes du vérificateur sont inatteignables.
 
+<a href="images/pc-05-echelons-avant.png"><img src="images/pc-05-echelons-avant.png" alt="Modifier les réponses : les six bascules sont désactivées, dont intégrité de base et intégrité forte" width="760"></a>
+
+Les quatre autres bascules — activité récente, attributs d'appareil, état Play Protect,
+risque d'accès — restent **désactivées** : elles enrichissent la réponse, donc en
+changent la forme, et rien dans le vérificateur ne les consomme.
+
+<a href="images/pc-06-echelons-actives.png"><img src="images/pc-06-echelons-actives.png" alt="Les deux premières bascules activées en bleu, les quatre signaux optionnels laissés désactivés" width="760"></a>
+
+<a href="images/pc-07-enregistrer-echelons.png"><img src="images/pc-07-enregistrer-echelons.png" alt="Boîte de confirmation listant MEETS_BASIC_INTEGRITY activé et MEETS_STRONG_INTEGRITY activé" width="760"></a>
+
+La colonne « Valeurs » porte ensuite les trois échelons, ce qui est le premier indice
+de leur **cumul** — confirmé par l'exemple JSON de la console, puis par le jeton réel :
+
+<a href="images/pc-08-echelons-cumules.png"><img src="images/pc-08-echelons-cumules.png" alt="Tableau des réponses : intégrité de l'appareil activée, valeurs MEETS_BASIC_INTEGRITY, MEETS_DEVICE_INTEGRITY, MEETS_STRONG_INTEGRITY" width="760"></a>
+
 Une fois activés, un appareil porte **tous les échelons qu'il satisfait** — la SM-X200
 rend les trois. La lecture doit donc retenir le **plus élevé** présent, jamais le
 premier rencontré, et c'est ce que l'ordre des tests de `_device_integrity` garantit.
@@ -460,6 +480,27 @@ une configuration qu'on ignore ne vaut pas conclusion.
    au moins un projet doit rester associé ensuite. La Play Console ne liste que les
    projets où le compte connecté est **Propriétaire** — un compte différent entre les
    deux consoles est la première cause de « je ne vois pas mon projet ».
+
+   Deux affichages inquiètent à tort sur la page d'accueil : *« 0 services actifs sur
+   7 »* et *« L'API Play Integrity n'est pas intégrée »*. Le second ne décrit que le
+   trafic observé **par cette fiche** ; des jetons obtenus par `setCloudProjectNumber`
+   lui sont invisibles. Le premier désigne les sept lignes du tableau des réponses.
+
+   <a href="images/pc-01-protege-avec-play.png"><img src="images/pc-01-protege-avec-play.png" alt="Page Protégé avec Play : API Play Integrity à 0 services actifs sur 7, et encart indiquant que l'API n'est pas intégrée" width="760"></a>
+
+   Avant l'association, la page de paramètres est **inerte** : le bandeau l'annonce, et
+   les sept lignes affichent « Désactivé » sans que cela veuille rien dire.
+
+   <a href="images/pc-02-parametres-avant-association.png"><img src="images/pc-02-parametres-avant-association.png" alt="Paramètres de l'API Play Integrity avant association : bandeau indiquant qu'il faut associer un projet Cloud, et sept lignes toutes désactivées" width="760"></a>
+
+   <a href="images/pc-03-associer-projet-cloud.png"><img src="images/pc-03-associer-projet-cloud.png" alt="Boîte de dialogue d'association, listant le projet Probative et son numéro 487335590129" width="760"></a>
+
+   Après association, trois évaluations passent à « Activé » **d'office** — licence,
+   intégrité de l'application, intégrité de l'appareil. Cette dernière ne porte encore
+   qu'une seule valeur, `MEETS_DEVICE_INTEGRITY` : c'est le socle, et c'est ce qui
+   rend l'étape suivante nécessaire.
+
+   <a href="images/pc-04-apres-association.png"><img src="images/pc-04-apres-association.png" alt="Après association : le projet Probative 487335590129 est lié, et trois évaluations sont activées dont l'intégrité de l'appareil avec la seule valeur MEETS_DEVICE_INTEGRITY" width="760"></a>
 2. **Activer les échelons** base et forte (§8.4). Laisser les quatre signaux
    optionnels désactivés : ils changent la forme de la réponse et rien ne les consomme.
 3. **Téléverser l'AAB** sur la piste de test interne, puis **démarrer le déploiement**.
