@@ -279,9 +279,52 @@ adb logcat -d -s PROBATIVE_A41
       position simulée, paquets suspects. **Déclaratif, donc faible** — le client
       collecte, le serveur juge (invariant 1) : aucune de ces valeurs ne conditionne
       quoi que ce soit sur l'appareil.
-- [ ] Permissions d'exécution caméra et position, que `:demo` n'a pas aujourd'hui.
 - [ ] Capteur absent → réclamation **omise, jamais simulée** (règle d'A6, facile à
       trahir avec une valeur par défaut).
+- [ ] **Corroboration lancée *pendant* l'acquisition, jamais après.** Acquis de
+      C4.2, et c'est la seule case dont l'oubli produit un verdict *plausible et
+      faux* : collectée en aval de l'obturateur, elle entre dans `media[6]` et
+      fait accuser une latence anormale là où il n'y en a aucune. Mesuré à
+      +4,2 s sur iPhone 16.
+- [ ] **Attendre un point de position frais**, plutôt qu'accepter le premier —
+      qui est celui du cache. Mesuré à 42,9 s d'âge sur iPhone 16, quand un
+      point frais arrivait une seconde plus tard. Attendre n'est pas filtrer :
+      à l'expiration, on transmet le meilleur point obtenu **avec son âge réel**
+      et c'est le serveur qui juge (invariant 1).
+
+##### Préambule d'autorisations — à faire dès le début, pas à la fin
+
+Acquis de C4.2, où l'oubli a coûté plusieurs campagnes. **Demander une
+autorisation au moment où son capteur sert affiche la boîte de dialogue
+*pendant* que le délai d'attente court** : le relevé expire, et le symptôme
+n'accuse jamais la bonne cause — on soupçonne le GPS, le baromètre ou le
+serveur, jamais la permission.
+
+- [ ] Toutes les autorisations demandées **avant** la première mesure, avec
+      leur état affiché à l'écran **et journalisé** : un extrait de logcat doit
+      permettre de distinguer un capteur muet d'une autorisation manquante.
+- [ ] La sonde ne démarre que si elle peut aboutir — partir sans caméra ni
+      position produit un échec qui n'apprend rien.
+- [ ] **Éprouvé à froid** : désinstaller puis réinstaller, ce qui remet les
+      autorisations à zéro, et vérifier que la campagne passe **du premier
+      coup**. C'est le seul test qui compte, et le seul qui ait trouvé quelque
+      chose côté iOS.
+
+**Quatre asymétries avec iOS, à ne pas transposer mécaniquement.**
+
+| | Android | iOS |
+|---|---|---|
+| Demandes groupées | **Oui** — `requestPermissions` en accepte plusieurs | Non : une boîte à la fois, les demandes concurrentes sont jetées |
+| Réseau local | **Aucune autorisation** : `adb reverse` et `usesCleartextTraffic` suffisent | Autorisation sans interface d'état, dont la première tentative échoue |
+| Baromètre, accéléromètre | **Aucune autorisation** | « Mouvement et forme », sollicitée en démarrant un relevé |
+| Podomètre | `ACTIVITY_RECOGNITION` depuis l'API 29 | Même autorisation que le baromètre |
+
+Android a donc **deux pièges de moins** — pas de réseau local, pas
+d'autorisation pour les capteurs de corroboration hors podomètre — mais un que
+iOS n'a pas : le refus définitif. Deux refus valent « ne plus demander », et
+`shouldShowRequestPermissionRationale` est le seul moyen de distinguer « pas
+encore demandé » de « refusé pour de bon ». Les confondre fait proposer un
+bouton qui ne peut rien.
 
 **Deux points d'entrée, pas un.** L'acquisition par le cœur ne doit pas devenir le
 seul chemin : un intégrateur qui possède déjà son écran photo doit pouvoir sceller
