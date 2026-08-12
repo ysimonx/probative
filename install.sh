@@ -1,0 +1,2 @@
+ln -s /Users/ysimonx/Documents/secrets/probative/probative-d3512e694dae.json ./service-account.json
+chmod 700 /Users/ysimonx/Documents/secrets/probative/ && chmod 600 /Users/ysimonx/Documents/secrets/probative/probative-d3512e694dae.json
