@@ -252,13 +252,13 @@ Le vérificateur ne retourne pas un score global mais une structure par proprié
   "policy": [],
   "level": "STANDARD",
   "properties": {
-    "origin":    { "grade": "B", "evidence": ["play-integrity:PLAY_RECOGNIZED", "raw-hash-match"] },
-    "position":  { "grade": "A", "evidence": ["gnss", "baro-consistent", "motion-consistent"] },
-    "time":      { "grade": "B", "evidence": ["nonce-fresh", "monotonic-consistent"] },
-    "integrity": { "grade": "A", "evidence": ["cose-valid", "key-attested-strongbox"] }
+    "origin":    { "grade": "B", "evidence": ["raw-hash-match", "app-recognized"] },
+    "position":  { "grade": "A", "evidence": ["gnss", "baro-consistent", "motion-present"] },
+    "time":      { "grade": "B", "evidence": ["nonce-fresh", "clock-consistent"] },
+    "integrity": { "grade": "A", "evidence": ["cose-valid", "key-attested-hardware"] }
   },
-  "flags": ["BARO_ABSENT"],
-  "level_reason": "origin capped at B: analog-recapture detection not implemented in v0.1"
+  "flags": [],
+  "level_reason": "origin plafonné à B : détection de recapture analogique non implémentée en v0.1"
 }
 ```
 
@@ -272,6 +272,104 @@ Deux règles bornent ce qui est réglable :
 - **une option peut resserrer, jamais desserrer un angle mort assumé.** Le plafond de recapture du profil `capture` (§2.5) n'est donc pas réglable : le rendre tel permettrait à un déploiement de revendiquer `STRONG` sur des acquisitions sans avoir implémenté la détection. Les règles de liaison R1, R2 et R3 ne le sont pas davantage.
 
 Le champ `level_reason` est obligatoire. Un vérificateur qui refuse sans dire pourquoi est inexploitable en support, et vous le paierez en tickets.
+
+---
+
+## 4 bis. Nomenclature du résultat
+
+Les valeurs que peut porter un résultat. **Cette section est vérifiée par un test**
+(`test_nomenclature.py`) qui la confronte au code dans les deux sens : un jeton émis
+mais non documenté, ou documenté mais jamais émis, fait échouer la suite. Elle ne peut
+donc pas dériver — ce que l'exemple de la §4 avait fait avant que ce test n'existe.
+
+### Ensembles fermés
+
+| Ensemble | Valeurs |
+|---|---|
+| `level` | `STRONG`, `STANDARD`, `DEGRADED`, `UNTRUSTED`, `REJECTED` |
+| `grade` | `A`, `B`, `C`, `F` — **il n'y a pas de `D`** |
+| propriétés | `origin`, `position`, `time`, `integrity` |
+| `profile` | `core`, `capture` |
+
+### 4 bis.1 Codes de rejet
+
+Portés par `level_reason` et repris dans `flags` lorsque le niveau est `REJECTED`.
+L'étape citée renvoie à la §5.
+
+| Code | Étape | Motif |
+|---|---|---|
+| `UNSUPPORTED_SPEC_VERSION` | 1 | version de spécification inconnue du vérificateur |
+| `UNKNOWN_PROFILE` | 1 | profil déclaré que ce vérificateur ne sait pas juger |
+| `MALFORMED_ENVELOPE` | 1, 8 | structure illisible, champ mal typé, ou média absent d'un profil qui l'exige |
+| `PROFILE_MISMATCH` | 2 | profil signé différent de celui pour lequel le nonce a été émis |
+| `UNKNOWN_NONCE` | 2 | nonce inconnu du serveur |
+| `EXPIRED_NONCE` | 2 | nonce hors de sa fenêtre de validité |
+| `REPLAYED_NONCE` | 2 | nonce déjà consommé |
+| `NONCE_DEVICE_MISMATCH` | 2 | nonce présenté par un autre appareil que celui qui l'a demandé (R3) |
+| `UNKNOWN_KEY` | 3 | `kid` non enrôlé |
+| `INVALID_SIGNATURE` | 3 | signature `COSE_Sign1` invalide sous la clé du `kid` |
+| `BINDING_MISMATCH` | 4 | règle R1 violée : le défi ne couvre pas cette charge utile |
+| `ATTESTATION_REJECTED` | 5 | preuve de fraîcheur structurellement illisible |
+| `ASSERTION_COUNTER_REGRESSION` | 6 | compteur d'assertion non strictement croissant |
+| `CHAIN_BROKEN` | 7 | chaînage incohérent avec la dernière enveloppe connue |
+| `MEDIA_DIGEST_MISMATCH` | 8 | empreinte du payload différente des octets reçus |
+| `UNSPECIFIED` | — | code de repli de la classe de base, ne devrait jamais sortir |
+
+`CHAIN_BROKEN` est à la fois un code de rejet et un drapeau : le chaînage rejette ou
+signale selon la politique, ce qui est délibéré (spec §9, décision ouverte).
+
+### 4 bis.2 Drapeaux
+
+Signalements qui **n'empêchent pas** de rendre un verdict. Un rejet ajoute en outre
+son propre code à cette liste.
+
+| Drapeau | Sens |
+|---|---|
+| `ATTESTATION_UNAVAILABLE` | fournisseur injoignable — n'est pas un échec de l'appareil |
+| `CHAIN_ABSENT` | aucun chaînage déclaré alors que la plateforme le permet |
+| `CHAIN_BROKEN` | chaînage incohérent, signalé et non rejeté |
+| `CHAIN_FIRST_LINK_UNKNOWN` | premier maillon connu de l'appareil seul |
+| `MEDIA_NOT_PROVIDED` | octets du média non fournis : l'empreinte n'a pas pu être recalculée |
+| `UNGRADED_FIELDS` | champs présents que le profil déclaré ne note pas (§2.5) |
+| `UNKNOWN_CLAIMS` | réclamations de corroboration d'un type inconnu, ignorées |
+
+### 4 bis.3 Jetons d'`evidence`
+
+Ce qui a été **positivement établi**. Un jeton absent ne signifie jamais un échec :
+il signifie que le contrôle n'a pas pu être fait.
+
+| Jeton | Propriété | Établit |
+|---|---|---|
+| `cose-valid` | `integrity` | signature `COSE_Sign1` valide |
+| `key-attested-hardware` | `integrity` | clé adossée au matériel |
+| `raw-hash-match` | `origin` | empreinte du payload conforme aux octets reçus |
+| `app-recognized` | `origin` | binaire reconnu par le magasin du fournisseur |
+| `app-deployment-signed` | `origin` | binaire signé par un certificat déclaré par ce déploiement |
+| `baro-consistent` | `position` | altitude barométrique cohérente avec l'altitude GNSS |
+| `motion-present` | `position` | réclamation de mouvement présente |
+| `nonce-fresh` | `time` | capture encadrée par la durée de vie du nonce |
+| `clock-consistent` | `time` | horloge de l'appareil cohérente avec celle du serveur |
+| `assertion-counter-monotonic` | `time` | compteur d'assertion strictement croissant |
+| `envelope-chain-verified` | `time` | chaînage cohérent avec l'enveloppe précédente |
+| `app-attest:assertion-valid` | toutes | assertion App Attest vérifiée sous la clé d'attestation |
+| `app-attest:r1-bound` | toutes | `clientDataHash` recalculé et confirmé par la signature |
+
+Deux familles sont **dynamiques** et ne figurent donc pas dans ce tableau :
+
+- le **fournisseur de position** (`gnss`, `fused`, `network`…), premier jeton de
+  `position`, recopié depuis `position[6]` de la charge utile ;
+- `null-verifier:<intégrité>`, émis par le substitut d'attestation. Sa présence dans
+  un résultat de production signale que le substitut est actif.
+
+Les jetons du vérificateur d'attestation sont ajoutés **à toutes les propriétés**, la
+preuve de plateforme portant sur l'enveloppe entière et non sur l'une d'elles.
+
+### 4 bis.4 `level_reason`
+
+**Texte libre, et non un code stable.** Il assemble les notes de la propriété la plus
+faible, sauf sur rejet où il porte le code et son détail. Un appelant peut l'afficher
+et le journaliser ; il ne doit **jamais** l'analyser par programme. Pour cela, lire
+`flags`, les grades par propriété et les jetons d'`evidence`, qui sont stables.
 
 ---
 
