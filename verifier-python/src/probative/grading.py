@@ -28,6 +28,7 @@ quoi il a été calculé.
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, fields
 
 from .attestation import AttestationOutcome, DeviceIntegrity
@@ -104,6 +105,51 @@ class GradingPolicy:
             for f in fields(self)
             if getattr(self, f.name) != getattr(defauts, f.name)
         ]
+
+
+def app_certificate_digest(fingerprint: str) -> str:
+    """Convertit une empreinte de la Play Console vers la forme du jeton.
+
+    Les deux consoles n'écrivent pas la même chose. La Play Console affiche
+    l'empreinte SHA-256 en **hexadécimal séparé par des deux-points** ::
+
+        63:14:CF:92:...:1D:9F
+
+    tandis que Play Integrity la rapporte en **base64url sans bourrage**,
+    43 caractères ::
+
+        YxTPkqqTg9uWc30LWhHznOA_xp59hA2jJliTXMEIHZ8
+
+    Coller la valeur de la console dans `trusted_app_certificates` ne
+    correspondrait donc jamais — et l'échec serait **silencieux** : le
+    binaire serait simplement traité comme non reconnu, ce qui ressemble
+    trait pour trait à un reconditionnement. C'est pour supprimer cette
+    classe d'erreur que cette fonction existe.
+
+    Attention à *quelle* empreinte copier : la console en affiche deux. Celle
+    qui compte est celle de la **clé de signature de l'application**, que
+    Google applique aux APK livrés — jamais celle de la clé de téléversement.
+    Depuis que Play App Signing est obligatoire pour toute application
+    nouvelle, les deux diffèrent presque toujours.
+
+    Refuse tout ce qui n'est pas de l'hexadécimal de 32 octets. Accepter une
+    valeur déjà convertie rendrait la fonction idempotente en apparence et
+    masquerait une confusion d'entrée, qui est précisément ce qu'on cherche
+    à rendre impossible.
+    """
+    nettoye = "".join(fingerprint.split()).replace(":", "")
+    try:
+        brut = bytes.fromhex(nettoye)
+    except ValueError as exc:
+        raise ValueError(
+            "empreinte attendue en hexadécimal, telle que la Play Console "
+            f"l'affiche — reçu {fingerprint!r}"
+        ) from exc
+    if len(brut) != 32:
+        raise ValueError(
+            f"empreinte SHA-256 de 32 octets attendue, reçu {len(brut)} octets"
+        )
+    return base64.urlsafe_b64encode(brut).rstrip(b"=").decode()
 
 
 DEFAULT_POLICY = GradingPolicy()

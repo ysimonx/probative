@@ -989,3 +989,53 @@ def test_version_de_spec_inconnue(verifier, key, nonces):
 
     assert res.level is Level.REJECTED
     assert "UNSUPPORTED_SPEC_VERSION" in res.flags
+
+
+# --- Conversion d'empreinte Play Console ----------------------------------
+
+
+def test_empreinte_console_convertie_vers_la_forme_du_jeton():
+    """Le format des deux consoles diffère : c'est la source d'erreur visée.
+
+    L'empreinte de référence est celle réellement rapportée par Play
+    Integrity pour `org.probative.demo` le 2026-08-12 ; l'hexadécimal est
+    le même condensat, dans la forme qu'affiche la Play Console.
+    """
+    hexa = (
+        "63:14:CF:92:AA:93:83:DB:96:73:7D:0B:5A:11:F3:9C:"
+        "E0:3F:C6:9E:7D:84:0D:A3:26:58:93:5C:C1:08:1D:9F"
+    )
+    assert grading.app_certificate_digest(hexa) == NOTRE_CERT
+
+
+@pytest.mark.parametrize(
+    "forme",
+    [
+        "6314CF92AA9383DB96737D0B5A11F39CE03FC69E7D840DA32658935CC1081D9F",
+        "6314cf92aa9383db96737d0b5a11f39ce03fc69e7d840da32658935cc1081d9f",
+        (
+            " 63:14:CF:92:AA:93:83:DB:96:73:7D:0B:5A:11:F3:9C:"
+            "E0:3F:C6:9E:7D:84:0D:A3:26:58:93:5C:C1:08:1D:9F \n"
+        ),
+    ],
+    ids=["sans-separateur", "minuscules", "avec-espaces"],
+)
+def test_empreinte_toleree_dans_ses_variantes_d_ecriture(forme):
+    """Un copier-coller mal ajusté ne doit pas coûter une enquête."""
+    assert grading.app_certificate_digest(forme) == NOTRE_CERT
+
+
+@pytest.mark.parametrize(
+    "entree",
+    [NOTRE_CERT, "pas de l'hexa", "6314CF92", ""],
+    ids=["deja-convertie", "charabia", "trop-courte", "vide"],
+)
+def test_empreinte_invalide_refusee_bruyamment(entree):
+    """Accepter une valeur déjà convertie masquerait la confusion d'entrée.
+
+    C'est le mode de défaillance que cette fonction existe pour supprimer :
+    une empreinte mal formée doit échouer à la configuration, jamais
+    produire un binaire silencieusement « non reconnu » en production.
+    """
+    with pytest.raises(ValueError):
+        grading.app_certificate_digest(entree)
