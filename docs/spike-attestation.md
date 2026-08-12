@@ -22,9 +22,11 @@ XCFramework — sans dépendance à un framework (ADR-0003).
    octets documentés) ; R1 produit un condensat de 32 octets *bruts*.~~
    **Levée sur la taille le 2026-08-11** (SM-X200) : base64url sans bourrage donne
    43 caractères, très en deçà du plafond. Le condensat passe tel quel, aucun
-   niveau d'indirection, la spec §3/R1 tient. Reste à confirmer que Play restitue
-   la chaîne intacte — cela suppose de déchiffrer le jeton, donc la phase B — puis
-   à rendre l'encodage normatif dans ADR-0002.
+   niveau d'indirection, la spec §3/R1 tient.
+   ~~Reste à confirmer que Play restitue la chaîne intacte.~~
+   **Close le 2026-08-12 : l'aller-retour est vérifié.** Un jeton réel déchiffré par
+   Google restitue un `requestHash` identique au R1 recalculé côté hôte. Reste à
+   rendre l'encodage normatif dans ADR-0002 — formalité, plus une inconnue.
 2. **Latence capture→signature (`media.6`)** sur appareil d'entrée de gamme : elle
    conditionne l'exploitabilité du champ comme discriminant d'injection.
 3. **Chaînage Android** (spec §9) : chaîne de hachage locale ou compteur Keystore.
@@ -194,10 +196,14 @@ n'a pas été confrontée à celle publiée par Google, ce qui reste la phase B.
       documenté à 500 — **inconnue n° 1 levée sur la taille** : le condensat de
       32 octets passe tel quel, aucun niveau d'indirection n'est nécessaire, la
       spec §3/R1 n'a pas à être révisée sur ce point.
-- [ ] Confirmer que Play **restitue** le `requestHash` intact dans le jeton —
-      exige de le faire déchiffrer par Google (compte de service), donc phase B.
-      Tant que ce n'est pas fait, l'encodage est validé en émission seulement.
-- [ ] Rendre l'encodage normatif dans ADR-0002 une fois l'aller-retour confirmé.
+- [x] **Aller-retour confirmé le 2026-08-12 — l'inconnue n° 1 est close.** Jeton réel
+      de la SM-X200 déchiffré par `decodeIntegrityToken` (HTTP 200) : Play restitue
+      `hO8pCZOl0-5UZs4k9CwIDGDlyzAp0bThKassj5XEabU`, soit **exactement** le R1
+      recalculé côté hôte depuis la charge utile et le nonce de la sonde. Contrôle
+      fait **par recalcul**, jamais en comparant deux chaînes produites par
+      l'appareil. L'encodage ne diverge pas entre client et serveur : R1 ne casse pas
+      en silence, ce qui était le pire mode de défaillance envisagé.
+- [ ] Rendre l'encodage normatif dans ADR-0002 — plus rien ne le bloque.
 - [ ] Jeton opaque dans `freshness[2]`, enveloppe complète signée, acceptée par le
       serveur de dev avec substitut d'attestation.
 
@@ -231,6 +237,13 @@ par le serveur de dev (substitut d'attestation) ; AAR autonome ; latences mesur�
       vérification, dépendance de disponibilité, plafond de 10 000 requêtes/jour
       non négociable hors Play Store, argument d'auto-hébergement entamé côté
       Android). Procédure et sources : `play-integrity-service-account.md`.
+- [x] **Authentification auprès de Google : couture injectable** (ADR-0006).
+      `AccessTokenProvider` est un `Protocol` ; `ServiceAccountKeyProvider` en est
+      l'implémentation par défaut, flux JWT-bearer signé maison, **zéro dépendance
+      nouvelle** — le vérificateur reste à `cbor2` + `cryptography`. Un déploiement
+      Google Cloud injecte `google-auth` et sa fédération d'identité. Éprouvé contre
+      l'API réelle le 2026-08-12 dans le venv du projet : jeton réel déchiffré en
+      HTTP 200, R1 confronté par recalcul.
 - [ ] Implémenter `attestation/play_integrity.py` : déchiffrement, verdicts appareil
       et application, comparaison du `requestHash` au défi R1 recalculé (même
       encodage qu'en A5), mapping vers `AttestationOutcome`.
@@ -354,14 +367,13 @@ spike : il y faut une itération de C3, ou C4.
 
 ## Prérequis logistiques — à fournir, hors code
 
-- [ ] Application déclarée dans la Play Console (piste interne suffisante).
-      **Requise pour le déchiffrement, pas pour la délivrance** — distinction établie
-      par l'exécution du 2026-08-12 : `decodeIntegrityToken` répond
-      « App is not found » sur `org.probative.demo`, exactement comme sur un paquet
-      inexistant, là où un paquet publié répond `PERMISSION_DENIED`. A5 avait montré
-      que Google *délivre* un jeton sans Play Console ; il n'accepte pas de le
-      *déchiffrer* dans les mêmes conditions. Voir `play-integrity-service-account.md`
-      §7.
+- [x] ~~Application déclarée dans la Play Console (piste interne suffisante)~~ —
+      **non requise, établi le 2026-08-12 par un jeton réel déchiffré en HTTP 200.**
+      Google résout l'application depuis le jeton, qui porte le lien vers le projet
+      Cloud, et non depuis le nom de paquet de l'URL. Ni délivrance ni déchiffrement
+      n'exigent la Play Console. *Un refus obtenu avec un jeton volontairement
+      invalide avait fait conclure l'inverse quelques heures plus tôt : voir
+      `play-integrity-service-account.md` §7, la leçon de méthode y est consignée.*
 - [x] Projet Google Cloud lié pour l'API standard Play Integrity. *(Projet
       `probative`, 487335590129 ; API activée, confirmé par appel réel.)*
 - [x] **Compte de service** dans ce même projet Cloud, pour déchiffrer les jetons —
