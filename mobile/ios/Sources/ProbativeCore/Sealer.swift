@@ -136,6 +136,26 @@ public struct Sealer {
             posture: posture,
             previousDigest: previousDigest
         )
+        return try await assemble(
+            payload: payload,
+            nonce: nonce,
+            profile: CorePayload.profile,
+            mediaDigest: mediaDigest
+        )
+    }
+
+    /// Encode, lie par R1, obtient la fraîcheur, signe, assemble.
+    ///
+    /// Partagé par les deux points d'entrée : c'est **exactement** la part
+    /// qui ne doit pas différer entre un scellement d'octets remis et une
+    /// acquisition. La dupliquer laisserait les deux chemins diverger sur
+    /// R1, ce qui ne se verrait qu'à la vérification.
+    func assemble(
+        payload: CborValue,
+        nonce: Data,
+        profile: String,
+        mediaDigest: Data
+    ) async throws -> SealedEnvelope {
         let payloadBytes = Cbor.encode(payload)
 
         // Règle R1, non négociable : le défi vaut exactement
@@ -147,7 +167,7 @@ public struct Sealer {
         let protectedBytes = Cose.protectedHeader(
             kid: try signingKey.kid(),
             deployment: deployment,
-            profile: CorePayload.profile
+            profile: profile
         )
         let signature = try signingKey.signRaw(
             Cose.sigStructure(protected: protectedBytes, payload: payloadBytes)
@@ -173,3 +193,117 @@ public struct Sealer {
         )
     }
 }
+
+#if os(iOS)
+
+extension Sealer {
+
+    /// Acquiert une photo et la scelle — le **premier** point d'entrée du
+    /// cœur (spec §2.5), celui où il pilote la caméra.
+    ///
+    /// Ce que l'acquisition ajoute au scellement d'octets remis n'est pas la
+    /// preuve de l'origine capteur : sur un appareil compromis, une caméra
+    /// virtuelle injecte des images dans le pipeline. Elle ajoute un chemin
+    /// **court et mesurable** entre capteur et signature, donc une attaque
+    /// plus coûteuse et un `media[6]` exploitable. Différence de degré, pas
+    /// de nature — et c'est exactement pourquoi `origin` reste plafonné à B.
+    ///
+    /// Le nonce doit avoir été émis pour le profil `capture`.
+    ///
+    /// Lève si le point de position n'arrive pas dans le délai : le profil
+    /// l'exige, et mieux vaut échouer ici que faire signer une enveloppe que
+    /// le serveur rejettera comme malformée.
+    public func capture(
+        nonce: Data,
+        locationTimeout: TimeInterval = 15,
+        previousDigest: Data? = nil
+    ) async throws -> SealedEnvelope {
+        // Position et corroboration partent **avant** l'obturateur et courent
+        // pendant l'acquisition. Les enchaîner après coûtait 4,2 s dans
+        // `media[6]` sur iPhone 16, et faisait tomber `origin` à C pour
+        // « latence anormale » : le champ censé discriminer une injection
+        // n'accusait alors que l'ordonnancement du client.
+        //
+        // Les mesures encadrent donc la capture au lieu de la suivre, ce qui
+        // est aussi la lecture juste du format — une corroboration décrit
+        // l'instant de la prise, pas l'instant où le client a fini de la
+        // collecter.
+        async let fixTask = Sensors.location(timeout: locationTimeout)
+        async let claimsTask = Sensors.claims()
+
+        let image = try await Camera.capture()
+        let claims = await claimsTask
+        guard let fix = await fixTask else {
+            throw CaptureError.noPosition
+        }
+        return try await seal(
+            image: image,
+            position: Sensors.position(from: fix, shutterDate: shutterDate(of: image)),
+            claims: claims,
+            nonce: nonce,
+            previousDigest: previousDigest
+        )
+    }
+
+    /// Scelle une image **acquise par le cœur**, avec ses mesures.
+    ///
+    /// Séparé de `capture` pour qu'une sonde puisse rapporter chaque étape
+    /// sans réimplémenter l'assemblage — et non pour offrir un chemin où un
+    /// appelant fournirait ses propres octets en profil `capture`. Ce
+    /// chemin-là est `seal(content:…)`, et il produit `core`.
+    public func seal(
+        image: CapturedImage,
+        position: Position,
+        claims: [Claim],
+        nonce: Data,
+        previousDigest: Data? = nil
+    ) async throws -> SealedEnvelope {
+        let mediaDigest = Data(SHA256.hash(data: image.jpeg))
+
+        // L'origine est l'obturateur, pas l'entrée dans cette méthode : c'est
+        // là seulement que `media[6]` discrimine une injection, en mesurant
+        // le temps réellement passé entre capteur et charge utile.
+        let elapsed = ProcessInfo.processInfo.systemUptime - image.shutterUptime
+        precondition(elapsed >= 0, "obturateur postérieur au scellement")
+
+        let payload = CapturePayload.build(
+            nonce: nonce,
+            media: Media(
+                digest: mediaDigest,
+                mimeType: "image/jpeg",
+                sizeBytes: image.jpeg.count,
+                signLatencyMs: Int((elapsed * 1000).rounded()),
+                pixelSize: image.pixelSize
+            ),
+            position: position,
+            timing: DeviceState.timing(),
+            posture: DeviceState.posture(appVersion: appVersion),
+            claims: claims,
+            previousDigest: previousDigest
+        )
+        return try await assemble(
+            payload: payload,
+            nonce: nonce,
+            profile: CapturePayload.profile,
+            mediaDigest: mediaDigest
+        )
+    }
+
+    /// Ramène l'instant de l'obturateur sur l'horloge murale, seule échelle
+    /// où l'horodatage d'un point CoreLocation est comparable.
+    private func shutterDate(of image: CapturedImage) -> Date {
+        Date(timeIntervalSinceNow: image.shutterUptime - ProcessInfo.processInfo.systemUptime)
+    }
+}
+
+public enum CaptureError: Error, CustomStringConvertible {
+    case noPosition
+
+    public var description: String {
+        switch self {
+        case .noPosition: return "aucun point de position : le profil capture l'exige"
+        }
+    }
+}
+
+#endif

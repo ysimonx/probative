@@ -14,6 +14,7 @@ import SwiftUI
 struct ProbeView: View {
 
     private enum Probe: String, CaseIterable, Identifiable {
+        case capture = "C4.2 — acquisition photo"
         case seal = "C4.1 — enveloppe complète"
         case attest = "C3 — vecteur App Attest"
         var id: String { rawValue }
@@ -22,7 +23,9 @@ struct ProbeView: View {
     @State private var lines: [SealProbe.Line] = []
     @State private var running = false
     @State private var fixturePath: String?
-    @State private var probe: Probe = .seal
+    // La sonde en cours est celle qui part au lancement : c'est ce qui permet
+    // de mener une campagne sans toucher l'écran.
+    @State private var probe: Probe = .capture
 
     var body: some View {
         NavigationStack {
@@ -65,8 +68,10 @@ struct ProbeView: View {
         fixturePath = nil
         Task {
             switch probe {
+            case .capture:
+                lines = await SealProbe.run(.capture)
             case .seal:
-                lines = await SealProbe.run()
+                lines = await SealProbe.run(.core)
             case .attest:
                 let result = await AttestProbe.run()
                 // Les deux sondes journalisent la même chose ; seul le type

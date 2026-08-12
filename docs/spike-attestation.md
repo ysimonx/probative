@@ -494,12 +494,74 @@ enveloppe et collecter des capteurs sont deux difficultés indépendantes.
 - [x] Séquence sur appareil : **exécutée sur iPhone 16 (iOS 26.6) le 2026-08-13**,
       verdict `STRONG`, trois propriétés au grade A, aucun drapeau.
 
-#### C4.2 — La collecte
+#### C4.2 — La collecte — **FAITE le 2026-08-13, iPhone 16**
 
-- [ ] AVFoundation : octets JPEG bruts, empreinte, dimensions ; `timing`,
+- [x] AVFoundation : octets JPEG bruts, empreinte, dimensions ; `timing`,
       `position` (CoreLocation + ancienneté), `posture` iOS (`posture[9]`).
-- [ ] Corroboration : `baro`/`baro-alt` (CMAltimeter), `motion`, `steps`,
-      `activity`.
+- [x] Corroboration : `baro`/`baro-alt` (CMAltimeter), `motion`, `steps`.
+      ~~`activity`~~ non collectée : `CMMotionActivity` demande une
+      autorisation de plus pour un signal qu'aucune règle de notation ne lit.
+- [x] `CapturePayload` épinglé au vecteur d'or `ios` **octet à octet** — le
+      seul jeu portant les quatre réclamations et une position sans nombre de
+      satellites, donc le seul oracle du profil `capture` côté iOS.
+
+**Verdict obtenu : `STANDARD`, et c'est le maximum atteignable en v0.1.**
+
+      integrity   A   cose-valid, key-attested-hardware, app-attest:*
+      origin      B   plafond de recapture — ADR-0005
+      position    A   gnss, baro-consistent, motion-present
+      time        A   assertion-counter-monotonic
+      drapeaux        aucun
+
+`origin` à B n'est pas un défaut : c'est l'angle mort assumé de la v0.1, et
+le seul motif de `level_reason`. Les trois autres propriétés sont au grade A.
+
+**Mesures — l'inconnue n° 2 est levée.** Capture AVFoundation **1 904 ms**
+(dont 400 ms d'attente de convergence délibérée), scellement **49 ms**,
+enveloppe **734 octets**, vérification **280 ms**. La capture domine tout le
+reste de deux ordres de grandeur ; la fraîcheur, qu'on soupçonnait, ne coûte
+rien. Le seuil de `max_sign_latency_ms` (3 000 ms) tient — mais avec une
+marge bien plus faible qu'on ne l'imaginait, et c'est ce qui rend les trois
+pièges ci-dessous décisifs plutôt qu'anecdotiques.
+
+**Trois pièges, tous mesurés, aucun devinable.**
+
+1. **La corroboration doit courir *pendant* l'acquisition, jamais après.**
+   Collectée en aval de l'obturateur, elle ajoutait **4,2 s** à `media[6]` :
+   `origin` tombait à C pour « latence payload→signature anormale », alors
+   que rien d'anormal ne s'était produit. Le champ censé discriminer une
+   injection n'accusait que l'ordonnancement du client. Les mesures encadrent
+   la capture, elles ne la suivent pas — ce qui est aussi la lecture juste du
+   format : une corroboration décrit l'instant de la prise.
+2. **Le premier point que rend CoreLocation est celui du cache.** Mesuré à
+   **42 922 ms** d'âge, il faisait tomber `position` à C pour « point vieux au
+   déclenchement » quand un point frais arrivait une seconde plus tard.
+   `Sensors.location` attend donc un point sous un âge plafond — **attendre
+   n'est pas filtrer** : à l'expiration, le point le plus frais obtenu est
+   rendu *avec son âge réel*, et c'est le serveur qui juge (invariant 1).
+3. **`CLLocationManager` exige un fil doté d'une boucle d'exécution.** Créé
+   depuis un contexte `async` — donc sur la réserve coopérative, qui n'en a
+   pas — il ne délivre **jamais** ses rappels : aucune erreur, aucun
+   avertissement, juste un délai qui expire. On impute d'abord la panne au
+   GPS ; elle est dans le fil d'exécution.
+
+**Deux conventions d'unité, que le format ne fixe pas.** `baro-alt` est en
+**mètres**, pour être confrontable à `position[4]` — c'est le vérificateur qui
+l'impose. `baro` est en **hectopascals**, l'unité que rend nativement Android
+(`Sensor.TYPE_PRESSURE`) ; iOS donne des kilopascals et convertit. Sans cette
+convention, deux plateformes rapporteraient la même mesure à un facteur dix
+près et **rien dans le format ne le dirait**. À rendre normatif dans la spec.
+
+**Deux relevés supposent l'autorisation de mouvement**, qui est demandée à la
+première lecture du baromètre. Tant qu'elle n'est pas accordée, `baro-alt` et
+`baro` sont **omis** — jamais simulés — et `position` perd `baro-consistent`
+sans pour autant échouer.
+
+**Ce que l'altitude barométrique n'est pas.** `startRelativeAltitudeUpdates`
+ne rend qu'un *écart* depuis le début des relevés ; la confronter à l'altitude
+GNSS n'a aucun sens et le vérificateur crierait à l'incohérence altimétrique
+sur un appareil sain. C'est `startAbsoluteAltitudeUpdates` qu'il faut — et
+c'est la seconde API qu'on rencontre, pas la première.
 
 **Trois différences avec Android, toutes structurelles.**
 
@@ -918,3 +980,50 @@ spike : il y faut une itération de C3, ou C4.
     « iPhone 16 de Yannick ». Remplacée par une extraction du motif d'UUID.
   - **`timeout` n'existe pas sur macOS**, et `devicectl … --console` ne rend pas
     la main : lancer en arrière-plan puis relire le journal.
+
+- 2026-08-13 : **C4.2 faite — une photo réelle est sous le sceau.** iPhone 16,
+  iOS 26.6, profil `capture`. Verdict `STANDARD`, `integrity`/`position`/`time`
+  au grade A, `origin` à B par le seul plafond de recapture — donc **le maximum
+  atteignable en v0.1**, et le seul motif de `level_reason`.
+
+  C'est la première enveloppe du dépôt qui décrit quelque chose du monde
+  physique : 2 484 264 octets de JPEG, 4032×3024, position GNSS à 8 m avec un
+  point de 1 138 ms d'âge au déclenchement, corroborée par le baromètre
+  (`baro-consistent`) et l'accéléromètre (`motion-present`).
+
+  **Inconnue n° 2 levée.** Capture **1 904 ms**, scellement **49 ms**,
+  vérification **280 ms**. La capture domine de deux ordres de grandeur, comme
+  A5 et C3 le laissaient prévoir — la fraîcheur ne coûte rien. Le seuil de
+  3 000 ms de `max_sign_latency_ms` tient, mais la marge est mince : c'est ce
+  qui transforme les trois pièges ci-dessous en questions de conception plutôt
+  qu'en anecdotes.
+
+  Trois erreurs commises puis mesurées, dans cet ordre :
+
+  - **corroboration collectée après l'obturateur** : +4,2 s dans `media[6]`,
+    `origin` à C pour « latence anormale ». Le champ censé discriminer une
+    injection n'accusait que l'ordonnancement du client. Position et
+    corroboration courent désormais *pendant* l'acquisition ;
+  - **premier point CoreLocation = point de cache**, 42 922 ms d'âge,
+    `position` à C. On attend maintenant un point sous un âge plafond, sans
+    jamais masquer l'âge réel de celui qu'on finit par retenir ;
+  - **`CLLocationManager` créé sur un fil sans boucle d'exécution** ne délivre
+    jamais ses rappels. Aucune erreur, juste un délai qui expire — la panne
+    ressemble trait pour trait à une absence de signal GPS.
+
+  Chacune produisait un verdict *plausible et faux* : une latence anormale
+  sans anomalie, un point ancien alors qu'un point frais existait, une absence
+  de position sur un appareil qui en avait une. C'est exactement la classe de
+  défaillance que le banc de triche devra provoquer volontairement.
+
+  **Un manque de la spec, trouvé par l'implémentation.** Les valeurs de
+  `claim` n'ont aucune unité normative. `baro-alt` doit être en mètres — le
+  vérificateur le compare à `position[4]` — mais rien ne le dit ; `baro` est en
+  hectopascals sur Android (`Sensor.TYPE_PRESSURE`) et en kilopascals sur iOS.
+  Deux plateformes auraient rapporté la même mesure à un facteur dix près sans
+  qu'aucun test ne s'en aperçoive. Le cœur iOS convertit ; **la spec doit le
+  rendre normatif**.
+
+  Reste, côté iOS : le chemin de production (`appattest`, racine différente),
+  et le chaînage d'enveloppes. Côté Android, A4.1 puis A4.2 — toujours en
+  attente d'une SM-X200.

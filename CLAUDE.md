@@ -185,7 +185,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
 | Vecteurs d'appareil | Android (chaîne à 4 certificats, SM-X200) et iOS (App Attest, iPhone 16) versionnés dans `tests/device-vectors/` |
 | Cœur natif Android | A1–A3 et **A5 faites, validées sur SM-X200**. **A4.1 écrite** — `seal(bytes)`, profil `core` : le cœur assemble et signe une enveloppe complète, épinglée au vecteur d'or par un test d'hôte. **Jamais exécutée sur appareil** : c'est la seule case qui reste pour le critère de sortie du spike. Puis A4.2, capture CameraX |
-| Cœur natif iOS | C1–C3 et **C4.1 faites**. **Le critère de sortie du spike est atteint** (iPhone 16, iOS 26.6, 2026-08-13) : enveloppe complète acceptée en `STRONG`, trois propriétés au grade A, attestation réelle et non substitut. Prochaine : C4.2, capture AVFoundation |
+| Cœur natif iOS | C1–C3, **C4.1 et C4.2 faites** (iPhone 16, iOS 26.6, 2026-08-13). **Critère de sortie du spike atteint** en `core` (`STRONG`), puis **une photo réelle scellée** en `capture` : `STANDARD`, `integrity`/`position`/`time` au grade A, `origin` à B par le seul plafond de recapture — le maximum de la v0.1. Reste : chemin de production, chaînage |
 | Liaisons Flutter / React Native | Non commencées |
 | Banc de triche | Non commencé |
 
@@ -277,10 +277,14 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    identique au R1 recalculé côté serveur. Une divergence d'encodage aurait cassé R1
    **silencieusement**, le pire mode de défaillance ; c'est écarté. *Reste* une
    formalité : rendre l'encodage normatif dans ADR-0002.
-2. **Latence — déplacée, pas levée.** La fraîcheur ne coûte rien : 36–39 ms sur
-   SM-X200, 18 ms sur iPhone 16. Le préchauffage Play Integrity, lui, coûte 1 313 ms
-   à froid et doit rester au démarrage. Conclusion : le sujet de `media.6` est la
-   **capture elle-même**, à mesurer en A4/C4.
+2. **Latence — levée le 2026-08-13 par C4.2.** La fraîcheur ne coûte rien
+   (36–39 ms sur SM-X200, 18 ms sur iPhone 16) ; la **capture domine de deux
+   ordres de grandeur** : 1 904 ms sur iPhone 16, scellement 49 ms. Le seuil de
+   3 000 ms tient, mais la marge est mince — et c'est ce qui rend décisif
+   l'ordonnancement du client : **la corroboration doit courir *pendant*
+   l'acquisition**, faute de quoi elle entre dans `media[6]` et fait accuser une
+   latence anormale là où il n'y en a aucune (mesuré : +4,2 s). Reste à mesurer
+   sur un appareil d'entrée de gamme, la SM-X200 étant la cible du pire cas.
 3. **Chaînage Android** (spec §9) : inchangée, non instruite.
 4. **Horodatage par un tiers, RFC 3161** (spec §9) : ouverte. **Ne relève pas de la
    sécurité** — le nonce encadre déjà la capture des deux côtés, et un jeton
@@ -324,10 +328,17 @@ compte : brancher la SM-X200. ~~C'est ce qui coche le critère de sortie du spik
 sur Android, où la clé matérielle et le verdict d'appareil sont hors de portée d'un
 émulateur.
 
-**A4.2 / C4.2 — la capture.** La seule qui mettra enfin une photo sous le sceau, et
-le vrai sujet de mesure de latence. Rien ne la bloque ; c'est aussi la plus longue.
-Elle fera retomber `origin` de A à B — le plafond de recapture s'applique au profil
-`capture`, et ce sera correct.
+~~**A4.2 / C4.2 — la capture.**~~ **C4.2 faite le 2026-08-13** : une photo réelle
+est sous le sceau, en `STANDARD` — `origin` est bien retombé de A à B, comme prévu
+et à raison. **A4.2 reste**, et c'est elle qui mesurera le pire cas : la SM-X200 est
+un appareil d'entrée de gamme, là où l'iPhone 16 est le meilleur cas.
+
+**Une convention d'unité à rendre normative**, trouvée en écrivant C4.2 : les
+valeurs de `claim` n'ont aucune unité dans la spec. `baro-alt` doit être en mètres
+— le vérificateur la compare à `position[4]` — et `baro` en hectopascals, l'unité
+native d'Android. iOS rend des kilopascals et convertit. Sans cette convention,
+deux plateformes rapporteraient la même mesure à un facteur dix près sans qu'aucun
+test ne s'en aperçoive.
 
 ### Ce que la phase D n'a pas couvert
 

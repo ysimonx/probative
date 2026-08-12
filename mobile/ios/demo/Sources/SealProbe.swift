@@ -36,9 +36,26 @@ enum SealProbe {
         let failed: Bool
     }
 
+    /// Les deux points d'entrée du cœur (spec §2.5), et donc les deux profils.
+    ///
+    /// La séquence est la même de bout en bout — enrôlement, nonce,
+    /// scellement, verdict — et seul le quatrième temps diffère. C'est
+    /// exactement ce que le format promet : `capture` est le noyau plus des
+    /// exigences, pas un mécanisme séparé.
+    enum Mode {
+        case core, capture
+
+        var profile: String {
+            switch self {
+            case .core: return CorePayload.profile
+            case .capture: return CapturePayload.profile
+            }
+        }
+    }
+
     /// Exécute la séquence complète. Ne lance jamais : un échec est une ligne
     /// du journal, pas une exception qui masquerait les étapes déjà franchies.
-    static func run() async -> [Line] {
+    static func run(_ mode: Mode = .core) async -> [Line] {
         var lines: [Line] = []
         func ok(_ s: String) {
             lines.append(Line(text: s, failed: false))
@@ -50,7 +67,12 @@ enum SealProbe {
         }
 
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        ok("probative — sonde C4.1 : enveloppe complete, profil core")
+        switch mode {
+        case .core:
+            ok("probative — sonde C4.1 : enveloppe complete, profil core")
+        case .capture:
+            ok("probative — sonde C4.2 : acquisition photo, profil capture")
+        }
         ok("version \(version ?? "?") — iOS \(UIDevice.current.systemVersion)")
 
         guard let server = DevServer.fromBundle() else {
@@ -108,7 +130,7 @@ enum SealProbe {
             // ── 3. Nonce, émis pour le profil ─────────────────────────────
             let issued = try await server.nonce(
                 kid: try signingKey.kid(),
-                profile: CorePayload.profile
+                profile: mode.profile
             )
             guard
                 let nonce = Data(base64Encoded: issued["nonce_b64"] as? String ?? ""),
@@ -121,8 +143,8 @@ enum SealProbe {
             // Le profil signé doit être celui du nonce : mieux vaut s'arrêter
             // que faire signer une enveloppe que le serveur rejettera pour
             // cette raison.
-            guard profile == CorePayload.profile else {
-                ko("nonce emis pour \(profile), ce sceau produit \(CorePayload.profile)")
+            guard profile == mode.profile else {
+                ko("nonce emis pour \(profile), ce sceau produit \(mode.profile)")
                 return lines
             }
 
@@ -133,28 +155,98 @@ enum SealProbe {
                 appVersion: version ?? "0.1",
                 freshness: AppAttestFreshness(keyId: keyId)
             )
-            let sealStart = DispatchTime.now().uptimeNanoseconds
-            let sealed = try await sealer.seal(
-                content: content,
-                mimeType: contentType,
-                nonce: nonce
-            )
-            ok("scellement       \(since(sealStart))")
+            let sealed: SealedEnvelope
+            let media: Data
+            switch mode {
+            case .core:
+                let sealStart = DispatchTime.now().uptimeNanoseconds
+                sealed = try await sealer.seal(
+                    content: content,
+                    mimeType: contentType,
+                    nonce: nonce
+                )
+                media = content
+                ok("scellement       \(since(sealStart))")
+            case .capture:
+                // La sonde déroule l'acquisition étape par étape plutôt que
+                // d'appeler `capture()`, pour pouvoir chronométrer et
+                // rapporter chacune. Un intégrateur, lui, appelle `capture()`.
+                let (envelope, jpeg) = try await acquire(sealer: sealer, nonce: nonce, ok: ok)
+                sealed = envelope
+                media = jpeg
+            }
             ok("charge utile     \(sealed.payloadBytes.count) octets")
             ok("defi R1          \(sealed.challenge.base64EncodedString())")
             ok("enveloppe        \(sealed.bytes.count) octets")
 
             // ── 5. Verdict ────────────────────────────────────────────────
             let verifyStart = DispatchTime.now().uptimeNanoseconds
-            let result = try await server.verify(envelope: sealed.bytes, media: content)
+            let result = try await server.verify(envelope: sealed.bytes, media: media)
             ok("verification     \(since(verifyStart))")
             lines.append(contentsOf: report(result))
         } catch let failure as DevServer.Failure {
             ko("serveur \(failure.description)")
+        } catch let described as CustomStringConvertible {
+            // Une énumération Swift pontée en `NSError` perd son message et
+            // ne rend plus que « code 0 », ce qui n'apprend rien. Les erreurs
+            // du cœur portent toutes une description : on la privilégie.
+            ko(described.description)
         } catch {
             ko("\((error as NSError).domain) code \((error as NSError).code) — \(error.localizedDescription)")
         }
         return lines
+    }
+
+    /// L'acquisition, déroulée pour être chronométrée étape par étape.
+    ///
+    /// Trois mesures qu'aucune autre étape ne donne : le coût de la capture
+    /// elle-même, celui du point de position, et celui de la corroboration.
+    /// C'est le vrai sujet de l'inconnue n° 2 — la fraîcheur, elle, ne coûte
+    /// rien et on le sait depuis A5.
+    private static func acquire(
+        sealer: Sealer,
+        nonce: Data,
+        ok: (String) -> Void
+    ) async throws -> (SealedEnvelope, Data) {
+        // Position et corroboration courent PENDANT l'acquisition, comme le
+        // fait `capture()`. Les enchaîner après l'obturateur gonflait
+        // `media[6]` de 4,2 s et faisait tomber `origin` à C : mesuré, puis
+        // corrigé.
+        let start = DispatchTime.now().uptimeNanoseconds
+        async let fixTask = Sensors.location()
+        async let claimsTask = Sensors.claims()
+
+        let image = try await Camera.capture()
+        ok("capture          \(since(start)) — \(image.jpeg.count) octets, "
+            + "\(image.pixelSize.width)x\(image.pixelSize.height)")
+
+        let claims = await claimsTask
+        ok("corroboration    \(since(start)) cumule — "
+            + (claims.isEmpty ? "aucune" : claims.map(\.type).joined(separator: ", ")))
+
+        guard let fix = await fixTask else {
+            throw CaptureError.noPosition
+        }
+        let shutterDate = Date(
+            timeIntervalSinceNow: image.shutterUptime - ProcessInfo.processInfo.systemUptime
+        )
+        let position = Sensors.position(from: fix, shutterDate: shutterDate)
+        ok("position         \(since(start)) cumule — \(position.provider.rawValue), "
+            + String(format: "%.0f m, age %d ms", position.horizontalAccuracy, position.fixAgeMs))
+        // Sur iOS, l'absence d'indicateur de position simulée est
+        // structurelle : sans `motion` ni `steps`, le vérificateur plafonne
+        // `position` à C. Le dire ici évite de chercher la cause dans le
+        // verdict.
+        if !claims.contains(where: { $0.type == "motion" || $0.type == "steps" }) {
+            ok("                 sans corroboration inertielle, position plafonne a C")
+        }
+
+        let sealStart = DispatchTime.now().uptimeNanoseconds
+        let sealed = try await sealer.seal(
+            image: image, position: position, claims: claims, nonce: nonce
+        )
+        ok("scellement       \(since(sealStart))")
+        return (sealed, image.jpeg)
     }
 
     /// Le résultat, propriété par propriété. Ni `level` seul, ni résumé

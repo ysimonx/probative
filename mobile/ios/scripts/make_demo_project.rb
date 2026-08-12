@@ -108,7 +108,16 @@ target.build_configurations.each do |config|
     # Le vecteur produit se récupère par devicectl ; l'exposer dans Fichiers
     # donne un second chemin de récupération quand le poste n'est pas là.
     'INFOPLIST_KEY_UIFileSharingEnabled' => 'YES',
-    'INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace' => 'YES'
+    'INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace' => 'YES',
+    # Autorisations de la sonde C4.2. Elles appartiennent a l'ACQUISITION,
+    # pas au format : sceller des octets remis n'en demande aucune, et c'est
+    # un trait du profil `core` plus qu'une economie.
+    'INFOPLIST_KEY_NSCameraUsageDescription' =>
+      'La sonde prend une photo et la scelle dans une enveloppe attestee.',
+    'INFOPLIST_KEY_NSLocationWhenInUseUsageDescription' =>
+      'La position au declenchement entre dans l\'enveloppe ; le serveur la note.',
+    'INFOPLIST_KEY_NSMotionUsageDescription' =>
+      'Barometre et accelerometre corroborent la position (spec 2.4).'
   )
 end
 
