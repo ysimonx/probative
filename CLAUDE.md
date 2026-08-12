@@ -333,12 +333,15 @@ est sous le sceau, en `STANDARD` — `origin` est bien retombé de A à B, comme
 et à raison. **A4.2 reste**, et c'est elle qui mesurera le pire cas : la SM-X200 est
 un appareil d'entrée de gamme, là où l'iPhone 16 est le meilleur cas.
 
-**Une convention d'unité à rendre normative**, trouvée en écrivant C4.2 : les
-valeurs de `claim` n'ont aucune unité dans la spec. `baro-alt` doit être en mètres
-— le vérificateur la compare à `position[4]` — et `baro` en hectopascals, l'unité
-native d'Android. iOS rend des kilopascals et convertit. Sans cette convention,
-deux plateformes rapporteraient la même mesure à un facteur dix près sans qu'aucun
-test ne s'en aperçoive.
+~~**Une convention d'unité à rendre normative**~~ — **fait le 2026-08-13**, spec
+§2.4. Le trou était pire que prévu : la spec décrivait `baro-alt` comme une altitude
+**relative** quand le vérificateur la confronte à `position[4]`, une altitude
+**absolue**. Une valeur relative n'aurait jamais pu correspondre — et c'est
+exactement ce qui fait prendre la mauvaise API sur iOS. Les unités sont désormais
+normatives (`baro` en hPa, `baro-alt` en mètres absolus, accélérations en m/s²),
+avec le corollaire qui compte : **une unité se corrige par un nouveau type, jamais
+par redéfinition**, puisqu'un type inconnu est ignoré silencieusement là où un type
+mal lu ne l'est pas.
 
 ### Ce que la phase D n'a pas couvert
 

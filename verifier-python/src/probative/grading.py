@@ -301,6 +301,13 @@ def grade_position(
 
     # Corroboration barométrique : le signal le plus rentable des deux
     # plateformes, et celui qu'un simulateur GPS ne falsifie jamais.
+    #
+    # C'est cette comparaison qui rend l'unité de `baro-alt` normative : des
+    # **mètres**, et une altitude **absolue**, puisqu'elle est confrontée à
+    # `position[4]`. Une altitude relative — un écart depuis le début des
+    # relevés, ce que rend l'API iOS qu'on rencontre en premier — ferait
+    # crier à l'incohérence altimétrique sur un appareil parfaitement sain.
+    # Voir spec §2.4, qui porte les unités que le CDDL ne peut pas exprimer.
     baro = claims.claim("baro-alt")
     if baro is not None and p.altitude is not None:
         try:

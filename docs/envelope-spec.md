@@ -169,17 +169,27 @@ claim = {
 
 Aucun indice de confiance n'est transporté. Le client mesure, le serveur juge.
 
+`3` est un horodatage **monotone**, sur la même échelle que `timing[2]`, et il décrit **l'instant de la mesure** — pas celui de la capture. La nuance compte dès que les mesures sont collectées en parallèle de l'acquisition, ce qu'elles doivent être : les rassembler après le déclenchement gonflerait `media[6]`, qui est justement le discriminant d'injection.
+
+**Les unités sont normatives.** Elles ne peuvent pas l'être par le CDDL, `4` étant `any` — c'est donc ici, et nulle part ailleurs, que deux implémentations se rejoignent. Une divergence d'unité entre plateformes ne casse rien : elle produit des mesures fausses d'un facteur constant, qu'aucun test ne remarque et qu'aucun verdict ne signale. C'est le mode de défaillance le plus coûteux du format.
+
 Types définis en v0.1 :
 
-| Type | Mesure | Android | iOS |
+| Type | Mesure et **unité** | Android | iOS |
 |---|---|---|---|
-| `baro` | pression en hPa | `TYPE_PRESSURE` | `CMAltimeter` |
-| `baro-alt` | altitude barométrique relative, m | `CMAltimeter` | `CMAltimeter` |
-| `motion` | fenêtre de 10 s : `[[t, ax, ay, az], …]` | `TYPE_ACCELEROMETER` | `CMMotionManager` |
-| `steps` | pas cumulés sur la fenêtre | `TYPE_STEP_COUNTER` | `CMPedometer` |
+| `baro` | pression atmosphérique, **hPa** | `TYPE_PRESSURE`, natif en hPa | `CMAltimeter`, **kPa à convertir** |
+| `baro-alt` | altitude barométrique **absolue**, **m** | `TYPE_PRESSURE` + formule barométrique | `startAbsoluteAltitudeUpdates` |
+| `motion` | `[[t, ax, ay, az], …]`, `t` en **ms depuis le premier échantillon**, accélérations en **m/s²** | `TYPE_ACCELEROMETER` | `CMMotionManager` |
+| `steps` | pas cumulés sur la minute précédant la capture | `TYPE_STEP_COUNTER` | `CMPedometer` |
 | `activity` | énumération : `still` / `walking` / `driving` | Activity Recognition | `CMMotionActivity` |
 
-Un vérificateur **doit ignorer silencieusement** tout type inconnu. C'est ce qui rend l'ajout des réclamations radio en v0.2 non cassant.
+Trois pièges, tous rencontrés à l'implémentation :
+
+- **`baro-alt` est absolue, jamais relative.** Le vérificateur la confronte à `position[4]` : une altitude relative — un écart depuis le début des relevés — ne correspondrait à rien et ferait crier à l'incohérence altimétrique sur un appareil sain. Côté iOS, c'est donc `startAbsoluteAltitudeUpdates` (iOS 15+) et **non** `startRelativeAltitudeUpdates`, qui est l'API qu'on rencontre en premier. Côté Android, aucune interface ne la rend : elle se dérive de la pression, ce qui suppose une pression de référence au niveau de la mer et introduit une erreur que la tolérance de notation absorbe.
+- **`baro` est en hectopascals**, l'unité native d'Android. iOS rend des kilopascals et **doit** multiplier par dix. Rien dans l'enveloppe ne distinguerait les deux.
+- **`motion` n'impose pas de durée de fenêtre.** Quelques centaines de millisecondes autour du déclenchement suffisent ; le vérificateur ne note que la *présence* de la réclamation en v0.1. Fixer une durée ici créerait une contrainte que rien n'applique — et que les deux cœurs violeraient déjà.
+
+Un vérificateur **doit ignorer silencieusement** tout type inconnu. C'est ce qui rend l'ajout des réclamations radio en v0.2 non cassant. Corollaire à ne pas perdre de vue : un type dont l'unité changerait ne serait **pas** ignoré silencieusement — il serait mal lu. Une unité se corrige donc par un **nouveau type**, jamais par une redéfinition.
 
 ### 2.5 Profils
 

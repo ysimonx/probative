@@ -93,9 +93,21 @@ posture = {
   ? 9 => bool,              ; heuristiques de jailbreak         (iOS)
 }
 
+; Les UNITES de la mesure sont normatives et vivent en 2.4 de la
+; specification -- le CDDL ne peut pas les porter, `4` etant `any`. Ce
+; n'est pas un detail de redaction : une divergence d'unite entre
+; plateformes ne casse rien, elle produit des mesures fausses d'un facteur
+; constant qu'aucun test ne remarque et qu'aucun verdict ne signale.
+;
+; En bref : `baro` en hPa, `baro-alt` en metres et ABSOLUE (le verificateur
+; la confronte a position[4]), accelerations en m/s2.
+;
+; Une unite se corrige par un NOUVEAU type, jamais par redefinition : un
+; type inconnu est ignore silencieusement, un type mal lu ne l'est pas.
 claim = {
   1 => tstr,                ; type
   2 => tstr,                ; identifiant du capteur ou fournisseur
-  3 => uint,                ; horodatage monotone de la mesure, ms
-  4 => any,                 ; mesure, spécifique au type
+  3 => uint,                ; horodatage monotone de la mesure, ms --
+                            ; instant de LA MESURE, pas de la capture
+  4 => any,                 ; mesure, specifique au type
 }
