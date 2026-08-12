@@ -13,6 +13,67 @@ import Foundation
 /// l'air.
 public enum Sensors {
 
+    // MARK: - Autorisations
+
+    /// État d'une autorisation, sans le vocabulaire propre à chaque cadre.
+    ///
+    /// La distinction qui compte est `undetermined` contre `denied` : la
+    /// première se règle en demandant, la seconde exige un détour par les
+    /// réglages du système. Les confondre fait proposer un bouton qui ne peut
+    /// rien.
+    public enum Authorization: String {
+        case granted, denied, undetermined, restricted
+    }
+
+    /// **À demander avant l'acquisition, jamais pendant.**
+    ///
+    /// Une autorisation sollicitée au moment où le capteur sert affiche sa
+    /// boîte de dialogue *pendant* que le délai d'attente court : le relevé
+    /// expire, et l'échec ressemble à une panne de capteur. Constaté sur les
+    /// trois autorisations en C4.2 — position, caméra et mouvement — chacune
+    /// avec un symptôme différent et aucun qui nomme la cause.
+    ///
+    /// L'appel est idempotent : accordée, il rend immédiatement.
+    public static func requestLocationAuthorization() async -> Authorization {
+        if locationAuthorization != .undetermined { return locationAuthorization }
+        let delegate = AuthorizationDelegate()
+        return await delegate.request()
+    }
+
+    public static var locationAuthorization: Authorization {
+        switch CLLocationManager().authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse: return .granted
+        case .denied: return .denied
+        case .restricted: return .restricted
+        case .notDetermined: return .undetermined
+        @unknown default: return .undetermined
+        }
+    }
+
+    /// Autorisation « mouvement et forme » — celle du baromètre et du
+    /// podomètre.
+    ///
+    /// Aucune interface ne la demande explicitement : elle se sollicite en
+    /// démarrant un relevé, et c'est pour cela qu'elle surprend. On la
+    /// provoque donc ici, une fois, hors du chemin de capture.
+    public static var motionAuthorization: Authorization {
+        switch CMAltimeter.authorizationStatus() {
+        case .authorized: return .granted
+        case .denied: return .denied
+        case .restricted: return .restricted
+        case .notDetermined: return .undetermined
+        @unknown default: return .undetermined
+        }
+    }
+
+    public static func requestMotionAuthorization() async -> Authorization {
+        if motionAuthorization != .undetermined { return motionAuthorization }
+        // Un relevé suffit à déclencher la demande ; sa valeur ne nous
+        // intéresse pas, seul l'état qui en résulte compte.
+        _ = await firstPressure()
+        return motionAuthorization
+    }
+
     // MARK: - Position
 
     /// Attend un point de localisation, ou rend `nil` au bout du délai.
@@ -253,6 +314,41 @@ private final class OnceBox<T> {
         DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { [weak self] in
             self?.finish(value)
         }
+    }
+}
+
+/// Demande d'autorisation de position, isolée de l'attente d'un point.
+///
+/// Séparée parce que les deux se confondent en pratique : `waitForFix`
+/// sollicitait l'autorisation *et* attendait un relevé, si bien qu'un premier
+/// lancement consommait tout son délai à afficher une boîte de dialogue.
+private final class AuthorizationDelegate: NSObject, CLLocationManagerDelegate {
+    private var manager: CLLocationManager?
+    private var box: OnceBox<Sensors.Authorization>?
+
+    func request() async -> Sensors.Authorization {
+        await withCheckedContinuation { continuation in
+            let box = OnceBox<Sensors.Authorization>(continuation: continuation) {}
+            self.box = box
+            // Même exigence de boucle d'exécution que pour le relevé : sur un
+            // fil de la réserve coopérative, le rappel n'arrive jamais.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let manager = CLLocationManager()
+                self.manager = manager
+                manager.delegate = self
+                manager.requestWhenInUseAuthorization()
+            }
+            // L'utilisateur peut ne jamais répondre : on ne bloque pas la
+            // sonde pour autant, et l'état rendu dit ce qu'il en est.
+            box.expire(after: 30, with: .undetermined)
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = Sensors.locationAuthorization
+        guard status != .undetermined else { return }
+        box?.finish(status)
     }
 }
 

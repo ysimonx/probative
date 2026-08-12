@@ -66,6 +66,9 @@ enum SealProbe {
             print("[probe] ECHEC \(s)")
         }
 
+        // Le journal doit se lire sans l'écran : l'état des autorisations est
+        // déjà en tête (posé par `ProbeView`), et la première ligne dit quelle
+        // sonde a produit ce qui suit.
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         switch mode {
         case .core:

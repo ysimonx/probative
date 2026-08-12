@@ -1027,3 +1027,48 @@ spike : il y faut une itération de C3, ou C4.
   Reste, côté iOS : le chemin de production (`appattest`, racine différente),
   et le chaînage d'enveloppes. Côté Android, A4.1 puis A4.2 — toujours en
   attente d'une SM-X200.
+
+- 2026-08-13 : **préambule d'autorisations — la sonde iOS devient pilotable sans
+  intervention.** Les campagnes C4.2 avaient été erratiques, et la cause n'était
+  pas le hasard : **chaque autorisation était demandée au moment où son capteur
+  servait**, donc sa boîte de dialogue s'affichait *pendant* que le délai
+  d'attente courait. Le relevé expirait, et chaque cas se présentait sous un
+  symptôme qui ne nommait jamais la cause :
+
+  | Autorisation | Symptôme observé | Ce qu'on soupçonne à tort |
+  |---|---|---|
+  | caméra | capture sans image | pipeline photo |
+  | position | délai expiré | absence de signal GPS |
+  | mouvement | `baro-alt` et `baro` absents | baromètre indisponible |
+  | réseau local | `-1009`, « connection appears to be offline » | serveur injoignable |
+
+  Le cœur expose désormais `Sensors.locationAuthorization`,
+  `motionAuthorization` et leurs demandes — surface légitime, parce que **tout
+  intégrateur appelant `capture()` doit pouvoir demander avant, lui aussi**. La
+  démonstration ajoute un écran de préambule qui les sollicite **en séquence**,
+  jamais en parallèle : iOS n'affiche qu'une boîte à la fois et jette
+  silencieusement les demandes concurrentes.
+
+  Trois points appris :
+
+  - **Le réseau local n'a aucune interface d'état.** On ne peut ni l'interroger
+    ni la demander à l'avance : la boîte s'affiche à la première requête, qui
+    échoue. Le préambule fait donc **échouer cette requête exprès**, hors du
+    chemin de mesure, plutôt que de laisser une campagne la payer.
+  - **L'autorisation de mouvement ne bloque pas le départ.** `readyForCapture`
+    n'exige que caméra et position : le mouvement est une corroboration, pas une
+    condition. Sans lui l'enveloppe reste valide, `position` perd seulement
+    `baro-consistent`. La distinction a tenu à l'épreuve.
+  - **`CMAltimeter.authorizationStatus()` n'est pas à jour immédiatement après
+    la demande.** L'en-tête affichait « mouvement ? » alors que le baromètre
+    répondait. L'état est donc **relu au lancement de la sonde**, jamais hérité
+    du préambule — un en-tête faux est pire qu'absent.
+
+  **Éprouvé à froid, ce qui est le seul test qui compte** : application
+  désinstallée — ce qui remet les autorisations à zéro — puis réinstallée. La
+  sonde est allée jusqu'à `STANDARD` avec les quatre réclamations **du premier
+  coup**, là où il fallait auparavant deux ou trois lancements. L'en-tête
+  `autorisations camera ✓ position ✓ mouvement ✓ reseau ✓` ouvre le journal, et
+  il est *imprimé* et pas seulement affiché : un extrait rapatrié par
+  `--console` doit permettre de distinguer un capteur muet d'une autorisation
+  manquante.
