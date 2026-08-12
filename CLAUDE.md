@@ -53,7 +53,7 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 | `docs/decisions/` | ADR. Les compléter plutôt que revenir silencieusement sur un choix. |
 | `spec/envelope-v0.1.cddl` | Extrait normatif de la spec. **Aucun générateur** : à tenir synchrone à la main, dans les deux sens. Un test le vérifierait mieux qu'une consigne — non écrit à ce jour. |
 | `docs/etat-de-l-art.md` | Solutions voisines (Approov, Guardsquare, Truepic, C2PA, ProofMode) et ce qui distingue réellement ce dépôt. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier les faits avant de s'en servir. |
-| `docs/certification-anssi.md` | Piste de certification : pourquoi la CSPN plutôt qu'un profil de protection, et pourquoi elle ne remplace pas la piste eIDAS de la spec §9. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier référentiels et coûts avant de s'en servir. |
+| `docs/certification-anssi.md` | Piste de certification : pourquoi une cible de sécurité propre au produit plutôt qu'un profil de protection, et pourquoi elle ne remplace pas la piste réglementaire européenne de la spec §9. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier référentiels et coûts avant de s'en servir. |
 
 ## Structure
 
