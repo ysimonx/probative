@@ -138,10 +138,14 @@ pas de bibliothèque généraliste).
       l'hôte JVM contre le couple (clé, kid) du manifest des vecteurs, plus cadrage
       des coordonnées courtes sur 64 clés aléatoires. Confirmé sur appareil :
       65 octets, préfixe `0x04`, `kid` de 32 octets.
-- [x] Appel `POST /enroll` du serveur de dev, chaîne de certificats transmise
-      (validée en phase B seulement). Serveur et appareil calculent le **même
-      `kid`** : la règle R2 tient de bout en bout, journal serveur à l'appui
-      (`POST /enroll 200`).
+- [x] Appel `POST /enroll` du serveur de dev, chaîne de certificats transmise.
+      Serveur et appareil calculent le **même `kid`** : la règle R2 tient de bout
+      en bout, journal serveur à l'appui (`POST /enroll 200`).
+      ~~(validée en phase B seulement)~~ — **validée pour de bon le 2026-08-12** :
+      la chaîne est confrontée aux racines publiées par Google et le serveur
+      répond `attested: true`. 5 tests instrumentés, **0 échec et 0 saut**, ce
+      dernier chiffre étant le seul qui prouve que l'enrôlement n'a pas été
+      escamoté par `assumeTrue`.
 - [x] Test instrumenté sur appareil : la clé est bien `hardware-backed`
       (`KeyInfo.securityLevel`). Chaîne d'attestation d'au moins 2 certificats ;
       signature brute de 64 octets reconvertie en DER et acceptée par le
@@ -292,7 +296,11 @@ par le serveur de dev (substitut d'attestation) ; AAR autonome ; latences mesur�
         matériel n'est pas cru dès lors qu'une chaîne est fournie.
 - [ ] Réviser ADR-0002 : encodage normatif du `requestHash` (inconnue n° 1).
 
-**Sortie de phase B :** boucle Android complète au vert **sans** substitut.
+**Sortie de phase B : atteinte le 2026-08-12.** Boucle Android complète au vert
+**sans** substitut, sur matériel réel — chaîne d'attestation ancrée à la racine
+Google à l'enrôlement, jeton Play Integrity déchiffré et `requestHash` confronté
+au R1 recalculé. *Reste hors périmètre de la phase :* réviser ADR-0002 pour rendre
+l'encodage normatif, et faire signer une enveloppe complète — c'est A4.
 
 ---
 

@@ -8,6 +8,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.SecureRandom
 import java.security.Signature
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -24,10 +25,19 @@ import android.util.Base64
  *     ./gradlew :core:connectedDebugAndroidTest
  *
  * Le test d'enrôlement complet exige en plus le serveur de dev joignable
- * depuis l'appareil (`python -m probative.devserver --host 0.0.0.0`) :
+ * depuis l'appareil. `adb reverse` est préférable à `--host 0.0.0.0` :
+ * aucune adresse IP à relever, appareil et hôte n'ont pas besoin d'être sur
+ * le même réseau, et le serveur n'est pas exposé au réseau local.
  *
+ *     python -m probative.devserver --port 8765   # sur l'hôte
+ *     adb reverse tcp:8765 tcp:8765
  *     ./gradlew :core:connectedDebugAndroidTest \
- *       -Pandroid.testInstrumentationRunnerArguments.probative.devserver=http://IP_HOTE:8765
+ *       -Pandroid.testInstrumentationRunnerArguments.probative.devserver=http://127.0.0.1:8765
+ *
+ * Vérifier le journal du serveur (`POST /enroll 200`) et le compte de tests
+ * sautés : `assumeTrue` escamote silencieusement l'enrôlement si l'argument
+ * `probative.devserver` manque, et la campagne passe alors au vert sans
+ * avoir rien enrôlé.
  */
 @RunWith(AndroidJUnit4::class)
 class KeystoreKeysDeviceTest {
@@ -93,13 +103,25 @@ class KeystoreKeysDeviceTest {
         val base = InstrumentationRegistry.getArguments().getString("probative.devserver")
         assumeTrue("argument probative.devserver absent : test d'enrôlement sauté", base != null)
 
-        KeystoreKeys.generate(alias, freshChallenge())
+        // Le défi doit survivre à la génération : le serveur le recalculera
+        // contre celui que le TEE a inscrit dans l'extension d'attestation.
+        // Le perdre ici rendrait la chaîne invérifiable.
+        val challenge = freshChallenge()
+        KeystoreKeys.generate(alias, challenge)
+
+        val chain = KeystoreKeys.certificateChain(alias)
+        assertTrue("chaîne trop courte : ${chain.size}", chain.size >= 2)
+
         val body = JSONObject()
             .put(
                 "public_key_x962_b64",
                 Base64.encodeToString(KeystoreKeys.publicKeyX962(alias), Base64.NO_WRAP),
             )
             .put("platform", "android")
+            // Feuille en tête, racine en queue — c'est l'ordre que rend le
+            // Keystore et celui qu'attend le serveur.
+            .put("attestation_chain_b64", JSONArray(chain.map { b64(it) }))
+            .put("challenge_b64", b64(challenge))
 
         val connection = URL("$base/enroll").openConnection() as HttpURLConnection
         val response = try {
@@ -117,7 +139,19 @@ class KeystoreKeysDeviceTest {
             response.getString("kid_hex"),
             KeystoreKeys.kid(alias).joinToString("") { "%02x".format(it) },
         )
+
+        // Le critère de cette étape : le serveur a validé la chaîne jusqu'à
+        // une racine publiée par Google, et a établi que cette chaîne porte
+        // bien sur la clé enrôlée. `false` signifierait que la clé a été
+        // acceptée sur parole — le mode dégradé, pas ce qu'on exerce ici.
+        assertTrue(
+            "chaîne non attestée par le serveur",
+            response.getBoolean("attested"),
+        )
     }
+
+    private fun b64(bytes: ByteArray): String =
+        Base64.encodeToString(bytes, Base64.NO_WRAP)
 
     /** DER `ECDSA-Sig-Value` minimal depuis `r‖s` — l'inverse de Cose. */
     private fun derSignature(raw: ByteArray): ByteArray {
