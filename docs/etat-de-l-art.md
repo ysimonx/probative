@@ -1,8 +1,13 @@
 # État de l'art et positionnement
 
-**Vérifié le 2026-08-11.** Ce document périme vite : le marché bouge, et une partie
-des sources sont commerciales. Chaque affirmation porte son niveau de confiance ; les
-liens sont en fin de document.
+**Vérifié le 2026-08-11, complété le 2026-08-12.** Ce document périme vite : le marché
+bouge, et une partie des sources sont commerciales. Chaque affirmation porte son niveau
+de confiance ; les liens sont en fin de document.
+
+> **Ajout du 2026-08-12.** Une seconde passe a montré que la première rédaction ratait
+> une couche entière — la **valeur juridique**, voir §1 et l'entrée TrueScreen — et deux
+> projets libres qui visent exactement notre cible. Rien n'entame le positionnement de
+> §3, mais le paysage est plus peuplé que ne le disait la version initiale.
 
 ## Pourquoi ce document existe
 
@@ -15,18 +20,29 @@ positionnement faux.
 
 ## 1. Les solutions ne jouent pas toutes sur le même terrain
 
-C'est le point que la comparaison naïve rate. Quatre couches distinctes se confondent
+C'est le point que la comparaison naïve rate. Six couches distinctes se confondent
 sous le mot « preuve » :
 
 | Couche | Question à laquelle elle répond | Solutions |
 |---|---|---|
 | Durcissement du client | Combien coûte l'attaque du binaire ? | Guardsquare |
 | Intégrité du canal | Est-ce bien mon application qui appelle mon API ? | Approov |
-| **Crédibilité de la revendication** | **Cette image a-t-elle été prise ici, maintenant, par ce capteur ?** | Truepic, ProofMode, **ce dépôt** |
+| **Crédibilité de la revendication** | **Cette image a-t-elle été prise ici, maintenant, par ce capteur ?** | Truepic, OpenOrigins, ProofMode, deux projets libres naissants, **ce dépôt** |
 | Interopérabilité de la provenance | Comment cette information circule-t-elle entre outils ? | C2PA / Content Credentials |
+| Ancrage et antériorité | Puis-je démontrer que ce contenu existait à cette date ? | Numbers Protocol, horodatage RFC 3161 |
+| **Valeur juridique** | **Un tribunal acceptera-t-il cette pièce ?** | TrueScreen (eIDAS), **ce dépôt : rien** |
 
-Seule la troisième ligne est notre terrain. Les autres sont complémentaires — et deux
+Seule la troisième ligne est notre terrain. Les autres sont complémentaires — et trois
 d'entre elles renforceraient réellement ce dépôt.
+
+Deux couches ont été ajoutées le 2026-08-12. Elles ne sont pas décoratives :
+
+- **L'ancrage** répond à une question que nous ne posons pas. Notre verdict est rendu à
+  la réception, ce qui est un choix assumé (§2 sur C2PA) ; il ne dit rien de ce qu'un
+  tiers pourra rejouer dans cinq ans.
+- **La valeur juridique** est la seule couche où la case « ce dépôt » est vide. Une
+  enveloppe au grade `STRONG` n'est pas une signature qualifiée eIDAS, et aucun travail
+  cryptographique ne comblera cet écart — il est réglementaire, pas technique.
 
 ---
 
@@ -151,6 +167,94 @@ Ce que nous avons et qu'ils n'ont pas : Apache-2.0, auto-hébergeable, sans dép
 un service tiers ni à une autorité de certification que nous ne contrôlons pas, et un
 verdict gradué par propriété plutôt qu'un manifeste dont la confiance est de fait binaire.
 
+### TrueScreen — le concurrent d'usage, sur une couche que nous n'occupons pas
+
+*Ajouté le 2026-08-12. La première rédaction ne le citait qu'en note de bas de page comme
+source secondaire — c'était une erreur d'appréciation.*
+
+Capture forensique (position, identifiants d'appareil, réseau, horodatage), empreinte
+cryptographique, **signature électronique avancée conforme à l'article 26 du règlement
+eIDAS**, horodatage qualifié **RFC 3161**, et production d'un rapport technique. Le
+produit se vend sur son admissibilité devant les juridictions des États membres.
+
+Leurs cas d'usage annoncés sont **exactement les nôtres** : inspection de sinistre,
+constat de terrain, protection juridique. C'est le concurrent le plus direct en termes
+de marché, bien plus que Guardsquare ou Approov.
+
+**Où nous sommes devant, et l'écart est structurel.** Rien dans leur documentation
+publique ne mentionne d'attestation matérielle de plateforme. Leur chaîne établit
+« ces octets n'ont pas bougé depuis la certification », jamais « cet appareil n'était
+pas compromis au moment de la capture ». Une position simulée sur un téléphone non rooté
+produit chez eux une pièce parfaitement certifiée et parfaitement fausse — c'est
+précisément la menace qui justifie l'existence de ce dépôt. *Confiance : moyenne, fondée
+sur l'absence d'une mention dans des pages promotionnelles, ce qui n'est pas une preuve
+d'absence.*
+
+**Où ils sont devant, et l'écart ne se comble pas par du code.** L'admissibilité. Une
+signature qualifiée adossée à un prestataire de confiance qualifié a un statut
+réglementaire qu'un grade `STRONG` n'aura jamais par ses seules qualités techniques.
+Voir §4.
+
+### OpenOrigins (Source) — la formulation la plus proche, la documentation la moins ouverte
+
+*Ajouté le 2026-08-12.* SDK natifs iOS et Android, API REST, signature au moment de la
+capture. C'est le seul éditeur trouvé qui revendique explicitement la liaison de
+**métadonnées de capture, attestation d'appareil et signature** — la formulation la plus
+proche de la nôtre rencontrée sur le marché.
+
+Impossible d'aller plus loin : ni le mécanisme d'attestation, ni l'existence d'un défi
+serveur, ni la forme du verdict ne sont publiés. À réexaminer si leur documentation
+technique devient accessible. *Confiance : faible — page promotionnelle uniquement.*
+
+### Numbers Protocol (Capture Cam, ProofSnap) — l'ancrage plutôt que le capteur
+
+*Ajouté le 2026-08-12.* C2PA combiné au standard d'indexation de média sur chaîne
+ERC-7053, stockage IPFS, frappe de jeton non fongible. Membre de la C2PA.
+
+La confiance y vient de l'**immuabilité d'un registre public**, pas de la crédibilité du
+capteur. C'est orthogonal à R1 : ancrer une empreinte démontre l'antériorité d'un
+contenu, jamais son origine. Un contenu forgé puis ancré est un contenu forgé
+horodaté — c'est d'ailleurs le mode de défaillance que tout système d'ancrage partage.
+
+À retenir tout de même : leur couche répond à une question que nous ne posons pas, celle
+du rejeu à long terme par un tiers. Notre verdict est rendu à la réception (choix assumé,
+voir la critique de C2PA plus haut) et n'est pas rejouable indéfiniment.
+
+### Attestiv — détection a posteriori, complément et non concurrent
+
+*Ajouté le 2026-08-12.* Analyse par apprentissage automatique d'images **reçues**, sans
+aucune coopération du client, produisant un score de falsification par photo. Intégré à
+des écosystèmes de gestion de sinistres.
+
+Ce n'est pas un concurrent : ils notent ce qui arrive **sans** enveloppe, nous jugeons ce
+qui en porte une. Un déploiement réel aura les deux, parce qu'aucun opérateur ne peut
+imposer son application à tous ses correspondants — le flux non instrumenté existera
+toujours. Positionner ce dépôt comme un remplacement de ce genre d'outil serait une
+erreur de vente autant que d'analyse.
+
+### Deux quasi-clones libres — le fait nouveau
+
+*Ajouté le 2026-08-12. C'est l'information la plus importante de cette passe.*
+
+| | `RoloBits/attestation-photo-mobile` | `VeraSnap` / Content Provenance Protocol |
+|---|---|---|
+| Cible | React Native, manifeste C2PA incorporé | Android natif, Kotlin et CameraX |
+| Clé matérielle | Secure Enclave / StrongBox-TEE | Attestation de clé, `setAttestationChallenge()` |
+| Attestation de plateforme | **Aucune** — détection de root heuristique, les auteurs admettent ne pas voir les dissimulateurs | **Aucune** — pas de Play Integrity |
+| Défi serveur | Nonce lié à l'empreinte de la photo — **proche de R1** | **Non** — horodatage RFC 3161 à la place |
+| Vérificateur | **Aucun** — renvoie vers les outils C2PA génériques | Spécification et vecteurs de test publiés |
+| Position | Métadonnée, non corroborée | Coordonnées hachées, aucune preuve de présence revendiquée |
+| Maturité | MIT, ordre de la dizaine d'étoiles, quelques dizaines de commits | Phase initiale, plan de développement en cours |
+
+Deux projets embryonnaires — mais la convergence est le signal, pas leur maturité :
+**l'idée est dans l'air**, et l'antériorité du code cesse d'être théorique.
+
+Ce qu'aucun des deux ne fait, et qui recoupe exactement notre feuille de route :
+confronter la chaîne d'attestation à **la racine publiée par le fabricant** (phase D
+côté Apple, phase B côté Google), et rendre un **verdict serveur structuré par
+propriété**. L'un et l'autre s'arrêtent à la production d'un artefact signé, en laissant
+le jugement à un outil générique ou à un lecteur humain.
+
 ---
 
 ## 3. Ce qui distingue réellement ce dépôt
@@ -169,6 +273,18 @@ Deux points, pas dix.
 S'y ajoute, sans être un différenciateur technique : licence Apache-2.0 avec concession
 de brevet, auto-hébergement complet, aucune dépendance de service à l'exécution.
 
+**Vérification du 2026-08-12 : ces deux points tiennent après élargissement du
+périmètre.** Aucun acteur examiné, commercial ou libre, ne **publie** de règle
+équivalente à R1. Truepic la pratique très probablement — attestation d'appareil
+*avant* capture, et une revendication de détection des attaques par rediffusion — mais
+la technique est brevetée et non documentée : ni vérifiable, ni réutilisable. Et aucun
+acteur ne rend un verdict gradué par propriété : tous produisent un badge, un score
+unique, ou un rapport destiné à un lecteur humain.
+
+Deux réserves d'honnêteté sur cette conclusion. La quasi-totalité des sources sont
+promotionnelles, et « personne ne publie R1 » ne veut pas dire « personne ne
+l'implémente ».
+
 ## 4. Ce qu'ils font mieux — à assumer
 
 - **Photographie d'écran** : non détectée ici, plafonnée au grade B. L'écart est
@@ -183,10 +299,19 @@ de brevet, auto-hébergement complet, aucune dépendance de service à l'exécut
   défi serveur, la corroboration de position, et le verdict gradué.
 - **Durcissement** : notre `posture` est artisanale à côté d'un RASP commercial.
 - **Maturité** : aucun historique d'exploitation, aucune autorité de certification opérée.
+- **Admissibilité juridique** *(ajouté le 2026-08-12)* : c'est le manque le plus net, et
+  le seul qu'aucun travail cryptographique ne comblera. TrueScreen vend une signature
+  qualifiée eIDAS et un horodatage RFC 3161 auprès d'un prestataire qualifié ; nous
+  produisons un verdict techniquement plus exigeant mais sans statut réglementaire. Un
+  juge n'a aucune raison *a priori* de préférer notre grade `STRONG`.
+- **Ancrage et rejeu à long terme** *(ajouté le 2026-08-12)* : notre verdict est rendu à
+  la réception. Les solutions à registre public permettent à un tiers de rejouer la
+  vérification des années plus tard, ce que nous ne prévoyons pas.
 
 ## 5. Conséquences pour la feuille de route
 
-Rien ici n'invalide le plan en cours, mais trois inflexions méritent discussion :
+Rien ici n'invalide le plan en cours, mais cinq inflexions méritent discussion — les
+deux dernières ajoutées le 2026-08-12 :
 
 1. **Étudier l'empreinte de bruit de capteur (PRNU) contre l'injection de trames** — et
    non contre la photographie d'écran, voir la correction en §2. L'intérêt est réel et
@@ -211,6 +336,18 @@ Rien ici n'invalide le plan en cours, mais trois inflexions méritent discussion
    un certificat inscrit dans la liste de confiance du programme de conformité.
 3. **Documenter la complémentarité avec un RASP commercial** plutôt que de chercher à le
    réimplémenter. Un déploiement exigeant combinera les deux.
+4. **Instruire l'horodatage qualifié RFC 3161**, sans préjuger de l'implémenter. C'est le
+   seul point où un concurrent offre quelque chose que nous ne savons pas produire, et
+   c'est bon marché : une empreinte soumise à une autorité d'horodatage, et une réponse
+   conservée à côté de l'enveloppe. Cela n'apporte **aucune** garantie sur l'origine — le
+   sujet de ce dépôt — mais rend la pièce opposable dans un cadre où le grade seul ne
+   suffit pas. À traiter comme un champ optionnel du noyau, jamais comme une propriété
+   notée : le verdict ne doit pas dépendre de la disponibilité d'un tiers, exactement pour
+   la raison qui fonde l'invariant n° 3.
+5. **Surveiller les deux projets libres.** Aucune urgence technique : ils sont
+   embryonnaires et n'ont ni attestation de plateforme ni vérificateur. L'enjeu est
+   l'antériorité — d'où l'intérêt de dater les choix dans les ADR et de publier plutôt
+   que de garder le dépôt privé.
 
 ---
 
@@ -226,3 +363,13 @@ secondaires. Le seul travail critique et indépendant est l'article arXiv.
 - [Verifying Provenance of Digital Media: Why the C2PA Specifications Fall Short](https://arxiv.org/html/2604.24890v1) *(travail académique indépendant — la source la plus solide de ce document)*
 - [Content Credentials on Smartphones: What's Available in 2026](https://c2pa.ai/smartphone-guide), [Google Pixel 10 C2PA Content Credentials](https://c2paviewer.com/articles/google-c2pa-pixel-10), [C2PA Adoption in 2026 Hardware Platforms](https://www.softwareseni.com/c2pa-adoption-in-2026-hardware-platforms-and-verification-reality/) *(sources secondaires)*
 - [What Is C2PA? The Standard, Its Metadata and Real Limits](https://truescreen.io/articles/c2pa-standard-history-limitations/) *(source secondaire, éditeur concurrent)*
+
+Ajoutées le 2026-08-12 :
+
+- [TrueScreen — plateforme](https://truescreen.io/platform/), [application](https://truescreen.io/app/), [assurance protection juridique](https://truescreen.io/use-cases/legal-protection-insurance/) *(éditeur)*
+- [OpenOrigins — Source](https://openorigins.com/products/secure-source) *(éditeur, sans documentation technique publique)*
+- [Numbers Protocol — documentation Capture](https://docs.numbersprotocol.io/applications/capture/), [Capture Cam](https://captureapp.xyz/products/capture-cam/), [ProofSnap](https://captureapp.xyz/products/camera/) *(éditeur)*
+- [Attestiv dans l'écosystème Duck Creek](https://www.duckcreek.com/resource/in-the-news/attestiv-photo-authenticity-and-fraud-protection-now-available-to-duck-creek-partner-ecosystem/) *(communiqué)*
+- [RoloBits/attestation-photo-mobile](https://github.com/RoloBits/attestation-photo-mobile) *(libre, MIT — lu directement, la source la plus fiable de cette passe)*
+- [VeraSnap — Content Provenance Protocol](https://dev.to/veritaschain/verasnap-building-a-cryptographic-evidence-capture-app-for-android-with-kotlin-camerax-and-3p2f) *(billet des auteurs)*
+- [Truepic Vision — prévention et détection de la fraude](https://www.truepic.com/vision/fraud-prevention-detection) *(éditeur — source de la revendication « plus de 50 contrôles », dont les attaques par rediffusion)*
