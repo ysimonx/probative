@@ -18,7 +18,13 @@ import cbor2
 import pytest
 from factory import PROFILE_CORE, kid_for, make_payload, new_key, sign_envelope
 
-from probative.attestation import DeviceIntegrity, NullAttestationVerifier
+from probative import grading
+from probative.attestation import (
+    AttestationOutcome,
+    DeviceIntegrity,
+    NullAttestationVerifier,
+)
+from probative.grading import GradingPolicy
 from probative.model import Grade, Level, Profile, Property
 from probative.store import (
     DeviceRecord,
@@ -143,6 +149,92 @@ def test_reclamation_inconnue_signalee_sans_penalite(verifier, nonces, key):
 
     assert "UNKNOWN_CLAIMS" in res.flags
     assert res.level is Level.STANDARD
+
+
+# --- Politique de déploiement -------------------------------------------
+
+
+def _verifier_avec(nonces, devices, policy):
+    return Verifier(
+        nonce_store=nonces,
+        device_store=devices,
+        attestation=NullAttestationVerifier(DeviceIntegrity.STRONG),
+        policy=policy,
+    )
+
+
+def test_politique_par_defaut_ne_pollue_pas_le_resultat(verifier, nonces, key):
+    """Un déploiement qui ne configure rien n'a rien à afficher."""
+    nonce = _issue(nonces, key)
+    env = sign_envelope(key, make_payload(nonce=nonce, media_digest=MEDIA_DIGEST), nonce=nonce)
+
+    res = verifier.verify(env, media_bytes=MEDIA)
+
+    assert res.policy == []
+    assert res.to_dict()["policy"] == []
+
+
+def test_un_seuil_configure_change_le_grade_et_se_voit(nonces, devices, key):
+    """Le cas d'usage réel : recalibrer un seuil sans toucher au code."""
+    nonce = _issue(nonces, key)
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST, fix_age_ms=30_000)
+    env = sign_envelope(key, payload, nonce=nonce)
+
+    # Par défaut, 30 s dépasse les 15 s tolérées.
+    strict = _verifier_avec(nonces, devices, GradingPolicy())
+    assert strict.verify(env, media_bytes=MEDIA).properties[Property.POSITION].grade is Grade.C
+
+    # Un déploiement qui tolère des points plus vieux le déclare.
+    nonce2 = _issue(nonces, key)
+    payload2 = make_payload(nonce=nonce2, media_digest=MEDIA_DIGEST, fix_age_ms=30_000)
+    env2 = sign_envelope(key, payload2, nonce=nonce2)
+    large = _verifier_avec(nonces, devices, GradingPolicy(max_fix_age_ms=60_000))
+
+    res = large.verify(env2, media_bytes=MEDIA)
+
+    assert res.properties[Property.POSITION].grade is Grade.A
+    assert "max_fix_age_ms=60000" in res.policy, "l'écart doit voyager avec le verdict"
+
+
+def test_politique_de_distribution_hors_magasin(nonces, devices, key):
+    """Le motif d'existence de ce mécanisme : la diffusion hors Play.
+
+    Le vérificateur met par défaut la note la plus basse dès que le
+    binaire n'est pas reconnu — ce qui revient à refuser toute diffusion
+    hors magasin. Un déploiement interne peut vouloir dégrader plutôt que
+    refuser ; il ne peut pas le faire en silence.
+    """
+    inconnu = NullAttestationVerifier(DeviceIntegrity.STRONG)
+    inconnu.verify = lambda **kw: AttestationOutcome(  # type: ignore[method-assign]
+        integrity=DeviceIntegrity.BASIC,
+        app_recognized=False,
+        hardware_backed=True,
+        notes=["binaire distribué hors du magasin officiel"],
+    )
+    nonce = _issue(nonces, key)
+    env = sign_envelope(key, make_payload(nonce=nonce, media_digest=MEDIA_DIGEST), nonce=nonce)
+
+    v = Verifier(
+        nonce_store=nonces,
+        device_store=devices,
+        attestation=inconnu,
+        policy=GradingPolicy(unrecognized_app_grade=Grade.C),
+    )
+    res = v.verify(env, media_bytes=MEDIA)
+
+    assert res.properties[Property.ORIGIN].grade is Grade.C
+    assert res.level is Level.DEGRADED, "dégradé, et non plus refusé"
+    assert "unrecognized_app_grade=Grade.C" in res.policy
+
+
+def test_le_plafond_de_recapture_nest_pas_configurable():
+    """Une option peut resserrer, jamais desserrer un angle mort assumé.
+
+    Le rendre réglable permettrait à un déploiement de revendiquer
+    `STRONG` sur des captures sans avoir implémenté la détection.
+    """
+    assert not hasattr(GradingPolicy(), "recapture_cap")
+    assert grading.RECAPTURE_CAP is Grade.B
 
 
 # --- Profils — ADR-0005 -------------------------------------------------

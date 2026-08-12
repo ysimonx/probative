@@ -249,6 +249,7 @@ Le vérificateur ne retourne pas un score global mais une structure par proprié
 {
   "spec": "probative/0.1",
   "profile": "capture",
+  "policy": [],
   "level": "STANDARD",
   "properties": {
     "origin":    { "grade": "B", "evidence": ["play-integrity:PLAY_RECOGNIZED", "raw-hash-match"] },
@@ -262,6 +263,13 @@ Le vérificateur ne retourne pas un score global mais une structure par proprié
 ```
 
 **`profile` est de première classe, et non un détail des `flags` : l'ensemble des propriétés présentes en dépend.** Un appelant qui lirait `level` sans regarder `profile` ne saurait pas ce qui a été jugé. Sur un profil `core`, la clé `position` est absente — et non présente avec un grade neutre, qui laisserait croire qu'une position a été évaluée.
+
+**`policy` l'est pour la même raison, un cran plus loin : le profil dit *ce qui* a été jugé, la politique dit *selon quelles règles*.** Un déploiement peut recalibrer les seuils de décision — âge du point, précision, latence, écart d'horloge, tolérance barométrique — et choisir la note attribuée à un binaire non reconnu par le fournisseur d'attestation. **Un verdict calculé sous une politique modifiée n'est pas comparable à un verdict calculé sous celle par défaut** : `STANDARD` ne voudrait plus dire la même chose d'un déploiement à l'autre. Les écarts au défaut voyagent donc avec le résultat ; la liste est vide lorsque les règles d'origine s'appliquent, et un déploiement qui ne configure rien ne pollue pas ses résultats.
+
+Deux règles bornent ce qui est réglable :
+
+- **ce qui change le format se tranche, ce qui change l'exploitation se configure.** On ne se configure pas hors d'une décision de format — la présence d'un champ dans l'enveloppe détermine l'interopérabilité, pas le déploiement ;
+- **une option peut resserrer, jamais desserrer un angle mort assumé.** Le plafond de recapture du profil `capture` (§2.5) n'est donc pas réglable : le rendre tel permettrait à un déploiement de revendiquer `STRONG` sur des acquisitions sans avoir implémenté la détection. Les règles de liaison R1, R2 et R3 ne le sont pas davantage.
 
 Le champ `level_reason` est obligatoire. Un vérificateur qui refuse sans dire pourquoi est inexploitable en support, et vous le paierez en tickets.
 

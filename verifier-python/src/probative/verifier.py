@@ -44,11 +44,16 @@ class Verifier:
         device_store: DeviceStore,
         attestation: AttestationVerifier,
         strict_chain: bool = False,
+        policy: grading.GradingPolicy = grading.DEFAULT_POLICY,
     ) -> None:
         self._nonces = nonce_store
         self._devices = device_store
         self._attestation = attestation
         self._strict_chain = strict_chain
+        # Réglages du déploiement. Les écarts au défaut voyagent dans le
+        # résultat : un verdict calculé sous d'autres règles n'est pas
+        # comparable à un verdict calculé sous celles d'origine.
+        self._policy = policy
 
     def verify(
         self,
@@ -179,7 +184,7 @@ class Verifier:
         graded_by_profile = profiles.properties_for(profile)
         properties: dict[Property, PropertyResult] = {
             Property.INTEGRITY: grading.grade_integrity(att, device.hardware_backed),
-            Property.ORIGIN: grading.grade_origin(claims, att, profile),
+            Property.ORIGIN: grading.grade_origin(claims, att, profile, self._policy),
             Property.TIME: grading.grade_time(
                 claims,
                 att,
@@ -187,10 +192,11 @@ class Verifier:
                 offline=nonce_rec.offline,
                 counter_verified=counter_verified,
                 chain_verified=chain_verified,
+                policy=self._policy,
             ),
         }
         if Property.POSITION in graded_by_profile:
-            properties[Property.POSITION] = grading.grade_position(claims, att)
+            properties[Property.POSITION] = grading.grade_position(claims, att, self._policy)
 
         if set(properties) != set(graded_by_profile):
             # Faute de câblage, pas entrée hostile : un profil qui annonce
@@ -229,6 +235,7 @@ class Verifier:
         return VerificationResult(
             spec=spec,
             profile=profile.value,
+            policy=self._policy.deviations(),
             level=level,
             properties=properties,
             flags=flags,

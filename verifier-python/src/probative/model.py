@@ -357,17 +357,28 @@ class VerificationResult:
     profile: str
     level: Level
     properties: dict[Property, PropertyResult]
+    policy: list[str] = field(default_factory=list)
+    """Réglages du déploiement s'écartant du défaut. Vide = règles d'origine.
+
+    Un verdict calculé sous une politique modifiée n'est pas comparable à
+    un verdict calculé sous celle par défaut : `STANDARD` ne voudrait plus
+    dire la même chose d'un déploiement à l'autre. Les écarts voyagent
+    donc avec le résultat, pour la même raison que le profil.
+    """
+
     flags: list[str] = field(default_factory=list)
     level_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        # `profile` est de première classe, et non un détail de `flags` :
-        # l'ensemble des propriétés notées en dépend. Un appelant qui
-        # lirait `level` sans regarder `profile` ne saurait pas ce qui a
-        # été jugé.
+        # `profile` et `policy` sont de première classe, et non des détails
+        # de `flags` : le premier détermine l'ensemble des propriétés
+        # notées, le second les règles qui les ont notées. Un appelant qui
+        # lirait `level` sans les regarder ne saurait ni ce qui a été jugé,
+        # ni selon quoi.
         return {
             "spec": self.spec,
             "profile": self.profile,
+            "policy": self.policy,
             "level": self.level.value,
             "properties": {
                 p.value: {

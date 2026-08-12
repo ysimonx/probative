@@ -85,7 +85,7 @@ C'est leur seule raison d'être — ne rien y loger qui appartienne au cœur.
 cd verifier-python
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest              # 102 tests doivent passer
+pytest              # 106 tests doivent passer
 ruff check .
 mypy src
 ```
@@ -139,8 +139,13 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 - Python ≥ 3.11, typage strict, `from __future__ import annotations`.
 - Docstrings et commentaires **en français**. Identifiants en anglais.
 - Les commentaires expliquent *pourquoi*, pas *quoi*.
-- Tout seuil de décision va dans les constantes en tête de `grading.py`, jamais en
-  dur dans le code : ils seront recalibrés sur données réelles.
+- Tout seuil de décision va dans `GradingPolicy` (`grading.py`), jamais en dur dans le
+  code : ils seront recalibrés sur données réelles, et un déploiement peut les régler.
+  Deux bornes à cette souplesse : **ce qui change le format se tranche, ce qui change
+  l'exploitation se configure** ; et **une option peut resserrer, jamais desserrer un
+  angle mort assumé** — d'où `RECAPTURE_CAP`, qui reste en dur. Tout écart au défaut
+  voyage dans `VerificationResult.policy` : un verdict calculé sous d'autres règles
+  n'est pas comparable à un verdict calculé sous celles d'origine.
 - Chaque test d'attaque référence une surface d'attaque du modèle de menace, **définies en
   `docs/threat-model.md` §4 bis** : `test_s1_` position, `test_s2_` contenu, `test_s3_` temps,
   `test_s4_` client. Un test qui ne se rattache à aucune surface signale soit un test mal
@@ -155,7 +160,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Noyau et profils (ADR-0005) | **Fait de bout en bout** : spec §2.5, CDDL, vérificateur, vecteurs, et les deux cœurs natifs |
-| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 102 tests au vert |
+| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 106 tests au vert |
 | `AppAttestVerifier` — **phase D faite** | Attestation d'enrôlement validée **jusqu'à la racine publiée par Apple**, assertion validée par enveloppe. Éprouvé contre le vecteur iPhone 16 réel, 26 tests |
 | `PlayIntegrityVerifier` | Interface posée, `NotImplementedError`. **Vecteur réel disponible** — la phase B n'a plus d'excuse pour être écrite à l'aveugle |
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
