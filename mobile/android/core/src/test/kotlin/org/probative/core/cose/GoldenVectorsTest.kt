@@ -21,11 +21,16 @@ class GoldenVectorsTest {
 
     private companion object {
         /**
-         * Les trois jeux de vecteurs. `core` n'est pas décoratif : c'est la
+         * Les quatre jeux de vecteurs. `core` n'est pas décoratif : c'est la
          * seule forme sans position ni dimensions, et donc la seule qui
          * vérifie que l'encodeur ne suppose pas une acquisition (ADR-0005).
+         *
+         * `core-ios` en est la variante de posture iOS. Ce cœur-ci ne la
+         * produira jamais — mais l'encodeur, lui, doit l'encoder à
+         * l'identique : c'est la même canonicité CBOR, et un jeu qu'une
+         * seule implémentation vérifie n'est vérifié qu'à moitié.
          */
-        val VECTOR_SETS = listOf("android", "ios", "core")
+        val VECTOR_SETS = listOf("android", "ios", "core", "core-ios")
     }
 
     private val dir = File(

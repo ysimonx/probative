@@ -27,6 +27,20 @@
     "public_key_x962_hex": "04ad40242d07708c8b4cfcfc053ade2d7dbbe60e4995490d2f7751d36f8c6e715b19acbc7240c02b4389731994b667c35cf94e0dc4f1b6f21d40987c4c614cbe4f",
     "wall_ms": 1754400000000
   },
+  "core-ios": {
+    "assertion_counter": 7,
+    "freshness_kind": "app-attest",
+    "kid_hex": "eec84f6179e5491a201dfcaadb8c7bc499a11539d41f3ab1dfea6715d2b73843",
+    "media_digest_hex": "edae868576217c4de87330e99753153926722f09129ee55df56626fbf5d2007a",
+    "media_hex": "70726f6261746976652f302e312076656374657572206d65646961",
+    "nonce_hex": "38aef2b8f90d3ae921cc5639f2456f74",
+    "platform": "ios",
+    "prev_digest_hex": null,
+    "private_key_d_hex": "4c9b03364f3b308094a882ef6105c05d2dc0fb576800fd6f9bacda0e5a347f2c",
+    "profile": "core",
+    "public_key_x962_hex": "04d880e7ead1a52ac5f364f755d1b94ad70570c7a6a0efd78631123536edfc4de65798d391145361de20029d5fd793b77ec45a9c58dd6820e24b22387803bb8014",
+    "wall_ms": 1754400000000
+  },
   "ios": {
     "assertion_counter": 7,
     "freshness_kind": "app-attest",

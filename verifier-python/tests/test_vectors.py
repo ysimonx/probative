@@ -101,3 +101,17 @@ def test_enveloppe_vecteur_noyau_atteint_strong():
     assert res.level is Level.STRONG, res.to_dict()
     assert res.profile == "core"
     assert Property.POSITION not in res.properties
+
+
+def test_enveloppe_vecteur_noyau_ios_acceptee():
+    """Le noyau en forme iOS — l'oracle du cœur Swift pour le profil noyau.
+
+    Même profil que le vecteur précédent, mais `posture` porte le label 9
+    au lieu des 6/7/8 d'Android. C'est le seul bloc dont la forme dépende
+    de la plateforme, et donc le seul endroit où un cœur peut produire une
+    charge utile valide qu'aucun vecteur ne couvre.
+    """
+    res = _verify_vector("core-ios")
+    assert res.level in (Level.STANDARD, Level.STRONG), res.to_dict()
+    assert res.profile == "core"
+    assert Property.POSITION not in res.properties

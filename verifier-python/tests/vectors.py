@@ -2,14 +2,20 @@
 
 Les cœurs Kotlin et Swift doivent produire, pour les mêmes entrées,
 exactement les octets figés ici : c'est le test de canonicité CBOR
-(spec §7) le moins cher et le plus discriminant. Trois jeux couvrent les
+(spec §7) le moins cher et le plus discriminant. Quatre jeux couvrent les
 formes de charge utile : `android` (profil capture, chaînage, posture
-7/8), `ios` (profil capture, compteur d'assertion, posture 9) et `core`
-(profil noyau — ni position, ni dimensions, ni corroboration).
+7/8), `ios` (profil capture, compteur d'assertion, posture 9), `core`
+(profil noyau, forme Android) et `core-ios` (profil noyau, forme iOS).
 
 Le jeu `core` n'est pas décoratif : c'est la seule forme qui puisse
 atteindre `STRONG`, et donc la seule qui vérifie que le plafond de
 recapture est bien attaché au profil `capture` et non au format.
+
+Le noyau existe en **deux** formes parce que `posture` diffère d'une
+plateforme à l'autre, et c'est le seul bloc qui le fasse. Un seul jeu
+laissait le cœur de l'autre plateforme sans oracle pour le profil noyau —
+un trou d'autant plus fâcheux que le noyau est le profil qu'un
+intégrateur atteint sans caméra.
 
 Toutes les entrées sont déterministes, y compris la clé — une clé
 *logicielle de test*, dérivée d'une étiquette publique. Ce n'est pas du
@@ -45,6 +51,12 @@ VECTOR_SETS: dict[str, tuple[str, str]] = {
     "android": ("android", PROFILE_CAPTURE),
     "ios": ("ios", PROFILE_CAPTURE),
     "core": ("android", PROFILE_CORE),
+    # Le noyau existe en deux formes, parce que `posture` diffère : labels
+    # 6/7/8 côté Android, label 9 côté iOS. Sans ce quatrième jeu, le cœur
+    # Swift n'avait **aucun oracle** pour le profil noyau — il ne pouvait pas
+    # reproduire `core`, de forme Android, et rien d'autre ne l'épinglait.
+    # C'est précisément le trou qu'un vecteur existe pour fermer.
+    "core-ios": ("ios", PROFILE_CORE),
 }
 
 # Ordre du groupe P-256 : borne de dérivation de la clé de test.

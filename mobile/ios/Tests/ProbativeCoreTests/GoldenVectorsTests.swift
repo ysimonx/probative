@@ -23,10 +23,14 @@ final class GoldenVectorsTests: XCTestCase {
         try Data(contentsOf: Self.vectorsDir.appendingPathComponent(name))
     }
 
-    /// Les trois jeux de vecteurs. `core` n'est pas décoratif : c'est la
+    /// Les quatre jeux de vecteurs. `core` n'est pas décoratif : c'est la
     /// seule forme sans position ni dimensions, et donc la seule qui
     /// vérifie que l'encodeur ne suppose pas une acquisition (ADR-0005).
-    private static let vectorSets = ["android", "ios", "core"]
+    ///
+    /// `core-ios` en est la variante de posture iOS, celle que ce cœur
+    /// produit réellement — voir ``CorePayloadVectorTests``, qui l'épingle
+    /// au code d'appareil et non au seul encodeur.
+    private static let vectorSets = ["android", "ios", "core", "core-ios"]
 
     private func inputs(_ name: String) throws -> [String: Any] {
         let manifest = try JSONSerialization.jsonObject(
