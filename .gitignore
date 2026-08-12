@@ -17,6 +17,10 @@ mobile/**/build/
 mobile/**/.gradle/
 mobile/**/.kotlin/
 mobile/**/local.properties
+# Secrets de signature Play — en pratique un lien vers le repertoire de
+# secrets, comme service-account.json. Le motif est place ici, avec les
+# autres fichiers propres a la machine.
+mobile/**/keystore.properties
 mobile/**/.build/
 mobile/**/.swiftpm/
 mobile/**/Pods/
