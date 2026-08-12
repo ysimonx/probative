@@ -36,6 +36,8 @@ from typing import Any
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from .attestation import (
+    AppAttestVerifier,
+    AttestationOutcome,
     AttestationVerifier,
     CredentialsError,
     DeviceIntegrity,
@@ -61,6 +63,58 @@ DEFAULT_PROFILE = Profile.CAPTURE
 
 class BadRequest(Exception):
     """Requête HTTP invalide — faute du client, avant tout pipeline."""
+
+
+class PerPlatformVerifier(AttestationVerifier):
+    """Aiguille vers le vérificateur de la plateforme de l'enveloppe.
+
+    `PlayIntegrityVerifier` et `AppAttestVerifier` **lèvent** chacun sur la
+    plateforme de l'autre, et ils ont raison : rendre un échec laisserait
+    croire que l'appareil a été jugé. Un serveur qui sert les deux
+    plateformes doit donc aiguiller, et sans cette classe le serveur de
+    développement ne pouvait juger qu'une plateforme à la fois.
+
+    Reste ici, dans le câblage, plutôt qu'en bibliothèque : c'est une
+    décision de déploiement, et la surface publique se garde minimale
+    (ADR-0001). Si un second appelant en a besoin, elle déménagera.
+
+    Une plateforme non câblée fait **lever**, jamais rendre un verdict
+    défavorable : « non jugé » et « jugé mauvais » n'appellent pas la même
+    conduite, et les confondre ferait passer un défaut de configuration pour
+    un appareil compromis.
+    """
+
+    def __init__(self, **par_plateforme: AttestationVerifier | None) -> None:
+        # Les absents sont filtrés ici plutôt que chez l'appelant : le
+        # câblage énumère les plateformes qu'il connaît, pas celles qu'il a
+        # su configurer.
+        self._verifiers: dict[str, AttestationVerifier] = {
+            k: v for k, v in par_plateforme.items() if v is not None
+        }
+
+    def verify(
+        self,
+        *,
+        platform: str,
+        token: bytes,
+        expected_challenge: bytes,
+        key_id: bytes,
+        attestation_key: bytes | None = None,
+    ) -> AttestationOutcome:
+        verifier = self._verifiers.get(platform)
+        if verifier is None:
+            connues = ", ".join(sorted(self._verifiers)) or "aucune"
+            raise AttestationRejected(
+                f"aucun vérificateur d'attestation configuré pour la plateforme "
+                f"{platform!r} (configurées : {connues})"
+            )
+        return verifier.verify(
+            platform=platform,
+            token=token,
+            expected_challenge=expected_challenge,
+            key_id=key_id,
+            attestation_key=attestation_key,
+        )
 
 
 def _require_map(body: Any) -> Mapping[str, Any]:
@@ -318,6 +372,9 @@ def make_server(
 ENV_TRUSTED_CERTS = "PROBATIVE_TRUSTED_APP_CERTS"
 ENV_ANDROID_PACKAGE = "PROBATIVE_ANDROID_PACKAGE"
 ENV_SERVICE_ACCOUNT = "PROBATIVE_SERVICE_ACCOUNT"
+ENV_APPLE_TEAM_ID = "PROBATIVE_APPLE_TEAM_ID"
+ENV_IOS_BUNDLE_ID = "PROBATIVE_IOS_BUNDLE_ID"
+ENV_APPATTEST_ENV = "PROBATIVE_APPATTEST_ENV"
 
 
 def _load_dotenv(chemin: Path) -> list[str]:
@@ -426,6 +483,54 @@ def _attestation_from_env() -> tuple[AttestationVerifier | None, str]:
     return PlayIntegrityVerifier(package_name=paquet, credentials=identifiants), ""
 
 
+def _app_attest_from_env() -> tuple[tuple[str, str, str] | None, str]:
+    """Application App Attest de ce déploiement, si l'environnement la donne.
+
+    Rend `(None, motif)` quand la configuration est absente : la route
+    d'enrôlement refuse alors une attestation Apple au lieu de faire
+    semblant de la valider, et le motif est affiché au démarrage.
+
+    Trois valeurs, toutes propres au compte de développement et aucune
+    secrète — contrairement à Android, aucun compte de service n'entre en
+    jeu, puisque la validation App Attest est **entièrement hors ligne** :
+
+        PROBATIVE_APPLE_TEAM_ID=9SGKL7VUD3
+        PROBATIVE_IOS_BUNDLE_ID=org.probative.demo
+        PROBATIVE_APPATTEST_ENV=development
+
+    L'environnement n'est pas un détail de confort : il fixe l'`aaguid`
+    attendu dans l'attestation. Une application compilée en développement
+    produit `appattestdevelop`, une compilation de distribution produit
+    `appattest` — et un vecteur de développement ne prouve pas le chemin de
+    production. Le défaut est `production`, parce qu'un défaut doit être le
+    cas strict : se tromper vers le développement accepterait un binaire de
+    test dans un déploiement réel, l'inverse fait seulement échouer une
+    campagne, bruyamment.
+    """
+    equipe = os.environ.get(ENV_APPLE_TEAM_ID, "").strip()
+    bundle = os.environ.get(ENV_IOS_BUNDLE_ID, "").strip()
+    environnement = os.environ.get(ENV_APPATTEST_ENV, "").strip() or "production"
+
+    if not equipe or not bundle:
+        manquantes = [
+            nom
+            for nom, valeur in ((ENV_APPLE_TEAM_ID, equipe), (ENV_IOS_BUNDLE_ID, bundle))
+            if not valeur
+        ]
+        return None, f"{', '.join(manquantes)} absent(es)"
+
+    if environnement not in ("development", "production"):
+        # Une valeur inconnue ne doit pas se replier sur un défaut : elle
+        # ferait attendre un `aaguid` que l'appareil ne produira jamais, et
+        # l'échec ressemblerait à une attestation invalide.
+        raise SystemExit(
+            f"{ENV_APPATTEST_ENV} : attendu 'development' ou 'production' — "
+            f"reçu {environnement!r}"
+        )
+
+    return (equipe, bundle, environnement), ""
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Serveur de développement probative")
     parser.add_argument("--host", default="127.0.0.1")
@@ -449,19 +554,52 @@ def main(argv: list[str] | None = None) -> None:
         # serait un binaire légitime traité comme reconditionné.
         raise SystemExit(f"{ENV_TRUSTED_CERTS} : {exc}") from exc
 
-    attestation, motif = _attestation_from_env()
+    android, motif = _attestation_from_env()
+    app_attest, motif_apple = _app_attest_from_env()
+
+    # La même configuration sert deux fois côté iOS : à valider l'attestation
+    # d'enrôlement (route `/enroll`, hors ligne) et à valider l'assertion de
+    # chaque enveloppe (étape 5 du pipeline). Rien à ajouter pour la seconde.
+    ios = (
+        AppAttestVerifier(team_id=app_attest[0], bundle_id=app_attest[1])
+        if app_attest is not None
+        else None
+    )
+    attestation: AttestationVerifier | None = (
+        PerPlatformVerifier(android=android, ios=ios)
+        if android is not None or ios is not None
+        else None
+    )
 
     server = make_server(
-        DevService(attestation=attestation, policy=policy), args.host, args.port
+        DevService(attestation=attestation, app_attest=app_attest, policy=policy),
+        args.host,
+        args.port,
     )
     print(f"Serveur de développement : http://{args.host}:{server.server_address[1]}")
     if attestation is None:
-        print(f"ATTENTION : NullAttestationVerifier actif ({motif}).")
+        print(f"ATTENTION : NullAttestationVerifier actif ({motif} ; {motif_apple}).")
         print("  Aucune attestation réelle n'est validée — voir .env.example.")
+    # Les deux plateformes sont annoncées séparément, parce qu'elles sont
+    # indépendantes : la validation App Attest est entièrement hors ligne et
+    # ne partage rien avec la chaîne Android. Un déploiement peut n'avoir que
+    # l'une des deux, et une enveloppe de l'autre sera alors refusée — non
+    # jugée, ce qui n'est pas la même chose que jugée mauvaise.
+    if android is None:
+        print(f"Android : aucun vérificateur ({motif}).")
     else:
         print(
-            f"PlayIntegrityVerifier actif sur "
+            f"Android : PlayIntegrityVerifier sur "
             f"{os.environ[ENV_ANDROID_PACKAGE]} — attestation réelle."
+        )
+    if app_attest is None:
+        print(f"iOS : aucun vérificateur ({motif_apple}).")
+        print("  Une attestation Apple présentée à /enroll sera refusée.")
+    else:
+        equipe, bundle, environnement = app_attest
+        print(
+            f"iOS : AppAttestVerifier sur {equipe}.{bundle} "
+            f"— environnement {environnement}, enrôlement et assertion."
         )
     if policy.trusted_app_certificates:
         print(

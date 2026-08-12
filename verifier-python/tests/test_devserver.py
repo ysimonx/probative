@@ -550,3 +550,87 @@ def test_cle_illisible_arrete_le_serveur(monkeypatch, tmp_path):
 
     with pytest.raises(SystemExit):
         _attestation_from_env()
+
+
+# --- Câblage App Attest (préalable de C4.1) -----------------------------
+#
+# Même contrat que côté Android : jamais de repli silencieux, et une faute
+# de configuration se distingue d'une absence.
+
+
+def test_app_attest_absent_refuse_plutot_que_de_faire_semblant(monkeypatch):
+    """Sans configuration, l'enrôlement Apple est indisponible et le dit."""
+    from probative.devserver import (
+        ENV_APPLE_TEAM_ID,
+        ENV_IOS_BUNDLE_ID,
+        _app_attest_from_env,
+    )
+
+    monkeypatch.delenv(ENV_APPLE_TEAM_ID, raising=False)
+    monkeypatch.delenv(ENV_IOS_BUNDLE_ID, raising=False)
+
+    application, motif = _app_attest_from_env()
+
+    assert application is None
+    assert ENV_APPLE_TEAM_ID in motif and ENV_IOS_BUNDLE_ID in motif
+
+
+def test_app_attest_partiel_nomme_le_reglage_manquant(monkeypatch):
+    from probative.devserver import (
+        ENV_APPLE_TEAM_ID,
+        ENV_IOS_BUNDLE_ID,
+        _app_attest_from_env,
+    )
+
+    monkeypatch.setenv(ENV_APPLE_TEAM_ID, "9SGKL7VUD3")
+    monkeypatch.delenv(ENV_IOS_BUNDLE_ID, raising=False)
+
+    application, motif = _app_attest_from_env()
+
+    assert application is None
+    assert ENV_IOS_BUNDLE_ID in motif
+    assert ENV_APPLE_TEAM_ID not in motif
+
+
+def test_app_attest_environnement_par_defaut_est_le_cas_strict(monkeypatch):
+    """Le défaut est `production`, jamais `development`.
+
+    Se tromper vers le développement accepterait un binaire de test dans un
+    déploiement réel ; l'inverse fait seulement échouer une campagne, et
+    bruyamment. Un défaut doit être le cas strict.
+    """
+    from probative.devserver import (
+        ENV_APPATTEST_ENV,
+        ENV_APPLE_TEAM_ID,
+        ENV_IOS_BUNDLE_ID,
+        _app_attest_from_env,
+    )
+
+    monkeypatch.setenv(ENV_APPLE_TEAM_ID, "9SGKL7VUD3")
+    monkeypatch.setenv(ENV_IOS_BUNDLE_ID, "org.probative.demo")
+    monkeypatch.delenv(ENV_APPATTEST_ENV, raising=False)
+
+    application, _ = _app_attest_from_env()
+
+    assert application == ("9SGKL7VUD3", "org.probative.demo", "production")
+
+
+def test_app_attest_environnement_inconnu_arrete_le_serveur(monkeypatch):
+    """Une valeur inconnue ferait attendre un `aaguid` jamais produit.
+
+    L'échec ressemblerait alors à une attestation invalide, ce qui enverrait
+    chercher la panne du mauvais côté.
+    """
+    from probative.devserver import (
+        ENV_APPATTEST_ENV,
+        ENV_APPLE_TEAM_ID,
+        ENV_IOS_BUNDLE_ID,
+        _app_attest_from_env,
+    )
+
+    monkeypatch.setenv(ENV_APPLE_TEAM_ID, "9SGKL7VUD3")
+    monkeypatch.setenv(ENV_IOS_BUNDLE_ID, "org.probative.demo")
+    monkeypatch.setenv(ENV_APPATTEST_ENV, "prod")
+
+    with pytest.raises(SystemExit, match="development"):
+        _app_attest_from_env()
