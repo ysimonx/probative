@@ -469,10 +469,58 @@ Package SwiftPM produisant un XCFramework, plus une application de démonstratio
 
 ### C4 — Capture et collecte
 
+**Coupée en deux le 2026-08-13**, comme A4 et pour la même raison : assembler une
+enveloppe et collecter des capteurs sont deux difficultés indépendantes.
+
+#### C4.1 — L'enveloppe, sans caméra — **FAITE, critère de sortie du spike atteint**
+
+- [x] Cœur Swift : `Payload.swift` (construction pure), `DeviceState.swift`
+      (collecte `timing`/`posture`, aucune autorisation), `Sealer.swift` et le
+      protocole `FreshnessSource`. Pendants exacts des fichiers Kotlin.
+- [x] **Quatrième vecteur d'or, `core-ios`.** Il manquait : le jeu `core` est de
+      forme Android (posture 6/7/8), et le cœur Swift produit une posture iOS
+      (label 9). Rien ne pouvait donc l'épingler. `posture` est le **seul** bloc
+      dont la forme dépende de la plateforme, donc le seul endroit où un cœur
+      peut produire une charge utile valide qu'aucun vecteur ne couvre.
+- [x] **Câbler App Attest dans le serveur de dev** — `PROBATIVE_APPLE_TEAM_ID`,
+      `PROBATIVE_IOS_BUNDLE_ID`, `PROBATIVE_APPATTEST_ENV`. La même configuration
+      sert deux fois : valider l'attestation d'enrôlement et valider l'assertion
+      de chaque enveloppe.
+- [x] **Aiguillage par plateforme.** `PlayIntegrityVerifier` et
+      `AppAttestVerifier` lèvent chacun sur la plateforme de l'autre — à raison —
+      et le serveur n'en câblait qu'un. Une plateforme non configurée fait lever,
+      jamais rendre un verdict défavorable : « non jugé » et « jugé mauvais »
+      n'appellent pas la même conduite.
+- [x] Séquence sur appareil : **exécutée sur iPhone 16 (iOS 26.6) le 2026-08-13**,
+      verdict `STRONG`, trois propriétés au grade A, aucun drapeau.
+
+#### C4.2 — La collecte
+
 - [ ] AVFoundation : octets JPEG bruts, empreinte, dimensions ; `timing`,
       `position` (CoreLocation + ancienneté), `posture` iOS (`posture[9]`).
 - [ ] Corroboration : `baro`/`baro-alt` (CMAltimeter), `motion`, `steps`,
       `activity`.
+
+**Trois différences avec Android, toutes structurelles.**
+
+- **Il n'existe pas d'`adb reverse` sur iOS.** L'appareil ne voit pas la boucle
+  locale du Mac, même relié en USB. Le serveur doit écouter sur le réseau local
+  (`--host 0.0.0.0`) et les deux machines partager le Wi-Fi. D'où deux clés dans
+  l'`Info.plist` : `NSAppTransportSecurity/NSAllowsLocalNetworking` — préférée à
+  `NSAllowsArbitraryLoads`, qui lèverait tout — et
+  `NSLocalNetworkUsageDescription`, sans laquelle la connexion échoue en
+  `-1009`, « The Internet connection appears to be offline ». **Le message ne dit
+  pas que la permission manque**, et la première exécution échoue toujours : la
+  boîte de dialogue s'affiche pendant que la requête part.
+- **`timing[4]` est toujours omis.** iOS n'expose aucune interface publique
+  disant si l'heure est réglée automatiquement, là où Android a
+  `Settings.Global.AUTO_TIME`. Le label est optionnel : l'asymétrie est absorbée
+  par le format, ce qui est exactement l'invariant 4 à l'œuvre.
+- **`time` atteint A sans rien faire**, par `assertion-counter-monotonic`. Le
+  compteur signé dans `authenticatorData` fait foi ; le compteur de l'en-tête de
+  fraîcheur n'est signé par rien, et il est donc **omis** — le déclarer
+  n'apporterait rien et un désaccord serait un rejet. Android doit gagner le même
+  grade par chaînage (A6).
 
 ### C5 — Fraîcheur (règle R1)
 
@@ -814,3 +862,59 @@ spike : il y faut une itération de C3, ou C4.
   un recul aux insets, et l'identité est désormais épinglée hors de la zone
   défilante. Ce n'est pas cosmétique : lire un verdict sans savoir quel binaire
   l'a produit est précisément ce qu'A5 avait signalé.
+
+- 2026-08-13 : **CRITÈRE DE SORTIE DU SPIKE ATTEINT — iPhone 16, iOS 26.6.**
+  Pour la première fois sur une plateforme quelconque, un appareil réel a produit
+  une enveloppe `probative/0.1` que le vérificateur a acceptée, **avec validation
+  d'attestation réelle** et non le substitut :
+
+      niveau           STRONG
+      motif            toutes les propriétés au grade A
+      integrity   A    cose-valid, key-attested-hardware,
+                       app-attest:assertion-valid, app-attest:r1-bound
+      origin      A    raw-hash-match, app-recognized, …
+      time        A    nonce-fresh, clock-consistent,
+                       assertion-counter-monotonic, …
+      drapeaux         aucun
+
+  Chaîne complète : clé Secure Enclave (7 ms), clé App Attest (37 ms),
+  attestation de 5 810 octets validée **jusqu'à la racine publiée par Apple**
+  (1 424 ms), enrôlement `attested: true`, nonce de profil `core`, scellement
+  **41 ms**, enveloppe de **438 octets**, verdict rendu en **19 ms**.
+
+  Comparaison avec la répétition Android du même jour : enveloppe 438 octets
+  contre 742, et vérification 19 ms contre 410. Les deux écarts ont la même
+  cause — le jeton Play Integrity est volumineux et doit partir chez Google pour
+  être déchiffré, quand l'assertion App Attest est compacte et se valide **hors
+  ligne**. C'est la conséquence, mesurée, du mode de déchiffrement tranché par
+  contrainte en phase B.
+
+  `STRONG` mérite une note : il n'est atteignable que parce que le profil est
+  `core`. Le plafond de recapture d'ADR-0005 s'applique à `capture`, pas au
+  noyau — une enveloppe qui n'affirme rien du monde physique n'a pas à payer une
+  attaque qui ne la concerne pas. C4.2 fera retomber `origin` à B, et ce sera
+  correct.
+
+  **Ce que ce jalon ne dit pas.** Il vaut pour le chemin *développement* :
+  l'`aaguid` est `appattestdevelop`, et une compilation de distribution produit
+  `appattest` avec une racine différente. Le serveur sait traiter les deux
+  (`PROBATIVE_APPATTEST_ENV`), mais **aucun vecteur de production n'existe**.
+  Il ne dit rien non plus d'Android, dont la sonde A4.1 n'a toujours pas tourné
+  sur SM-X200 — la répétition sur émulateur ne remplace pas une clé matérielle.
+
+  Quatre obstacles rencontrés, tous instructifs et aucun deviné :
+
+  - **`Info.plist` synthétisé contre `Info.plist` écrit.** Deux des clés requises
+    sont des *dictionnaires*, que `INFOPLIST_KEY_*` ne sait pas porter. L'écrire
+    entièrement à la main coûte l'ossature que Xcode injecte, et l'installation
+    est refusée : « Failed to get the identifier for the app to be installed ».
+    La bonne réponse est un fichier **partiel** fusionné avec la synthèse.
+  - **La permission « réseau local » ne se voit pas dans l'erreur.** `-1009`
+    annonce une absence d'Internet alors que l'appareil venait d'atteindre les
+    serveurs d'Apple. Le client distingue donc explicitement transport et refus
+    serveur, sans quoi on cherche la panne du mauvais côté.
+  - **L'extraction de l'UDID de `CLAUDE.md` était fausse** : `awk '{print $3}'`
+    tombe sur un mot du *nom* de l'appareil dès qu'il contient des espaces —
+    « iPhone 16 de Yannick ». Remplacée par une extraction du motif d'UUID.
+  - **`timeout` n'existe pas sur macOS**, et `devicectl … --console` ne rend pas
+    la main : lancer en arrière-plan puis relire le journal.

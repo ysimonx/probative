@@ -27,6 +27,9 @@ mobile/**/Pods/
 mobile/**/*.xcuserdatad/
 # Projet Xcode de la demo : genere par scripts/make_demo_project.rb
 mobile/**/*.xcodeproj/
+# Info.plist partiel de la demo : genere par le meme script, et il porte
+# l'adresse du serveur de dev -- une donnee de poste, propre a la machine.
+mobile/ios/demo/Info.plist
 # Ne jamais versionner de materiel cryptographique reel
 *.p8
 *.p12

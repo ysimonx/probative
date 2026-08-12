@@ -124,17 +124,30 @@ adb logcat -d -s PROBATIVE_A41
 
 ```bash
 cd mobile/ios
-swift test                        # 18 tests sur l'hôte, App Attest se saute
+swift test                        # 21 tests sur l'hôte, App Attest se saute
 ./scripts/make_xcframework.sh     # artefact autonome
-ruby scripts/make_demo_project.rb # projet Xcode, non versionné
 
-UDID=$(xcrun devicectl list devices | awk '/available/{print $3; exit}')
+# Projet Xcode, non versionné. L'adresse du serveur y entre par l'Info.plist :
+# il n'existe pas d'`adb reverse` sur iOS, donc le serveur doit écouter sur le
+# réseau local (`--host 0.0.0.0`) et l'iPhone partager le Wi-Fi du poste.
+PROBATIVE_DEVSERVER=http://$(ipconfig getifaddr en0):8765 \
+  ruby scripts/make_demo_project.rb
+
+# Sonde C4.1 — boucle complète appareil → enveloppe → verdict, profil `core`.
+# La PREMIÈRE exécution échoue toujours en `-1009` : la boîte de dialogue
+# « réseau local » s'affiche pendant que la requête part. Accepter, relancer.
+
+# Extraction par motif d'UUID : ~~awk '{print $3}'~~ tombait sur un mot du NOM
+# de l'appareil dès qu'il contient des espaces (« iPhone 16 de Yannick »).
+UDID=$(xcrun devicectl list devices \
+  | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1)
 xcodebuild -project demo/ProbativeDemo.xcodeproj -scheme ProbativeDemo \
   -destination "id=$UDID" -derivedDataPath demo/build -allowProvisioningUpdates build
 xcrun devicectl device install app --device "$UDID" \
   demo/build/Build/Products/Debug-iphoneos/ProbativeDemo.app
 # Sans --console : ce drapeau attend la fin de l'application et donne
-# l'impression que la commande est bloquée.
+# l'impression que la commande est bloquée. Avec, lancer en arrière-plan et
+# relire le journal — et non `timeout`, absent de macOS.
 xcrun devicectl device process launch --device "$UDID" --terminate-existing org.probative.demo
 xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer \
   --domain-identifier org.probative.demo --source Documents/c3-fixture.json --destination ./
@@ -172,7 +185,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
 | Vecteurs d'appareil | Android (chaîne à 4 certificats, SM-X200) et iOS (App Attest, iPhone 16) versionnés dans `tests/device-vectors/` |
 | Cœur natif Android | A1–A3 et **A5 faites, validées sur SM-X200**. **A4.1 écrite** — `seal(bytes)`, profil `core` : le cœur assemble et signe une enveloppe complète, épinglée au vecteur d'or par un test d'hôte. **Jamais exécutée sur appareil** : c'est la seule case qui reste pour le critère de sortie du spike. Puis A4.2, capture CameraX |
-| Cœur natif iOS | C1–C3 faites ; **C3 validée sur appareil réel** (iPhone 16, iOS 26.6), assertion R1 exercée. Prochaine : C4, capture AVFoundation |
+| Cœur natif iOS | C1–C3 et **C4.1 faites**. **Le critère de sortie du spike est atteint** (iPhone 16, iOS 26.6, 2026-08-13) : enveloppe complète acceptée en `STRONG`, trois propriétés au grade A, attestation réelle et non substitut. Prochaine : C4.2, capture AVFoundation |
 | Liaisons Flutter / React Native | Non commencées |
 | Banc de triche | Non commencé |
 
@@ -238,9 +251,11 @@ route d'enrôlement ne l'appelle pas encore.
 
 **Spike d'attestation natif** — plan détaillé et phases dans
 `docs/spike-attestation.md`. Cible précise : produire une enveloppe qu'un appareil
-réel fait accepter par le vérificateur. `verifier-python/tests/factory.py` est
-l'implémentation de référence — si le natif produit une enveloppe que la fabrique ne
-saurait pas produire, c'est le natif qui s'écarte de la spécification.
+réel fait accepter par le vérificateur. **Atteinte le 2026-08-13 sur iPhone 16**
+(C4.1, `STRONG`) ; reste à l'établir sur Android (A4.1) et à mettre une vraie photo
+sous le sceau (A4.2/C4.2). `verifier-python/tests/factory.py` est l'implémentation
+de référence — si le natif produit une enveloppe que la fabrique ne saurait pas
+produire, c'est le natif qui s'écarte de la spécification.
 
 Les cœurs du spike doivent être livrés comme artefacts autonomes (AAR, XCFramework),
 sans dépendance à un framework : c'est la condition de la stratégie multi-frameworks
@@ -301,21 +316,31 @@ sans appeler `verify_key_attestation`.~~ **Câblé** : `/enroll` valide la chaî
 jusqu'à la racine Google, vérifie qu'elle porte bien sur la clé présentée, et en
 tire `hardware_backed` — ce que le client déclare ne sert plus qu'au mode dégradé.
 
-**A4.1 — l'enveloppe, écrite mais jamais exécutée.** Le cœur Android sait assembler
-et signer ; la sonde `:demo` enchaîne enrôlement, nonce, scellement et verdict.
-Manque le seul geste qui compte : brancher la SM-X200 et la lancer. C'est ce qui
-coche le critère de sortie du spike, jamais atteint sur aucune plateforme.
+**A4.1 — l'enveloppe, écrite mais jamais exécutée sur matériel.** Le cœur Android
+sait assembler et signer ; la sonde `:demo` enchaîne enrôlement, nonce, scellement
+et verdict, et la boucle a tourné **sur émulateur**. Manque le seul geste qui
+compte : brancher la SM-X200. ~~C'est ce qui coche le critère de sortie du spike~~
+— **coché par C4.1 côté iOS le 2026-08-13** ; A4.1 reste nécessaire pour l'établir
+sur Android, où la clé matérielle et le verdict d'appareil sont hors de portée d'un
+émulateur.
 
-**A4.2 / C4 — la capture.** La seule qui mettra enfin une photo sous le sceau, et le
-vrai sujet de mesure de latence. Rien ne la bloque ; c'est aussi la plus longue.
+**A4.2 / C4.2 — la capture.** La seule qui mettra enfin une photo sous le sceau, et
+le vrai sujet de mesure de latence. Rien ne la bloque ; c'est aussi la plus longue.
+Elle fera retomber `origin` de A à B — le plafond de recapture s'applique au profil
+`capture`, et ce sera correct.
 
 ### Ce que la phase D n'a pas couvert
 
-Elle valide l'attestation et l'assertion **isolément**, jamais une enveloppe
-complète de bout en bout. La sonde C3 a signé une charge utile de substitution, pas
-un `COSE_Sign1` : le pipeline ne peut donc pas rejouer ce vecteur. Faire juger une
-enveloppe réelle par le vérificateur suppose que le cœur iOS produise une vraie
-enveloppe — c'est C4, ou une itération de C3.
+~~Elle valide l'attestation et l'assertion **isolément**, jamais une enveloppe
+complète de bout en bout.~~ **Comblé le 2026-08-13 par C4.1** : l'iPhone 16 a
+produit un vrai `COSE_Sign1`, dont l'assertion porte le défi R1, et le pipeline l'a
+jugé `STRONG`. La sonde C3 reste accessible dans la démonstration — elle seule
+produit le vecteur d'appareil, qui se périme en trois jours.
+
+Ce jalon vaut pour le chemin **développement** : l'`aaguid` est
+`appattestdevelop`. Une compilation de distribution produit `appattest` et une
+racine différente ; le serveur sait traiter les deux (`PROBATIVE_APPATTEST_ENV`),
+mais **aucun vecteur de production n'existe**.
 
 Deux points restés hors périmètre, volontairement : le **reçu** App Attest est
 conservé mais non validé (cela exige un appel à Apple), et le certificat feuille ne
