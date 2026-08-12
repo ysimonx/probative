@@ -163,8 +163,10 @@ commentaire d'en-tête de `KeystoreKeysDeviceTest`.
 
 **Sortie de A3 : atteinte (2026-08-11).** Deux réserves explicites : aucun appareil
 doté de StrongBox au banc, donc ce chemin n'est pas exercé — seul le repli l'est ; et
-la chaîne d'attestation est **cohérente avec elle-même mais sans ancre** — sa racine
-n'a pas été confrontée à celle publiée par Google, ce qui reste la phase B.
+~~la chaîne d'attestation est **cohérente avec elle-même mais sans ancre**~~ —
+**réserve levée le 2026-08-12** : la racine du vecteur SM-X200 est confrontée aux
+racines publiées par Google et les rejoint, l'ancrage portant sur la clé publique.
+Voir phase B. Seule subsiste l'absence de StrongBox au banc.
 
 ### A4 — Capture et collecte
 
@@ -260,8 +262,26 @@ par le serveur de dev (substitut d'attestation) ; AAR autonome ; latences mesur�
       (`.gitignore`), chargés depuis un chemin local.
 - [ ] Tests d'attaque référencés au modèle de menace (`test_s*_`) : jeton rejoué,
       jeton d'une autre application, `requestHash` d'une autre charge utile.
-- [ ] Validation de la chaîne d'attestation de clé Android à l'enrôlement (racine
-      Google Hardware Attestation), niveau de sécurité stocké dans `DeviceRecord`.
+- [x] **Validation de la chaîne d'attestation de clé jusqu'à la racine Google.**
+      `attestation/key_attestation.py`, éprouvé contre le vecteur SM-X200 réel.
+      14 tests, dont celui qui compte : une chaîne **forgée de bout en bout** —
+      racine auto-signée au même sujet, feuille portant le bon défi — est refusée
+      par le seul ancrage. C'est la différence entre « la chaîne se tient » et
+      « la chaîne est ancrée ».
+
+      **Piège majeur trouvé à cette occasion :** l'ancrage doit porter sur la
+      **clé publique**, jamais sur l'identité du certificat. Google a réémis sa
+      racine RSA en 2022 en conservant la clé — la SM-X200 porte la série
+      `d50ff25ba3f2d6b3` (2019-2034) quand Google publie `f1c172a699eaf51d`
+      (2022-2042). Un ancrage par empreinte aurait rejeté une chaîne légitime, et
+      le défaut ne se serait vu que sur du matériel ancien, donc tard.
+
+      Les **deux** racines publiées sont versionnées, dont la EC P-384 « Key
+      Attestation CA1 » effective depuis février 2026 : un appareil récent y
+      chaînera.
+- [ ] Câbler cette validation sur la route d'enrôlement et retenir le niveau de
+      sécurité dans `DeviceRecord.hardware_backed`. Le module est prêt, la route
+      accepte encore la chaîne sans la valider.
 - [ ] Réviser ADR-0002 : encodage normatif du `requestHash` (inconnue n° 1).
 
 **Sortie de phase B :** boucle Android complète au vert **sans** substitut.

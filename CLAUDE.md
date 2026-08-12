@@ -85,7 +85,7 @@ C'est leur seule raison d'être — ne rien y loger qui appartienne au cœur.
 cd verifier-python
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest              # 106 tests doivent passer
+pytest              # 165 tests doivent passer
 ruff check .
 mypy src
 ```
@@ -160,9 +160,9 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Noyau et profils (ADR-0005) | **Fait de bout en bout** : spec §2.5, CDDL, vérificateur, vecteurs, et les deux cœurs natifs |
-| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 106 tests au vert |
+| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 165 tests au vert |
 | `AppAttestVerifier` — **phase D faite** | Attestation d'enrôlement validée **jusqu'à la racine publiée par Apple**, assertion validée par enveloppe. Éprouvé contre le vecteur iPhone 16 réel, 26 tests |
-| `PlayIntegrityVerifier` | Interface posée, `NotImplementedError`. **Vecteur réel disponible** — la phase B n'a plus d'excuse pour être écrite à l'aveugle |
+| `PlayIntegrityVerifier` — **phase B faite** | Jeton déchiffré par `decodeIntegrityToken`, `requestHash` recalculé et confronté, verdicts traduits. Chaîne d'attestation de clé ancrée à la racine Google (`key_attestation.py`). 35 tests |
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
 | Vecteurs d'appareil | Android (chaîne à 4 certificats, SM-X200) et iOS (App Attest, iPhone 16) versionnés dans `tests/device-vectors/` |
 | Cœur natif Android | A1–A3 et **A5 faites, validées sur SM-X200**. `:demo` restauré, porte la sonde A5. Prochaine : A4, capture CameraX |
@@ -179,20 +179,31 @@ Il faut distinguer deux preuves de nature différente, souvent confondues :
 
 - **L'attestation de clé** (chaîne de 4 certificats) est produite **hors ligne**
   par la puce. Aucun serveur n'est interrogé — c'est voulu, cela fonctionne sans
-  réseau. On a vérifié que la chaîne est cohérente, jamais que sa racine est
-  bien **celle que Google publie**. Or une chaîne cohérente se fabrique de toutes
-  pièces : sans confrontation à l'ancre, elle ne prouve rien.
-- **Le jeton Play Integrity** est bien obtenu **auprès des serveurs de Google**,
-  qui répondent. Mais il est **chiffré et n'a jamais été ouvert** : le lire exige
-  de le faire déchiffrer par Google via un compte de service. **Obtenir un jeton
-  n'est pas passer un contrôle** — le verdict qu'il contient dit très
-  probablement que l'application n'est pas reconnue.
+  réseau. ~~On a vérifié que la chaîne est cohérente, jamais que sa racine est
+  celle que Google publie.~~ **Levé le 2026-08-12** : `key_attestation.py`
+  confronte la racine aux racines publiées par Google, et un test forge une chaîne
+  cohérente de bout en bout pour vérifier qu'elle est bien refusée.
+- **Le jeton Play Integrity** est bien obtenu **auprès des serveurs de Google**.
+  ~~Mais il est chiffré et n'a jamais été ouvert.~~ **Levé le 2026-08-12** : un
+  jeton réel de la SM-X200 a été déchiffré (HTTP 200), et le `requestHash` restitué
+  vaut exactement le R1 recalculé côté serveur. `appRecognitionVerdict` valait bien
+  `UNRECOGNIZED_VERSION`, comme prévu, et `deviceRecognitionVerdict`
+  `MEETS_DEVICE_INTEGRITY`.
 
-Ces deux réserves valent **pour Android uniquement**. Côté iOS, la phase D les a
-levées : la chaîne d'attestation App Attest est confrontée à
-`attestation/roots/apple-app-attest-root-ca.pem`, la racine publiée par Apple, et
-l'assertion de chaque enveloppe est vérifiée sous la clé App Attest extraite du
-certificat feuille. **Apple a signé, et on l'a vérifié.**
+**Les deux plateformes sont désormais ancrées.** Côté iOS depuis la phase D
+(`apple-app-attest-root-ca.pem`), côté Android depuis le 2026-08-12
+(`google-hardware-attestation-roots.pem`, deux racines). **Apple et Google ont
+signé, et on l'a vérifié dans les deux cas.**
+
+Deux pièges retenus de l'ancrage Android, qui ne s'inventent pas :
+
+- **L'ancrage porte sur la clé publique, jamais sur l'identité du certificat.**
+  Google a réémis sa racine RSA en 2022 en conservant la clé : la SM-X200 porte un
+  certificat de série et de validité différentes de celui publié aujourd'hui. Un
+  ancrage par empreinte aurait rejeté une chaîne légitime, et seulement sur du
+  matériel ancien — donc tard.
+- **Une seconde racine, EC P-384, est effective depuis février 2026.** Les deux
+  doivent être acceptées.
 
 Trois points appris en écrivant D, qui valent d'être retenus :
 
@@ -208,8 +219,9 @@ Trois points appris en écrivant D, qui valent d'être retenus :
   Celui de `authenticatorData` l'est. Quand les deux existent, seul le second fait
   foi et un désaccord est un rejet — faiblesse réelle du pipeline, fermée par D.
 
-Restent **la phase B** et le fait qu'**aucune photo n'a encore été prise** : A4 et
-C4 sont à faire.
+Reste que **aucune photo n'a encore été prise** : A4 et C4 sont à faire. La phase B
+est close à un câblage près — la validation de chaîne existe et est éprouvée, mais la
+route d'enrôlement ne l'appelle pas encore.
 
 ## Prochaine étape
 
@@ -264,16 +276,19 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
 
 ### Deux chantiers ouverts, aucun bloqué
 
-**Phase B — `PlayIntegrityVerifier`.** Celle qui ferme les réserves restantes : la
-racine Google jamais confrontée, l'aller-retour du `requestHash`, et le
-déchiffrement du jeton. Elle dispose du vecteur Android réel. **Demande un compte
-de service Google** — démarche à lancer en premier, c'est de l'attente pure.
+**Phase B — faite le 2026-08-12, à un câblage près.** Les trois réserves sont
+tombées : racine Google confrontée, `requestHash` restitué intact et vérifié par
+recalcul, jeton déchiffré. Le mode de déchiffrement a été **tranché par
+contrainte** et non par préférence — les clés locales exigent une application
+disponible sur Google Play, ce que la diffusion hors magasin ne permet pas. C'est
+donc un appel à Google par enveloppe, avec ses quatre conséquences assumées
+(`docs/play-integrity-service-account.md` §2), et l'authentification passe par la
+couture d'ADR-0006 pour ne rien imposer aux déploiements.
 
-Point à trancher, et l'écart n'est pas mineur : le jeton se déchiffre-t-il
-localement avec des clés détenues, ou faut-il appeler Google à chaque enveloppe ?
-Un appel par enveloppe ajouterait une latence, une limite de débit et une
-dépendance de disponibilité en plein chemin de vérification — et entamerait
-l'argument d'auto-hébergement.
+*Reste à câbler* : la route d'enrôlement accepte encore la chaîne d'attestation
+sans appeler `verify_key_attestation`, et `DeviceRecord.hardware_backed` n'est donc
+pas encore renseigné depuis elle. Le module est prêt et éprouvé ; c'est du
+branchement.
 
 **A4 / C4 — la capture.** La seule qui mettra enfin une photo sous le sceau, et le
 vrai sujet de mesure de latence. Rien ne la bloque ; c'est aussi la plus longue.
