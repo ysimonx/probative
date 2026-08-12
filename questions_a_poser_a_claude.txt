@@ -1,0 +1,205 @@
+Questions et réponses — 2026-08-12
+==================================
+
+
+1. « J'aimerais faire le test complet : une application est sur le store
+   Android et tu vois bien que c'est celle que tu es en train d'exécuter »
+---------------------------------------------------------------------------
+
+C'est faisable, et c'est le seul chemin qui exerce `PLAY_RECOGNIZED` — que
+nous n'avons jamais vu : la SM-X200 comme l'émulateur ont rendu
+`UNRECOGNIZED_VERSION` et `UNEVALUATED`.
+
+Ce qu'il faut :
+
+  - un compte Play Console (25 USD, une fois) ;
+  - l'application déclarée, un AAB signé téléversé sur une **piste de test
+    interne** — la publication publique n'est pas nécessaire, et la piste
+    interne est visible des seuls testeurs déclarés ;
+  - installer depuis Play sur la tablette, puis rejouer la sonde A5.
+
+Attendu au déchiffrement : `appRecognitionVerdict: PLAY_RECOGNIZED`, plus un
+`certificateSha256Digest` et un `versionCode` peuplés — ce qui exercerait
+enfin `app_recognized=True`, aujourd'hui couvert par des tests seulement.
+
+LE PIÈGE, ET IL VISE LE CODE ÉCRIT AUJOURD'HUI
+
+Google **resigne** ton binaire avec une clé qu'il détient. L'empreinte que
+le jeton rapportera sera celle de *cette* clé, pas celle de ta clé de
+téléversement.
+
+Conséquence directe sur `GradingPolicy.trusted_app_certificates` : si tu y
+inscris l'empreinte de ta clé de téléversement, **elle ne correspondra
+jamais**. L'empreinte à épingler est celle que la Play Console affiche sous
+« certificat de la clé de signature de l'application ».
+
+C'est exactement le genre d'écart qui ne se voit qu'en production, et
+seulement chez les utilisateurs venus du Store.
+
+
+1 bis. « Play App Signing est-il optionnel si je publie sur le Store ? »
+---------------------------------------------------------------------------
+
+**Non — pour une application nouvelle, c'est l'inverse : il est
+obligatoire.**
+
+L'enchaînement est indirect, ce qui rend la règle facile à manquer. Google
+impose le format **AAB** à toute nouvelle application. Or un AAB n'est pas
+installable : Google en dérive les APK par appareil, et doit donc les
+**signer lui-même**. Play App Signing n'est pas une case à cocher à côté de
+l'AAB, c'en est la conséquence mécanique.
+
+L'exception ne vise que les applications **déjà publiées** avant l'entrée en
+vigueur, qui continuent en APK. `org.probative.demo` serait nouvelle : pas
+de sortie possible.
+
+CE QUI TE RESTE SOUS CONTRÔLE
+
+Tu ne choisis pas *si* Google détient une clé de signature, mais **laquelle**.
+À l'inscription, deux voies :
+
+  - laisser Google **engendrer** la clé — tu la découvres après coup ;
+  - **téléverser la tienne**, exportée de ton keystore : Google en détient
+    une copie, mais tu la connais d'avance et peux l'épingler avant même la
+    première publication.
+
+Dans les deux cas, deux clés coexistent et la console les affiche côte à
+côte : la **clé de téléversement**, avec laquelle tu signes l'AAB, et la
+**clé de signature de l'application**, que Google applique aux APK livrés.
+C'est la seconde que Play Integrity rapporte.
+
+LE PIÈGE D'ENCODAGE, DÉSORMAIS OUTILLÉ
+
+Les deux consoles n'écrivent pas la même chose. Play Console affiche
+l'empreinte en hexadécimal séparé par des deux-points ::
+
+    63:14:CF:92:AA:93:83:DB:...:C1:08:1D:9F
+
+Play Integrity la rend en base64url sans bourrage, 43 caractères ::
+
+    YxTPkqqTg9uWc30LWhHznOA_xp59hA2jJliTXMEIHZ8
+
+Coller la valeur de la console dans la politique ne correspondrait jamais,
+et **l'échec serait silencieux** : le binaire passerait pour non reconnu,
+c'est-à-dire exactement comme un reconditionnement.
+
+D'où `probative.grading.app_certificate_digest()`, ajoutée le 2026-08-12 ::
+
+    from probative.grading import GradingPolicy, app_certificate_digest
+
+    policy = GradingPolicy(
+        trusted_app_certificates=(
+            app_certificate_digest("63:14:CF:92:...:1D:9F"),
+        ),
+    )
+
+Elle tolère les variantes d'écriture — majuscules, minuscules, sans
+séparateur, avec espaces — et **refuse une valeur déjà convertie**. Accepter
+cette dernière rendrait la fonction idempotente en apparence et masquerait
+une confusion d'entrée, qui est précisément ce qu'on veut rendre impossible.
+
+NUANCE UTILE
+
+`PLAY_RECOGNIZED` porte sur **les octets, pas sur le canal d'installation**.
+La documentation dit « the app and certificate match the versions
+distributed by Google Play ». Un APK authentique et non modifié, installé
+hors Play, devrait donc rester reconnu — c'est même ce que tu veux, puisque
+ta question est « est-ce bien mon binaire », pas « d'où vient-il ». À
+confirmer sur le banc le jour du test : ce point conditionne le sens qu'on
+donne au verdict.
+
+Et le pluriel de « versions » compte : *toutes* tes versions publiées sont
+reconnues, pas seulement la dernière. Inutile de comparer les `versionCode`
+pour répondre à ta question — Google fait déjà le travail.
+
+
+2. « Suis-je limité à 10 000 requêtes par jour si l'application n'est pas
+   déployée sur un store ? »
+---------------------------------------------------------------------------
+
+Oui, et — c'est le point dur — **ce plafond n'est pas négociable tant que
+l'application n'est pas sur Google Play.**
+
+  - le quota par défaut est de 10 000 requêtes/jour, adossé au **numéro de
+    projet Cloud** (487335590129), pas à l'application ;
+  - il couvre *à la fois* les demandes de jeton côté client et les appels de
+    déchiffrement côté serveur ;
+  - la demande d'augmentation exige que l'application soit disponible sur
+    Google Play, et « quota requests from unlinked projects will be
+    rejected ». Même verrou que pour le déchiffrement local.
+
+Ordre de grandeur : si une enveloppe consomme une demande de jeton **et** un
+déchiffrement, cela fait environ **5 000 enveloppes par jour**. Cette
+division par deux est une déduction, pas une mesure — la console Cloud
+affiche la consommation réelle par méthode, et c'est là qu'il faudra la
+vérifier le jour où le volume comptera.
+
+Ce n'est pas une limite de développement dont on sort en grandissant : c'est
+une propriété du chemin choisi. La question 1 la lève en même temps qu'elle
+lève le déchiffrement local.
+
+
+3. « Apple peut-il vérifier que l'application est bien identique à l'une des
+   versions déployées sur l'App Store ? »
+---------------------------------------------------------------------------
+
+Réponse en deux temps, et elle a changé récemment.
+
+JUSQU'À iOS 26 — NON
+
+App Attest ne lie que **l'App ID** : `rpIdHash = SHA-256(teamId.bundleId)`.
+Aucune notion de version, aucune empreinte de binaire. Une version déclarée
+dans la charge utile ne serait qu'une affirmation du client.
+
+Ce qu'Apple établit malgré tout, et qui n'est pas rien : l'application est
+une instance authentique de **ton** App ID sur un appareil Apple
+authentique. Un reconditionneur qui resigne avec sa propre équipe obtient un
+`rpIdHash` différent et échoue dès l'enrôlement. **L'attaque que le
+`certificateSha256Digest` sert à détecter côté Android est donc fermée
+d'office côté iOS**, par construction et non par verdict.
+
+`aaguid` distingue en outre `appattestdevelop` de `appattestprod` — donc un
+build de développement d'un build de distribution. C'est ce que notre vecteur
+iPhone 16 porte aujourd'hui (`appattestdevelop`).
+
+À PARTIR D'iOS 27 — OUI, SUR LA VERSION
+
+Apple ajoute deux extensions en fin d'`authenticatorData` : la **bundle
+version** et une **launch validation category**. Le motif annoncé est
+exactement ta question : « If a fraudster re-signs your app with an updated
+bundle version that you are not aware of, this will be transparent through
+App Attest. »
+
+Deux points qui comptent :
+
+  - ces extensions sont présentes dans l'attestation **et dans les
+    assertions**, donc la version est liée **à chaque enveloppe** et pas
+    seulement à l'enrôlement ;
+  - l'iPhone 16 du banc est en **iOS 26.6** : le chemin existe, il n'est pas
+    encore observable chez toi.
+
+LA LIMITE, QUELLE QUE SOIT LA VERSION
+
+Une *version* n'est pas une *empreinte de binaire*. Apple attestera « cette
+application déclare la version N, et je le confirme », jamais « voici le
+condensat des octets exécutés ». Android va plus loin sur ce point précis
+avec `certificateSha256Digest`, qui identifie la clé de signature.
+
+Les deux plateformes répondent donc à ta question par des chemins
+différents — ce qui est l'invariant 4 en action, et la raison pour laquelle
+l'identité du binaire doit alimenter la **notation** et jamais devenir un
+champ obligatoire du format.
+
+BONNE NOUVELLE SUR NOTRE CODE
+
+`_AuthenticatorData.parse` ne teste que des bornes inférieures et découpe
+par tranches : les octets d'extension d'iOS 27 seront **tolérés et ignorés**,
+jamais fatals. Le vérificateur ne cassera pas face à un appareil iOS 27 — il
+ne lira simplement rien de neuf tant qu'on n'aura pas ajouté le décodage.
+
+
+---
+Sources : developer.android.com/google/play/integrity/{setup,verdicts,standard},
+developer.apple.com/videos/play/wwdc2026/201/ (« Secure your apps with App
+Attest »). Faits relevés le 2026-08-12 — les consoles et la documentation
+bougent, revérifier avant de s'appuyer sur un détail d'interface.
