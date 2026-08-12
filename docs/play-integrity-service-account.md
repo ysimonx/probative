@@ -73,17 +73,15 @@ déchiffrement local est fermé.**
 **Le seul moyen de desserrer tout cela est de publier l'application sur le Play
 Store** — décision de distribution, pas d'architecture. À ne pas prendre ici.
 
-**Mais la donne a changé le 2026-08-12, et il faut le reconsidérer.** La §7 établit
-que le déchiffrement exige de toute façon que l'application soit déclarée dans la Play
-Console. Si cette démarche doit être faite, alors la question du mode de déchiffrement
-**se rouvre** : les clés locales pourraient redevenir accessibles, ce qui supprimerait
-d'un coup l'appel par enveloppe, la dépendance de disponibilité et le plafond de
-quota. À vérifier au même moment, car cela vaut bien plus qu'un compte de service :
-c'est l'auto-hébergement du vérificateur qui est en jeu.
+**Ce constat tient toujours après l'exécution du 2026-08-12.** Le déchiffrement par
+Google, lui, fonctionne sans Play Console (§7) — mais le déchiffrement *local* reste
+adossé à une condition de distribution que ce projet ne remplit pas. Les quatre
+conséquences ci-dessus sont donc à assumer telles quelles.
 
-Point à contrôler précisément : le téléchargement des clés exige que l'application soit
-*« available on Google Play »*, et **rien n'établit à ce jour qu'une piste de test
-interne y suffise**. C'est la question à poser dès que l'application sera déclarée.
+Elles ne se lèveraient qu'en publiant l'application sur le Play Store, ce qui
+rouvrirait la question du mode de déchiffrement et rendrait au vérificateur son
+auto-hébergement complet. **C'est un arbitrage de distribution, à instruire seulement
+si le déploiement visé le justifie** — la phase B, elle, n'en dépend pas.
 
 ---
 
@@ -95,11 +93,14 @@ module `:demo` passe à `setCloudProjectNumber`. La documentation de
 server must be authenticated using the cloud account that was linked to the token in
 this request. »*
 
-~~**Conséquence utile : aucune démarche Play Console n'est nécessaire.**~~
-**Cette lecture était fausse, et l'exécution du 2026-08-12 l'a démentie en une
-heure.** Le compte de service est bien accepté sans rôle IAM ni démarche Play
-Console — mais l'API refuse de résoudre l'application elle-même. Voir §7 : c'est
-aujourd'hui le point bloquant de la phase B, et il change la nature du prérequis.
+**Conséquence utile : aucune démarche Play Console n'est nécessaire.** Le lien attendu
+par Google est celui que porte déjà le jeton — **confirmé le 2026-08-12 par le
+déchiffrement d'un jeton réel de la SM-X200, en HTTP 200** (§7). Ni rôle IAM, ni
+enregistrement dans la Play Console : l'appartenance au projet Cloud suffit.
+
+*Cette phrase a été un temps barrée comme erronée, sur la foi d'un refus obtenu avec un
+jeton volontairement invalide. Le jeton réel l'a rétablie. Le détour est conservé en §7
+parce que la méthode qu'il enseigne vaut plus que la conclusion.*
 
 ---
 
@@ -261,7 +262,7 @@ Trois choses, dans cet ordre d'importance :
 
 ---
 
-## 7. Exécution du 2026-08-12 — ce qui est acquis, et ce qui bloque
+## 7. Exécution du 2026-08-12 — boucle fermée, et une leçon de méthode
 
 Le compte de service a été créé et **exercé contre l'API réelle le jour même**, sans
 attendre un jeton d'appareil. Méthode : envoyer un jeton délibérément invalide, et
@@ -277,50 +278,72 @@ traverser toute la chaîne d'authentification.
   l'appel. L'hypothèse pessimiste que ce document portait est levée.
 - **L'API Play Integrity est bien activée** sur le projet `probative`.
 
-### Bloquant — l'application est inconnue de l'API
+### Le jeton bidon a fait croire à un mur qui n'existe pas
 
-L'appel sur `org.probative.demo` répond `400 INVALID_ARGUMENT — « App is not found. »`.
-Un test différentiel sur trois paquets de statut connu, avec **le même jeton bidon**,
-lève l'ambiguïté :
+Avec un jeton invalide, l'appel sur `org.probative.demo` répond
+`400 INVALID_ARGUMENT — « App is not found. »`. Un test différentiel sur trois paquets
+de statut connu semblait lever l'ambiguïté :
 
-| Paquet | Statut | Réponse |
+| Paquet | Statut | Réponse (jeton bidon) |
 |---|---|---|
 | `com.spotify.music` | publié sur Play | `403 PERMISSION_DENIED` — *not authorized to decode* |
 | `com.example.nexistepas.xyz123` | inexistant | `400` — *App is not found.* |
 | `org.probative.demo` | le nôtre, hors Play Console | `400` — *App is not found.* |
 
-**Ce que cela démontre.** L'API distingue bien *l'application n'existe pas* de
-*vous n'avez pas le droit* : Spotify atteint l'étape d'autorisation avec le même
-jeton invalide. La résolution du paquet **précède donc la lecture du jeton**, et notre
-application tombe dans le même panier qu'un paquet qui n'existe nulle part.
+L'inférence tirée de ce tableau — Spotify atteignant l'étape d'autorisation avec le
+même jeton invalide, la résolution du paquet précéderait la lecture du jeton, et un
+jeton réel ne changerait donc rien — **était fausse.** Elle a été démentie le jour même
+par l'expérience.
 
-**Corollaire, et c'est lui qui coûte cher :** un jeton *réel* ne changerait rien à
-cette étape, puisqu'elle ne consulte que le nom de paquet de l'URL. Le mur est atteint
-avant que le jeton ne soit seulement regardé.
+### Le jeton réel se déchiffre, sans Play Console
 
-### La leçon, qui est la maxime du projet retournée
+Jeton capturé sur SM-X200 le 2026-08-12 (528 caractères), soumis au même point de
+terminaison, sur le même paquet, avec le même compte de service : **HTTP 200.**
 
-A5 avait établi que **Google délivre un jeton sans Play Console** — c'est exact et
-cela reste vrai. Ce document en avait déduit que la Play Console était hors du chemin ;
-la déduction était fausse. La délivrance et le déchiffrement ont des exigences
-**différentes** : le côté client ne demande qu'un projet Cloud, le côté serveur exige
-que l'application existe dans le registre de Google.
+```
+appRecognitionVerdict     UNRECOGNIZED_VERSION
+deviceRecognitionVerdict  MEETS_DEVICE_INTEGRITY
+appLicensingVerdict       UNEVALUATED
+requestPackageName        org.probative.demo
+certificateSha256Digest   YxTPkqqTg9uWc30LWhHznOA_xp59hA2jJliTXMEIHZ8
+```
 
-C'est exactement « obtenir un jeton n'est pas passer un contrôle » (§1), appliqué cette
-fois à notre propre raisonnement.
+Google résout donc l'application **depuis le jeton**, qui porte le lien vers le projet
+Cloud, et non depuis le seul nom de paquet de l'URL. « App is not found » ne signifiait
+que : *ce jeton illisible ne se rattache à aucune application*.
 
-### Ce qu'il reste à faire, et le doute résiduel
+**Aucune démarche Play Console n'est nécessaire pour déchiffrer.** La lecture initiale
+de la §3 était donc juste, et c'est la correction qui était erronée.
 
-**Piste à suivre : déclarer `org.probative.demo` dans la Play Console**, sur une piste
-de test interne ou fermée — la publication réelle n'est vraisemblablement pas requise,
-seule l'existence de l'enregistrement l'est. La ligne barrée des prérequis de
-`spike-attestation.md` doit donc être rétablie.
+### L'inconnue n° 1 est close, par recalcul
 
-**Doute résiduel, à ne pas escamoter :** l'inférence repose sur l'ordre observé des
-contrôles, pas sur une documentation qui l'énoncerait. Il reste concevable que l'API
-emprunte un autre chemin de résolution pour un jeton authentique portant un numéro de
-projet Cloud. **Le test décisif reste un jeton réel de la SM-X200** — peu coûteux, et
-à faire avant d'engager une démarche Play Console.
+Le `requestHash` **est restitué intact** :
+
+```
+R1 recalculé côté hôte    84ef290993a5d3ee5466ce24f42c080c60e5cb3029d1b4e129ab2c8f95c469b5
+base64url sans bourrage   hO8pCZOl0-5UZs4k9CwIDGDlyzAp0bThKassj5XEabU
+restitué par Google       hO8pCZOl0-5UZs4k9CwIDGDlyzAp0bThKassj5XEabU
+```
+
+Le contrôle est fait **par recalcul depuis les entrées de la sonde** — charge utile et
+nonce — et non en comparant deux chaînes que l'appareil aurait produites. C'était la
+dernière réserve : l'encodage ne diverge pas entre client et serveur, et R1 ne casse
+pas en silence. ADR-0002 peut rendre l'encodage normatif.
+
+### La leçon, et elle porte sur la méthode
+
+Un cas de test dégradé — le jeton bidon — a produit un message d'erreur qui décrivait
+**le cas dégradé, pas le système**. Le raisonnement construit dessus était rigoureux et
+faux : il concluait qu'un jeton réel ne changerait rien, alors que le jeton réel est
+précisément ce qui porte l'information manquante.
+
+Ce qui a sauvé la mise n'est pas la finesse de l'inférence, c'est de l'avoir **inscrite
+comme doute** et d'avoir fait passer le test réel avant la démarche administrative
+qu'elle recommandait. Un test à deux minutes a évité une déclaration Play Console
+inutile.
+
+À retenir pour la phase B : **ne jamais conclure sur la forme d'un refus obtenu avec
+une entrée volontairement invalide.**
 
 ---
 

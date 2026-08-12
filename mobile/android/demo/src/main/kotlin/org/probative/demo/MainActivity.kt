@@ -107,7 +107,16 @@ public class MainActivity : Activity() {
             val ms = (System.nanoTime() - start) / 1_000_000.0
             report("jeton          ${token.length} caracteres en %.0f ms".format(ms))
             // Le jeton part au serveur tel quel : on ne le lit jamais ici.
-            report("debut du jeton ${token.take(48)}…")
+            //
+            // Il sort en tronçons numérotés, comme le vecteur d'attestation de
+            // clé : logcat tronque les lignes longues, et un jeton coupé en
+            // silence ferait échouer le déchiffrement sans dire pourquoi. Ce
+            // n'est pas du confort — c'est le seul moyen de faire parvenir un
+            // jeton entier au poste de développement pour la phase B.
+            token.chunked(160).forEachIndexed { i, part ->
+                report("jeton[$i]       $part")
+            }
+            report("jeton fin      ${token.length} caracteres au total")
         } catch (e: Exception) {
             // Le message d'erreur porte le code Play Integrity, seul moyen de
             // distinguer « application inconnue de Play » d'un vrai échec.
