@@ -183,7 +183,9 @@ class Verifier:
         # 9. grades des propriétés du profil déclaré
         graded_by_profile = profiles.properties_for(profile)
         properties: dict[Property, PropertyResult] = {
-            Property.INTEGRITY: grading.grade_integrity(att, device.hardware_backed),
+            Property.INTEGRITY: grading.grade_integrity(
+                att, device.hardware_backed, device.boot_verified_at_enrollment
+            ),
             Property.ORIGIN: grading.grade_origin(claims, att, profile, self._policy),
             Property.TIME: grading.grade_time(
                 claims,

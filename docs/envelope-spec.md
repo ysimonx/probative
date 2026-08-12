@@ -342,6 +342,7 @@ il signifie que le contrôle n'a pas pu être fait.
 |---|---|---|
 | `cose-valid` | `integrity` | signature `COSE_Sign1` valide |
 | `key-attested-hardware` | `integrity` | clé adossée au matériel |
+| `boot-verified-at-enrollment` | `integrity` | démarrage vérifié et chargeur verrouillé, **constatés à l'enrôlement** |
 | `raw-hash-match` | `origin` | empreinte du payload conforme aux octets reçus |
 | `app-recognized` | `origin` | binaire reconnu par le magasin du fournisseur |
 | `app-deployment-signed` | `origin` | binaire signé par un certificat déclaré par ce déploiement |
@@ -438,6 +439,18 @@ Un vérificateur accepte les versions mineures qu'il ne connaît pas et signale 
 | Chaînage Android | Chaîne de hachage locale, ou compteur monotone stocké dans le Keystore | Après le spike |
 | Fenêtre inertielle | 10 s fixes, ou adaptative selon l'activité détectée | Après mesure de l'impact sur la taille d'enveloppe |
 | Horodatage par un tiers (RFC 3161) | Ne rien faire, ou conserver un jeton d'horodatage **à côté** de l'enveloppe, ou l'admettre comme champ optionnel du noyau | Sans urgence technique — à trancher sur le besoin d'opposabilité, pas sur la sécurité |
+| Vérification Android hors ligne | S'en tenir à `RootOfTrust` retenu à l'enrôlement, ou faire voyager une attestation de clé **par capture** dans l'enveloppe | Avec A4, quand la latence de capture sera mesurée |
+
+**Sur la vérification hors ligne, l'asymétrie entre les deux plateformes est le vrai sujet.** Côté iOS, une enveloppe se juge **entièrement hors ligne** : l'assertion App Attest se vérifie sous la clé retenue à l'enrôlement, sans jamais appeler Apple. Côté Android, le verdict Play Integrity exige un appel à Google **par enveloppe**, et ce n'est pas un choix : le déchiffrement local est fermé à toute application non disponible sur le Play Store (ADR-0006).
+
+`RootOfTrust` — `deviceLocked` et `verifiedBootState`, lus dans la liste `teeEnforced` de l'attestation de clé — est donc le **seul signal d'intégrité que le serveur possède en propre** côté Android. Il est acquis depuis le 2026-08-12, et sa limite est dans son nom : il vaut *à l'enrôlement*. Un attaquant s'enrôle chargeur verrouillé, puis déverrouille. **Les deux signaux ne couvrent pas des faits différents : ils couvrent les mêmes faits à des instants différents.**
+
+Rendre ce signal vivant supposerait une attestation de clé **par capture**, dont la chaîne voyagerait dans l'enveloppe — l'analogue structurel de ce que l'assertion App Attest fait déjà côté iOS. Deux coûts mesurés sur SM-X200 s'y opposent, et ils ne sont pas légers :
+
+- **la taille** : la chaîne pèse 3 413 octets pour une enveloppe d'or de 629 — un facteur **6,4** ;
+- **la latence** : la génération d'une clé matérielle coûte 38 ms à chaud, 264 ms à froid, et atterrirait dans `media[6]`, précisément la mesure qu'A4 doit établir.
+
+C'est une décision de **format** — la présence d'un champ détermine l'interopérabilité — donc à trancher, jamais à configurer. À reprendre quand A4 aura donné la latence de capture : si celle-ci écrase les 38 ms, l'argument du coût s'affaiblit ; si elle est du même ordre, il tient.
 
 **Sur l'horodatage, la formulation compte plus que la décision.** La propriété `time` est déjà solidement établie par le nonce, qui donne un **encadrement bilatéral** : la charge utile le contient et il est imprévisible, donc la capture est postérieure à son émission ; le serveur l'a reçue avant son expiration, donc elle lui est antérieure. Un jeton RFC 3161 ne resserre aucune de ces deux bornes — il prouve seulement qu'une donnée existait au plus tard à tel instant. **En sécurité pure, il n'apporte rien.**
 

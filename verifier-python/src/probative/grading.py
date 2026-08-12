@@ -122,13 +122,41 @@ RECAPTURE_CAP_REASON = (
 )
 
 
-def grade_integrity(att: AttestationOutcome, hardware_backed: bool) -> PropertyResult:
+def grade_integrity(
+    att: AttestationOutcome,
+    hardware_backed: bool,
+    boot_verified_at_enrollment: bool | None = None,
+) -> PropertyResult:
+    """Intégrité — la seule propriété qui garde une part **hors ligne**.
+
+    `boot_verified_at_enrollment` vient de `RootOfTrust`, lu dans la liste
+    `teeEnforced` de l'attestation de clé. Il se vérifie sans réseau, ce qui
+    en fait le seul signal d'intégrité que le serveur possède en propre côté
+    Android — le verdict Play Integrity, lui, exige un appel à Google par
+    enveloppe (ADR-0006).
+
+    Sa limite est dans son nom : il vaut **à l'enrôlement**. Un attaquant
+    s'enrôle chargeur verrouillé, puis déverrouille. Il ne remplace donc pas
+    le verdict vivant, il le complète à un autre instant. `None` signifie que
+    l'appareil ne publie pas ce bloc — une absence, jamais une garantie.
+    """
     r = PropertyResult(Grade.A, evidence=["cose-valid"])
     if hardware_backed:
         r.evidence.append("key-attested-hardware")
     else:
         r.grade = Grade.C
         r.notes.append("clé non adossée au matériel")
+
+    if boot_verified_at_enrollment is True:
+        # Le suffixe n'est pas décoratif : sans lui, un lecteur prendrait ce
+        # jeton pour un état courant. Il dit un fait daté.
+        r.evidence.append("boot-verified-at-enrollment")
+    elif boot_verified_at_enrollment is False:
+        r.grade = min(r.grade, Grade.C, key=_grade_rank)
+        r.notes.append(
+            "démarrage vérifié absent à l'enrôlement : chargeur d'amorçage "
+            "déverrouillé, ou image non signée"
+        )
     return r
 
 

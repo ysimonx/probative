@@ -285,3 +285,50 @@ def test_extension_absente(defi: bytes) -> None:
 
     with pytest.raises(AttestationRejected, match="extension d'attestation"):
         verify_key_attestation([der], challenge=defi, roots_pem=_pem(der), now=MAINTENANT)
+
+
+# --- RootOfTrust — la moitié hors ligne d'`integrity` ---------------------
+
+
+def test_root_of_trust_lu_sur_l_appareil_reel(chaine: list[bytes], defi: bytes) -> None:
+    """La SM-X200 publie son état de démarrage, et il est sain."""
+    r = verify_key_attestation(chaine, challenge=defi, now=MAINTENANT)
+
+    assert r.device_locked is True
+    assert r.verified_boot_state == "Verified"
+    assert r.boot_verified is True
+
+
+def test_boot_verified_exige_les_deux_conditions() -> None:
+    """Un état `Verified` sur appareil déverrouillé ne vaut rien.
+
+    Il signifierait que l'image *présentée* était signée, pas que la chaîne
+    de démarrage est close. Les deux ensemble, jamais l'un sans l'autre.
+    """
+    from probative.attestation.key_attestation import KeyAttestation
+
+    def att(**kw: object) -> KeyAttestation:
+        base = {
+            "public_key_x962": b"\x04" + b"\x00" * 64,
+            "security_level": NIVEAU_TEE,
+            "challenge": b"x",
+        }
+        return KeyAttestation(**{**base, **kw})  # type: ignore[arg-type]
+
+    assert att(device_locked=True, verified_boot_state="Verified").boot_verified
+    assert not att(device_locked=False, verified_boot_state="Verified").boot_verified
+    assert not att(device_locked=True, verified_boot_state="Unverified").boot_verified
+    # Absence : ni garantie, ni échec.
+    assert not att().boot_verified
+    assert att().device_locked is None
+
+
+def test_root_of_trust_absent_ne_leve_pas(defi: bytes) -> None:
+    """Tous les appareils ne publient pas ce bloc — l'inventer serait pire."""
+    forgee = _chaine_forgee(defi)  # sa KeyDescription a des listes vides
+    r = verify_key_attestation(
+        forgee, challenge=defi, roots_pem=_pem(forgee[-1]), now=MAINTENANT
+    )
+
+    assert r.device_locked is None
+    assert r.verified_boot_state is None

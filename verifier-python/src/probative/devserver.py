@@ -157,6 +157,7 @@ class DevService:
         attestation_key: bytes | None = None
         attested = False
         hardware_backed: bool | None = None
+        boot_verified: bool | None = None
 
         # Android : la chaîne d'attestation de clé est validée **jusqu'à la
         # racine publiée par Google**. Une chaîne cohérente se fabrique de
@@ -190,6 +191,7 @@ class DevService:
             # drapeau déclaré par le client : c'est tout l'objet de la
             # manœuvre.
             hardware_backed = attestation.hardware_backed
+            boot_verified = attestation.boot_verified
             attested = True
 
         if "attestation_b64" in body:
@@ -225,6 +227,7 @@ class DevService:
                     if hardware_backed is not None
                     else attested or _flag_field(body, "hardware_backed", True)
                 ),
+                boot_verified_at_enrollment=boot_verified,
                 attestation_key=attestation_key,
             )
         )

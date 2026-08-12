@@ -73,6 +73,15 @@ class DeviceRecord:
     platform: str
     hardware_backed: bool
     assertion_counter: int = 0
+
+    # `RootOfTrust` de l'attestation de clé, retenu **à l'enrôlement**.
+    # C'est tout son intérêt et toute sa limite : ce bloc se vérifie sans
+    # réseau — seul signal d'intégrité que le serveur possède en propre côté
+    # Android — mais il dit « était verrouillé quand la clé est née », jamais
+    # « l'est maintenant ». Un attaquant s'enrôle propre puis déverrouille.
+    # Il ne remplace donc pas le verdict vivant de Play Integrity ; les deux
+    # couvrent les mêmes faits à des instants différents.
+    boot_verified_at_enrollment: bool | None = None
     last_envelope_digest: bytes | None = None
     attestation_key: bytes | None = None
     """Clé publique de fraîcheur retenue à l'enrôlement, X9.62 non compressée.

@@ -56,6 +56,18 @@ _NOMS_NIVEAU = {
 # compris un que nous n'aurions pas prévu.
 _IDX_SECURITY_LEVEL = 1
 _IDX_CHALLENGE = 4
+_IDX_SOFTWARE_ENFORCED = 6
+_IDX_TEE_ENFORCED = 7
+
+# `[704] EXPLICIT RootOfTrust` dans une AuthorizationList.
+#
+# On ne le lit **que** dans `teeEnforced` : la même étiquette dans
+# `softwareEnforced` ne serait garantie par rien, donc déclarative — et une
+# valeur déclarative sur l'état du démarrage vérifié ne vaut rien du tout.
+_TAG_ROOT_OF_TRUST = 704
+
+# `VerifiedBootState ::= ENUMERATED { Verified, SelfSigned, Unverified, Failed }`
+BOOT_STATES = {0: "Verified", 1: "SelfSigned", 2: "Unverified", 3: "Failed"}
 
 
 @dataclass(frozen=True)
@@ -65,6 +77,23 @@ class KeyAttestation:
     public_key_x962: bytes
     security_level: int
     challenge: bytes
+
+    # `RootOfTrust`, lu dans la liste `teeEnforced` — donc garanti par le
+    # composant sécurisé, et non déclaré par le système. `None` quand
+    # l'appareil ne le publie pas : une absence n'est pas un échec, mais elle
+    # n'est pas non plus une garantie, et rien ne doit la lire comme telle.
+    device_locked: bool | None = None
+    verified_boot_state: str | None = None
+
+    @property
+    def boot_verified(self) -> bool:
+        """Démarrage vérifié **et** chargeur d'amorçage verrouillé.
+
+        Les deux ensemble, jamais l'un sans l'autre : un état `Verified` sur
+        un appareil déverrouillé signifie que l'image *présentée* était
+        signée, pas que la chaîne de démarrage est close.
+        """
+        return self.device_locked is True and self.verified_boot_state == "Verified"
 
     @property
     def hardware_backed(self) -> bool:
@@ -223,11 +252,100 @@ def _key_description(feuille: x509.Certificate) -> KeyAttestation:
     if not isinstance(pub, ec.EllipticCurvePublicKey):
         raise AttestationRejected("certificat feuille : clé publique non ECDSA")
 
+    verrouille, etat = _root_of_trust(champs)
+
     return KeyAttestation(
         public_key_x962=pub.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint),
         security_level=int.from_bytes(valeur_niveau, "big"),
         challenge=valeur_defi,
+        device_locked=verrouille,
+        verified_boot_state=etat,
     )
+
+
+def _root_of_trust(champs: list[tuple[int, bytes]]) -> tuple[bool | None, str | None]:
+    """Extrait `RootOfTrust` de la liste `teeEnforced`, si elle le publie.
+
+    Lu dans `teeEnforced` **uniquement** : la même étiquette dans
+    `softwareEnforced` ne serait garantie par rien. Une absence rend
+    `(None, None)` — tous les appareils ne publient pas ce bloc, et
+    l'inventer serait pire que de s'en passer.
+    """
+    if len(champs) <= _IDX_TEE_ENFORCED:
+        return None, None
+    bloc = _entree_contextuelle(champs[_IDX_TEE_ENFORCED][1], _TAG_ROOT_OF_TRUST)
+    if bloc is None:
+        return None, None
+
+    tag, corps, _ = _tlv(bloc, 0)
+    if tag != 0x30:
+        raise AttestationRejected("RootOfTrust : SEQUENCE attendue")
+    membres = _elements(corps)
+    if len(membres) < 3:
+        raise AttestationRejected(
+            f"RootOfTrust : {len(membres)} champs, au moins 3 attendus"
+        )
+
+    tag_verrou, valeur_verrou = membres[1]
+    if tag_verrou != 0x01:
+        raise AttestationRejected("deviceLocked : BOOLEAN attendu")
+    # DER impose 0xFF pour vrai, mais on lit « non nul » : un encodeur laxiste
+    # ne doit pas faire passer un appareil verrouillé pour déverrouillé.
+    verrouille = valeur_verrou != b"\x00"
+
+    tag_etat, valeur_etat = membres[2]
+    if tag_etat != 0x0A:
+        raise AttestationRejected("verifiedBootState : ENUMERATED attendu")
+    brut = int.from_bytes(valeur_etat, "big")
+    etat = BOOT_STATES.get(brut)
+    if etat is None:
+        # Valeur hors nomenclature : on la rapporte telle quelle plutôt que
+        # de la taire, et `boot_verified` la refusera de toute façon.
+        etat = f"Inconnu({brut})"
+    return verrouille, etat
+
+
+def _entree_contextuelle(liste: bytes, numero: int) -> bytes | None:
+    """Cherche `[numero] EXPLICIT` dans une `AuthorizationList`.
+
+    Les numéros d'étiquette dépassent 30, donc la forme longue est
+    obligatoire — c'est elle qui rend ce petit parcours nécessaire plutôt
+    qu'un simple `_elements`.
+    """
+    position = 0
+    while position < len(liste):
+        octet = liste[position]
+        if octet & 0x1F == 0x1F:
+            curseur = position + 1
+            trouve = 0
+            while curseur < len(liste) and liste[curseur] & 0x80:
+                trouve = (trouve << 7) | (liste[curseur] & 0x7F)
+                curseur += 1
+            if curseur >= len(liste):
+                raise AttestationRejected("AuthorizationList : étiquette tronquée")
+            trouve = (trouve << 7) | liste[curseur]
+            entete = curseur + 1 - position
+        else:
+            trouve = octet & 0x1F
+            entete = 1
+
+        depart = position + entete
+        if depart >= len(liste):
+            raise AttestationRejected("AuthorizationList : entrée tronquée")
+        longueur = liste[depart]
+        depart += 1
+        if longueur & 0x80:
+            octets = longueur & 0x7F
+            if octets == 0 or octets > 4 or depart + octets > len(liste):
+                raise AttestationRejected("AuthorizationList : longueur invalide")
+            longueur = int.from_bytes(liste[depart : depart + octets], "big")
+            depart += octets
+        if depart + longueur > len(liste):
+            raise AttestationRejected("AuthorizationList : contenu tronqué")
+        if trouve == numero:
+            return liste[depart : depart + longueur]
+        position = depart + longueur
+    return None
 
 
 # -- DER minimal ---------------------------------------------------------
