@@ -239,6 +239,18 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    à froid et doit rester au démarrage. Conclusion : le sujet de `media.6` est la
    **capture elle-même**, à mesurer en A4/C4.
 3. **Chaînage Android** (spec §9) : inchangée, non instruite.
+4. **Horodatage par un tiers, RFC 3161** (spec §9) : ouverte. **Ne relève pas de la
+   sécurité** — le nonce encadre déjà la capture des deux côtés, et un jeton
+   d'horodatage ne resserre aucune borne. Relève de l'**opposabilité** : l'encadrement
+   par le nonce est une preuve que le serveur se fabrique à lui-même, là où un jeton
+   de tiers accrédité se vérifie sans avoir à faire confiance à ce serveur. Deux
+   garde-fous déjà posés : jamais une propriété notée, et calculé sur l'empreinte de
+   l'enveloppe après signature, donc hors du chemin de capture.
+
+   C'est le seul manque qu'aucun travail cryptographique ne comblera — il est
+   réglementaire. Si les cas d'usage visés sont ceux du constat de terrain, cela mérite
+   d'être instruit **avant** A4/C4 ; sinon, après. Cela ne déplace jamais la phase B,
+   qui reste ce qui rend le reste opposable.
 
 ### Deux chantiers ouverts, aucun bloqué
 

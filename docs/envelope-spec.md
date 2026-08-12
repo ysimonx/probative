@@ -329,6 +329,18 @@ Un vérificateur accepte les versions mineures qu'il ne connaît pas et signale 
 |---|---|---|
 | Chaînage Android | Chaîne de hachage locale, ou compteur monotone stocké dans le Keystore | Après le spike |
 | Fenêtre inertielle | 10 s fixes, ou adaptative selon l'activité détectée | Après mesure de l'impact sur la taille d'enveloppe |
+| Horodatage par un tiers (RFC 3161) | Ne rien faire, ou conserver un jeton d'horodatage **à côté** de l'enveloppe, ou l'admettre comme champ optionnel du noyau | Sans urgence technique — à trancher sur le besoin d'opposabilité, pas sur la sécurité |
+
+**Sur l'horodatage, la formulation compte plus que la décision.** La propriété `time` est déjà solidement établie par le nonce, qui donne un **encadrement bilatéral** : la charge utile le contient et il est imprévisible, donc la capture est postérieure à son émission ; le serveur l'a reçue avant son expiration, donc elle lui est antérieure. Un jeton RFC 3161 ne resserre aucune de ces deux bornes — il prouve seulement qu'une donnée existait au plus tard à tel instant. **En sécurité pure, il n'apporte rien.**
+
+Ce qu'il apporte est sur un autre axe : l'encadrement du nonce repose sur l'horloge et les journaux de *votre propre serveur*, une preuve que vous vous fabriquez à vous-même, alors qu'un jeton délivré par un tiers accrédité se vérifie sans avoir à vous faire confiance. C'est une propriété **probatoire, pas sécuritaire**.
+
+D'où deux garde-fous à poser dès maintenant, quelle que soit l'issue :
+
+- un jeton d'horodatage ne devient **jamais une propriété notée**, puisqu'il ne dit rien de l'origine ni de la position. L'admettre dans le calcul des grades reviendrait à faire passer une garantie d'antériorité pour une garantie de provenance ;
+- il porte sur **l'empreinte de l'enveloppe**, obtenu après signature, donc hors du chemin critique de capture et sans effet sur `media[6]`.
+
+*Motivation externe, ajoutée le 2026-08-12 :* `docs/etat-de-l-art.md` §4 identifie l'admissibilité juridique comme le seul manque qu'aucun travail cryptographique ne comblera, un concurrent d'usage vendant signature qualifiée eIDAS et horodatage qualifié. Le raisonnement long est dans `architecture.html` §10.
 
 ### Arrêtées
 
