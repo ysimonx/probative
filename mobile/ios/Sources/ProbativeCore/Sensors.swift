@@ -322,26 +322,42 @@ private final class OnceBox<T> {
 /// Séparée parce que les deux se confondent en pratique : `waitForFix`
 /// sollicitait l'autorisation *et* attendait un relevé, si bien qu'un premier
 /// lancement consommait tout son délai à afficher une boîte de dialogue.
-private final class AuthorizationDelegate: NSObject, CLLocationManagerDelegate {
+/// Demande d'autorisation de position, isolée de l'attente d'un point.
+///
+/// Séparée parce que les deux se confondent en pratique : `waitForFix`
+/// sollicitait l'autorisation *et* attendait un relevé, si bien qu'un premier
+/// lancement consommait tout son délai à afficher une boîte de dialogue.
+///
+/// **`@unchecked Sendable` sous discipline explicite** : tout l'état mutable
+/// n'est touché que sur la file principale. Ce n'est pas un contournement du
+/// vérificateur de concurrence mais la seule forme possible ici —
+/// `CLLocationManagerDelegate` n'est pas isolé, si bien qu'annoter la classe
+/// `@MainActor` rend sa conformité illégale. La garantie est donc tenue par
+/// construction, et énoncée ici pour qu'on ne la casse pas par mégarde.
+private final class AuthorizationDelegate: NSObject, CLLocationManagerDelegate,
+    @unchecked Sendable
+{
     private var manager: CLLocationManager?
     private var box: OnceBox<Sensors.Authorization>?
 
     func request() async -> Sensors.Authorization {
         await withCheckedContinuation { continuation in
-            let box = OnceBox<Sensors.Authorization>(continuation: continuation) {}
-            self.box = box
-            // Même exigence de boucle d'exécution que pour le relevé : sur un
-            // fil de la réserve coopérative, le rappel n'arrive jamais.
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+            // Créé sur la file principale : `CLLocationManager` exige un fil
+            // doté d'une boucle d'exécution, faute de quoi ses rappels
+            // n'arrivent jamais.
+            DispatchQueue.main.async { [self] in
+                box = OnceBox<Sensors.Authorization>(continuation: continuation) {}
                 let manager = CLLocationManager()
                 self.manager = manager
                 manager.delegate = self
                 manager.requestWhenInUseAuthorization()
+
+                // L'utilisateur peut ne jamais répondre : on ne bloque pas la
+                // sonde pour autant, et l'état rendu dit ce qu'il en est.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+                    self?.box?.finish(.undetermined)
+                }
             }
-            // L'utilisateur peut ne jamais répondre : on ne bloque pas la
-            // sonde pour autant, et l'état rendu dit ce qu'il en est.
-            box.expire(after: 30, with: .undetermined)
         }
     }
 
@@ -353,39 +369,47 @@ private final class AuthorizationDelegate: NSObject, CLLocationManagerDelegate {
 }
 
 /// Attente d'un point de localisation, avec autorisation à la demande.
-private final class LocationDelegate: NSObject, CLLocationManagerDelegate {
+///
+/// **Même discipline que ci-dessus, et une raison de plus** : `freshest` est
+/// écrit par les rappels de CoreLocation et lu à l'expiration du délai. Le
+/// lire depuis une file de fond était une course de données, dont le pire cas
+/// n'est pas une valeur périmée mais un sur-relâchement ARC. Tout est donc
+/// touché sur la file principale, sans exception.
+private final class LocationDelegate: NSObject, CLLocationManagerDelegate,
+    @unchecked Sendable
+{
     private var manager: CLLocationManager?
     private var box: OnceBox<CLLocation?>?
     private var freshest: CLLocation?
     private var maxAge: TimeInterval = 5
 
     func waitForFix(timeout: TimeInterval, maxAge: TimeInterval) async -> CLLocation? {
-        self.maxAge = maxAge
-        return await withCheckedContinuation { continuation in
-            let box = OnceBox<CLLocation?>(continuation: continuation) { [weak self] in
-                DispatchQueue.main.async { self?.manager?.stopUpdatingLocation() }
-            }
-            self.box = box
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { [self] in
+                self.maxAge = maxAge
+                box = OnceBox<CLLocation?>(continuation: continuation) { [weak self] in
+                    DispatchQueue.main.async { self?.manager?.stopUpdatingLocation() }
+                }
 
-            // **`CLLocationManager` exige un fil doté d'une boucle
-            // d'exécution.** Créé depuis un contexte `async` — donc sur un fil
-            // de la réserve coopérative, qui n'en a pas — il ne délivre
-            // **jamais** ses rappels : aucune erreur, aucun avertissement,
-            // juste un délai qui expire. Constaté sur iPhone 16 en C4.2, et
-            // c'est le genre de panne qu'on impute d'abord au GPS.
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+                // Créé sur la file principale — sans quoi CoreLocation ne
+                // délivre **jamais** ses rappels : aucune erreur, aucun
+                // avertissement, juste un délai qui expire. Constaté sur
+                // iPhone 16 en C4.2, et c'est le genre de panne qu'on impute
+                // d'abord au GPS.
                 let manager = CLLocationManager()
                 self.manager = manager
                 manager.delegate = self
                 manager.desiredAccuracy = kCLLocationAccuracyBest
                 manager.requestWhenInUseAuthorization()
                 manager.startUpdatingLocation()
-            }
-            // À l'expiration, on rend le meilleur point vu — pas `nil`. Un
-            // point ancien reste une mesure, et son âge voyage avec lui.
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
-                self?.box?.finish(self?.freshest)
+
+                // À l'expiration, on rend le meilleur point vu — pas `nil`.
+                // Un point ancien reste une mesure, et son âge voyage avec
+                // lui. La file principale garantit l'ordre : ce bloc est
+                // enfilé après celui-ci, jamais avant.
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                    self?.box?.finish(self?.freshest)
+                }
             }
         }
     }

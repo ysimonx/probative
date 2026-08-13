@@ -22,6 +22,7 @@ public enum CameraError: Error, CustomStringConvertible {
     case denied
     case unavailable
     case noData
+    case timedOut
     case failed(String)
 
     public var description: String {
@@ -29,6 +30,7 @@ public enum CameraError: Error, CustomStringConvertible {
         case .denied: return "autorisation caméra refusée"
         case .unavailable: return "aucune caméra arrière disponible"
         case .noData: return "le pipeline photo n'a rendu aucun octet"
+        case .timedOut: return "le pipeline photo n'a jamais rappelé"
         case .failed(let message): return "capture : \(message)"
         }
     }
@@ -60,7 +62,10 @@ public enum Camera {
     /// Prend une photo et rend ses octets bruts. Bloquant côté matériel, donc
     /// `async` : la configuration de session ne doit pas tenir le fil
     /// principal, ce dont AVFoundation se plaint bruyamment.
-    public static func capture() async throws -> CapturedImage {
+    /// - Parameter timeout: délai de garde du pipeline photo. Il n'interrompt
+    ///   jamais une capture lente — 2 s suffisent sur iPhone 16 — seulement une
+    ///   capture morte.
+    public static func capture(timeout: TimeInterval = 20) async throws -> CapturedImage {
         guard await requestAccess() else { throw CameraError.denied }
 
         let session = AVCaptureSession()
@@ -101,14 +106,46 @@ public enum Camera {
             // référence forte, il est libéré avant le rappel et la capture
             // ne rend jamais rien.
             delegate.retain = delegate
+            delegate.armTimeout(timeout)
             output.capturePhoto(with: settings, delegate: delegate)
         }
     }
 
     private final class PhotoDelegate: NSObject, AVCapturePhotoCaptureDelegate {
-        var continuation: CheckedContinuation<CapturedImage, Error>?
+        private let lock = NSLock()
+        private var pending: CheckedContinuation<CapturedImage, Error>?
         var retain: PhotoDelegate?
         private var shutterUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+
+        var continuation: CheckedContinuation<CapturedImage, Error>? {
+            get { lock.withLock { pending } }
+            set { lock.withLock { pending = newValue } }
+        }
+
+        /// Reprend la continuation **une seule fois**, quoi qu'il arrive.
+        ///
+        /// Sans ce garde-fou, `capture()` pouvait attendre indéfiniment : rien
+        /// n'oblige AVFoundation à rappeler — une session interrompue par un
+        /// appel entrant, par exemple, ne produit ni photo ni erreur. Un
+        /// scellement suspendu sans message est le pire des échecs pour une
+        /// campagne, puisqu'il ne laisse même pas de trace à lire.
+        func finish(_ result: Result<CapturedImage, Error>) {
+            lock.lock()
+            let continuation = pending
+            pending = nil
+            lock.unlock()
+            guard let continuation else { return }
+            retain = nil
+            continuation.resume(with: result)
+        }
+
+        /// Délai de garde. Généreux à dessein : il ne doit jamais interrompre
+        /// une capture lente, seulement une capture morte.
+        func armTimeout(_ seconds: TimeInterval) {
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { [weak self] in
+                self?.finish(.failure(CameraError.timedOut))
+            }
+        }
 
         /// L'instant de l'obturateur est celui-ci — pas celui du rappel de
         /// fin, qui inclut l'encodage JPEG. La différence est exactement ce
@@ -125,27 +162,25 @@ public enum Camera {
             didFinishProcessingPhoto photo: AVCapturePhoto,
             error: Error?
         ) {
-            defer { retain = nil }
-            guard let continuation else { return }
-            self.continuation = nil
-
             if let error {
-                continuation.resume(throwing: CameraError.failed(error.localizedDescription))
+                finish(.failure(CameraError.failed(error.localizedDescription)))
                 return
             }
             // `fileDataRepresentation` rend le conteneur JPEG complet, EXIF
             // compris. C'est ce tampon qui part au serveur et c'est lui qu'on
             // hache — jamais une image reconstruite.
             guard let data = photo.fileDataRepresentation() else {
-                continuation.resume(throwing: CameraError.noData)
+                finish(.failure(CameraError.noData))
                 return
             }
             let dimensions = photo.resolvedSettings.photoDimensions
-            continuation.resume(
-                returning: CapturedImage(
-                    jpeg: data,
-                    pixelSize: (width: Int(dimensions.width), height: Int(dimensions.height)),
-                    shutterUptime: shutterUptime
+            finish(
+                .success(
+                    CapturedImage(
+                        jpeg: data,
+                        pixelSize: (width: Int(dimensions.width), height: Int(dimensions.height)),
+                        shutterUptime: shutterUptime
+                    )
                 )
             )
         }

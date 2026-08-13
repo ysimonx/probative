@@ -1115,3 +1115,43 @@ spike : il y faut une itération de C3, ou C4.
   il est *imprimé* et pas seulement affiché : un extrait rapatrié par
   `--console` doit permettre de distinguer un capteur muet d'une autorisation
   manquante.
+
+- 2026-08-13 : **revue de la journée — quatre défauts trouvés, tous corrigés.**
+  Les suites étaient au vert avant comme après : aucun de ces défauts n'aurait été
+  trouvé par un test, ce qui est précisément la raison de relire.
+
+  - **Course de données dans `LocationDelegate`.** `freshest` est écrit par les
+    rappels de CoreLocation — donc sur la file principale — et l'expiration du
+    délai le lisait depuis une file de fond. Le pire cas n'est pas une valeur
+    périmée mais un **sur-relâchement ARC**, donc un plantage intermittent et
+    invisible en test. Tout l'état des deux délégués est désormais touché sur la
+    file principale, sans exception.
+
+    `@MainActor` aurait été plus élégant mais **ne compile pas** :
+    `CLLocationManagerDelegate` n'est pas isolé, si bien qu'annoter la classe rend
+    sa conformité illégale. D'où `@unchecked Sendable` sous discipline énoncée —
+    la seule forme possible ici, et il fallait l'essayer pour le savoir. Quatre
+    avertissements de concurrence, qui deviendront des erreurs en mode Swift 6,
+    sont éteints ; la compilation iOS est propre.
+
+  - **`Camera.capture()` pouvait attendre indéfiniment.** Rien n'oblige
+    AVFoundation à rappeler : une session interrompue ne produit ni photo ni
+    erreur. Un scellement suspendu **sans message** est le pire des échecs pour
+    une campagne, puisqu'il ne laisse rien à lire. Délai de garde ajouté, généreux
+    à dessein — il ne doit jamais interrompre une capture lente, seulement une
+    capture morte.
+
+  - **`PerPlatformVerifier` n'avait aucun test.** Classe ajoutée le jour même,
+    dont le comportement décisif est de **lever** plutôt que rendre un verdict
+    défavorable sur une plateforme non câblée. Trois tests couvrent maintenant
+    l'aiguillage, le refus, et le filtrage des plateformes absentes.
+
+  - **Trois commandes de `CLAUDE.md` étaient fausses**, dont deux qui coûtent une
+    campagne : le serveur y était lancé depuis `verifier-python/`, où le `.env`
+    n'est pas trouvé — ce que la journée avait pourtant établi ; et `ruby` y
+    désignait le Ruby système, dépourvu du gem `xcodeproj`. Corrigées et
+    **exécutées** pour vérifier, plutôt que relues.
+
+  Réserve honnête : les correctifs iOS compilent proprement pour l'appareil mais
+  **n'ont pas été rejoués dessus** — l'iPhone s'était déconnecté. Le changement
+  est structurel à logique constante, mais une campagne de confirmation reste due.

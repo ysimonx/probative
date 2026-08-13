@@ -23,7 +23,18 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 from factory import make_payload, new_key, sign_envelope
 
-from probative.devserver import BadRequest, DevService, make_server
+from probative.attestation import (
+    AttestationOutcome,
+    AttestationVerifier,
+    DeviceIntegrity,
+)
+from probative.devserver import (
+    BadRequest,
+    DevService,
+    PerPlatformVerifier,
+    make_server,
+)
+from probative.errors import AttestationRejected
 
 MEDIA = b"image-de-test"
 MEDIA_DIGEST = hashlib.sha256(MEDIA).digest()
@@ -634,3 +645,74 @@ def test_app_attest_environnement_inconnu_arrete_le_serveur(monkeypatch):
 
     with pytest.raises(SystemExit, match="development"):
         _app_attest_from_env()
+
+
+# --- Aiguillage par plateforme ------------------------------------------
+#
+# Ajouté pour C4.1 : les deux vérificateurs lèvent chacun sur la plateforme
+# de l'autre, et le serveur n'en câblait qu'un.
+
+
+class _VerificateurFactice(AttestationVerifier):
+    """Enregistre l'appel et rend un verdict favorable."""
+
+    def __init__(self, etiquette: str) -> None:
+        self.etiquette = etiquette
+        self.appels: list[str] = []
+
+    def verify(self, *, platform, token, expected_challenge, key_id, attestation_key=None):
+        self.appels.append(platform)
+        return AttestationOutcome(
+            integrity=DeviceIntegrity.STRONG,
+            app_recognized=True,
+            hardware_backed=True,
+            notes=[self.etiquette],
+        )
+
+
+def _appeler(verificateur, platform: str):
+    return verificateur.verify(
+        platform=platform,
+        token=b"jeton",
+        expected_challenge=b"\x00" * 32,
+        key_id=b"\x01" * 32,
+    )
+
+
+def test_aiguillage_choisit_le_verificateur_de_la_plateforme():
+    android = _VerificateurFactice("android")
+    ios = _VerificateurFactice("ios")
+    aiguille = PerPlatformVerifier(android=android, ios=ios)
+
+    assert "android" in _appeler(aiguille, "android").notes
+    assert "ios" in _appeler(aiguille, "ios").notes
+    # Chacun n'a vu que sa plateforme : une enveloppe iOS soumise au
+    # vérificateur Android lèverait, et ce serait un aiguillage manqué.
+    assert android.appels == ["android"]
+    assert ios.appels == ["ios"]
+
+
+def test_plateforme_non_cablee_leve_au_lieu_de_juger():
+    """« Non jugé » et « jugé mauvais » n'appellent pas la même conduite.
+
+    Rendre un verdict défavorable ferait passer un défaut de configuration
+    pour un appareil compromis — et enverrait le support sur une piste où il
+    n'y a rien à trouver.
+    """
+    aiguille = PerPlatformVerifier(android=_VerificateurFactice("android"))
+
+    with pytest.raises(AttestationRejected) as leve:
+        _appeler(aiguille, "ios")
+
+    # Le motif nomme ce qui est configuré : sans cela, on ne sait pas si la
+    # faute est dans l'enveloppe ou dans le déploiement.
+    assert "ios" in str(leve.value.detail)
+    assert "android" in str(leve.value.detail)
+
+
+def test_aiguillage_ignore_les_plateformes_absentes():
+    """`None` se filtre au câblage : l'appelant énumère ce qu'il connaît."""
+    aiguille = PerPlatformVerifier(android=_VerificateurFactice("android"), ios=None)
+
+    with pytest.raises(AttestationRejected):
+        _appeler(aiguille, "ios")

@@ -70,7 +70,8 @@ verifier-python/  Vérificateur serveur
                         phases B et D — sans elles on code contre une documentation.
 mobile/android/   Cœur natif Kotlin (AAR) — :core, plus :demo qui porte les sondes
 mobile/ios/       Cœur natif Swift (XCFramework) — paquet SwiftPM, plus demo/ qui
-                  porte la sonde C3. Le .xcodeproj est généré, non versionné.
+                  porte les sondes C3, C4.1 et C4.2. Le .xcodeproj et l'Info.plist
+                  sont générés, non versionnés.
 bindings/         Liaisons minces : plugin Flutter fédéré, module React Native — non commencées
 ```
 
@@ -86,7 +87,7 @@ C'est leur seule raison d'être — ne rien y loger qui appartienne au cœur.
 cd verifier-python
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest              # 206 tests doivent passer
+pytest              # 214 tests doivent passer
 ruff check .
 mypy src
 ```
@@ -113,7 +114,11 @@ adb logcat -d -s PROBATIVE_VECTOR
 # projet Google Cloud est une donnée de compte, passée en propriété et jamais
 # écrite dans le code. Le serveur de dev doit tourner sur l'hôte, et `adb reverse`
 # évite d'avoir à relever une adresse IP ou à exposer le serveur au réseau.
-python -m probative.devserver --port 8765   # dans verifier-python, autre terminal
+# Serveur : DEPUIS LA RACINE DU DÉPÔT, autre terminal. Les chemins du `.env` y
+# sont relatifs — lancé depuis `verifier-python/`, il ne trouve pas le fichier
+# et retombe sur le substitut. Il l'annonce, mais l'annonce se perd si la
+# sortie est redirigée sans `python -u`.
+python -m probative.devserver --port 8765
 adb reverse tcp:8765 tcp:8765
 ./gradlew :demo:installDebug -Pprobative.cloudProjectNumber=487335590129
 adb logcat -c && adb shell am start -n org.probative.demo/.MainActivity
@@ -124,18 +129,26 @@ adb logcat -d -s PROBATIVE_A41
 
 ```bash
 cd mobile/ios
-swift test                        # 21 tests sur l'hôte, App Attest se saute
+swift test                        # 22 tests sur l'hôte, App Attest se saute
 ./scripts/make_xcframework.sh     # artefact autonome
 
 # Projet Xcode, non versionné. L'adresse du serveur y entre par l'Info.plist :
 # il n'existe pas d'`adb reverse` sur iOS, donc le serveur doit écouter sur le
 # réseau local (`--host 0.0.0.0`) et l'iPhone partager le Wi-Fi du poste.
+# `ruby` doit etre celui de Homebrew : le Ruby systeme (2.6) n'a pas le gem
+# xcodeproj, et `gem install` y demanderait sudo.
 PROBATIVE_DEVSERVER=http://$(ipconfig getifaddr en0):8765 \
-  ruby scripts/make_demo_project.rb
+  /opt/homebrew/opt/ruby/bin/ruby scripts/make_demo_project.rb
 
-# Sonde C4.1 — boucle complète appareil → enveloppe → verdict, profil `core`.
-# La PREMIÈRE exécution échoue toujours en `-1009` : la boîte de dialogue
-# « réseau local » s'affiche pendant que la requête part. Accepter, relancer.
+# Serveur : DEPUIS LA RACINE DU DÉPÔT, et sur le réseau local — l'iPhone ne
+# voit pas la boucle locale du Mac, même relié en USB.
+python -m probative.devserver --host 0.0.0.0 --port 8765
+
+# Sondes : C4.2 (acquisition photo, profil `capture`) part au lancement ;
+# C4.1 (profil `core`) et C3 (vecteur d'appareil) se choisissent à l'écran.
+# Le préambule d'autorisations les demande toutes AVANT la première mesure,
+# réseau local compris — la première campagne passe donc du premier coup.
+# Une autorisation refusée ne se rattrape que dans Réglages › probative.
 
 # Extraction par motif d'UUID : ~~awk '{print $3}'~~ tombait sur un mot du NOM
 # de l'appareil dès qu'il contient des espaces (« iPhone 16 de Yannick »).
@@ -179,7 +192,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Noyau et profils (ADR-0005) | **Fait de bout en bout** : spec §2.5, CDDL, vérificateur, vecteurs, et les deux cœurs natifs |
-| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 206 tests au vert |
+| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 214 tests au vert |
 | `AppAttestVerifier` — **phase D faite** | Attestation d'enrôlement validée **jusqu'à la racine publiée par Apple**, assertion validée par enveloppe. Éprouvé contre le vecteur iPhone 16 réel, 26 tests |
 | `PlayIntegrityVerifier` — **phase B faite** | Jeton déchiffré par `decodeIntegrityToken`, `requestHash` recalculé et confronté, verdicts traduits. Chaîne d'attestation de clé ancrée à la racine Google (`key_attestation.py`). 35 tests |
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
