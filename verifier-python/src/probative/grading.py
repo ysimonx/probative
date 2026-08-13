@@ -299,8 +299,16 @@ def grade_position(
         r.grade = min(r.grade, Grade.C, key=_grade_rank)
         r.notes.append(f"précision anormalement parfaite : {p.h_accuracy} m")
 
-    # Corroboration barométrique : le signal le plus rentable des deux
-    # plateformes, et celui qu'un simulateur GPS ne falsifie jamais.
+    # Corroboration barométrique : le signal le plus rentable dont on dispose
+    # contre S1, parce que l'attaquant le plus fréquent est le plus faible —
+    # une application de simulation détourne le fournisseur de position sans
+    # toucher au baromètre.
+    #
+    # Elle ne vaut PAS contre une injection ou une racine : le client produit
+    # les deux nombres et fabrique une paire cohérente sans effort. Et elle
+    # est aveugle au déplacement horizontal à altitude égale, qui est le cas
+    # courant. Voir `docs/threat-model.md` §S1, qui porte la portée exacte —
+    # la première rédaction la surestimait.
     #
     # C'est cette comparaison qui rend l'unité de `baro-alt` normative : des
     # **mètres**, et une altitude **absolue**, puisqu'elle est confrontée à

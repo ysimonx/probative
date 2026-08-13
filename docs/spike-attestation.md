@@ -292,6 +292,46 @@ adb logcat -d -s PROBATIVE_A41
       à l'expiration, on transmet le meilleur point obtenu **avec son âge réel**
       et c'est le serveur qui juge (invariant 1).
 
+##### `baro-alt` sur Android — un faux positif intégré, à traiter avant la campagne
+
+**Android n'expose aucune altitude absolue.** Là où iOS a
+`startAbsoluteAltitudeUpdates`, Android n'a que `TYPE_PRESSURE` : il faut
+*dériver* l'altitude, ce qui exige une pression de référence au niveau de la
+mer. Et c'est là que ça casse.
+
+Près du sol, la pression varie d'environ **1 hPa tous les 8,3 m**. La pression
+au niveau de la mer, elle, oscille en pratique entre 980 et 1040 hPa selon la
+météo. Utiliser la valeur standard de 1013,25 hPa alors que la réelle vaut
+1030 donne donc :
+
+      (1030 − 1013,25) × 8,3 ≈ 139 m d'erreur
+
+soit **plus du double de la tolérance de 60 m**. Conséquence directe : par
+temps de haute ou de basse pression, **un appareil Android parfaitement
+honnête serait marqué « incohérence altimétrique » et `position` plafonnée à
+C**. Le faux positif est intégré, il dépend de la météo du jour, et il
+tomberait en pleine campagne sans que rien n'en désigne la cause.
+
+- [ ] Trancher avant d'écrire la collecte. Trois issues, par ordre de
+      préférence croissante :
+      1. **élargir la tolérance pour Android** — affaiblit le contrôle partout,
+         y compris là où il fonctionne ;
+      2. **omettre `baro-alt` et n'envoyer que `baro`**, la pression brute, qui
+         est une vraie mesure. Honnête et sans faux positif, mais Android perd
+         la corroboration ;
+      3. **envoyer la pression brute et laisser le serveur comparer**, en
+         allant chercher lui-même la pression de référence pour le lieu et
+         l'instant déclarés. C'est l'invariant 1 appliqué à la lettre — le
+         client mesure, le serveur juge — et cela **renforce** la parade au
+         lieu de l'affaiblir : le client ne connaît plus la valeur attendue,
+         donc ne peut plus fabriquer une paire cohérente. C'est ce qui ferait
+         passer la corroboration de « déclarée » à « vérifiée », et donc valoir
+         contre l'injection, ce qu'elle ne fait pas aujourd'hui (§S1).
+
+      La troisième a un coût réel : une source météo côté serveur. Le
+      vérificateur appelle déjà Google pour Play Integrity, donc ce n'est pas
+      un tabou — mais cela mérite un ADR, pas une décision en passant.
+
 ##### Préambule d'autorisations — à faire dès le début, pas à la fin
 
 Acquis de C4.2, où l'oubli a coûté plusieurs campagnes. **Demander une

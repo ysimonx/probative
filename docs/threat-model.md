@@ -88,7 +88,16 @@ Les profils du §4 disent **qui** attaque, les propriétés du §2 disent **ce q
 | **S3** | Temps | l'instant, l'ordre des captures, ou la fraîcheur du défi | P3 | A2 · A3 |
 | **S4** | Client | le binaire, l'appareil, ou les preuves qu'il produit | P1 · P4 | A2 · A3 |
 
-**S1 — Falsification de position.** Application de simulation du magasin, injection dans le fournisseur de position, simulateur GNSS matériel. Contrée par l'indicateur système de position simulée, les bornes de précision et d'ancienneté du point, et surtout la corroboration barométrique — qu'un simulateur GPS ne falsifie jamais. Le simulateur matériel reste hors de portée du client seul (§7, limite 1).
+**S1 — Falsification de position.** Application de simulation du magasin, injection dans le fournisseur de position, simulateur GNSS matériel. Contrée par l'indicateur système de position simulée, les bornes de précision et d'ancienneté du point, et la corroboration barométrique. Le simulateur matériel reste hors de portée du client seul (§7, limite 1).
+
+**Ce que la corroboration barométrique contre exactement, et ce qu'elle ne contre pas.** ~~Un simulateur GPS ne la falsifie jamais.~~ La formulation était trop large : elle ne vaut que pour le **premier** des trois attaquants — l'application de simulation, qui détourne le fournisseur de position sans toucher au baromètre. Dès qu'il y a injection dans le processus ou racine, le client produit *les deux* nombres et fabrique une paire cohérente sans effort. La réclamation est déclarative comme le reste de `posture` ; elle ne vaut donc que sur un appareil par ailleurs honnête.
+
+Deux limites de portée s'ajoutent, indépendantes de l'attaquant :
+
+- **elle est aveugle au déplacement horizontal à altitude égale**, qui est le cas courant. Avec la tolérance de 60 m, on se téléporte de plusieurs dizaines de kilomètres en terrain plat sans déclencher la moindre incohérence ;
+- **son absence ne coûte rien** : le vérificateur note « corroboration barométrique absente » sans dégrader. Seule la *contradiction* plafonne `position` au grade C. C'est délibéré — tous les appareils n'ont pas de baromètre — mais cela signifie qu'un client qui omet la réclamation est traité comme un client qui n'a pas de capteur.
+
+Elle reste le signal le plus rentable dont on dispose contre S1, parce que l'attaquant le plus fréquent est justement le plus faible. Mais elle ne fait pas ce que la première rédaction laissait croire, et une parade dont on surestime la portée est plus dangereuse qu'une parade absente.
 
 **S2 — Falsification du contenu.** Substituer un fichier aux octets du capteur, injecter des trames dans la caméra virtuelle, ou présenter au capteur un contenu déjà enregistré. Contrée par l'empreinte calculée en natif sur les octets bruts, la latence de signature, et la règle R1. La **recapture analogique** — photographier un écran, enregistrer un haut-parleur — n'est pas détectée en v0.1 : c'est l'angle mort du §7, limite 2, et la raison du plafond au grade B dans le profil `capture`.
 

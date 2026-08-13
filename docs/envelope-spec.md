@@ -463,9 +463,19 @@ Un vérificateur accepte les versions mineures qu'il ne connaît pas et signale 
 | Sujet | Options | À trancher |
 |---|---|---|
 | Chaînage Android | Chaîne de hachage locale, ou compteur monotone stocké dans le Keystore | Après le spike |
-| Fenêtre inertielle | 10 s fixes, ou adaptative selon l'activité détectée | Après mesure de l'impact sur la taille d'enveloppe |
+| Fenêtre inertielle | Aucune durée normative aujourd'hui — le vérificateur ne note que la *présence* de `motion` —, ou en fixer une | Après mesure de l'impact sur la taille d'enveloppe. ~~10 s~~ retiré du §2.4 le 2026-08-13 : la contrainte n'était appliquée nulle part et les deux cœurs comme le vecteur d'or la violaient déjà |
+| Corroboration barométrique | Rester **déclarée** — le client envoie `baro-alt`, le serveur compare —, ou passer à **vérifiée** : le client n'envoie que la pression brute et le serveur va chercher la référence au niveau de la mer pour le lieu et l'instant déclarés | Avec A4.2. Voir ci-dessous : ce n'est pas un raffinement, c'est ce qui décide si la parade vaut contre autre chose qu'une application de simulation |
 | Horodatage par un tiers (RFC 3161) | Ne rien faire, ou conserver un jeton d'horodatage **à côté** de l'enveloppe, ou l'admettre comme champ optionnel du noyau | Sans urgence technique — à trancher sur le besoin d'opposabilité, pas sur la sécurité |
 | Vérification Android hors ligne | S'en tenir à `RootOfTrust` retenu à l'enrôlement, ou faire voyager une attestation de clé **par capture** dans l'enveloppe | Avec A4, quand la latence de capture sera mesurée |
+
+**Sur la corroboration barométrique, la question n'est pas la précision mais qui détient la valeur attendue.** Aujourd'hui le client envoie `baro-alt` *et* `position[4]`, et le serveur ne fait que constater leur accord. Un client compromis fabrique donc une paire cohérente sans effort : la parade ne vaut que contre une application de simulation qui détourne le fournisseur de position sans toucher au baromètre — le plus faible des attaquants de S1 (voir `docs/threat-model.md` §S1, dont la première rédaction surestimait la portée).
+
+Si le client n'envoyait que **la pression brute**, et que le serveur allait chercher lui-même la pression de référence au niveau de la mer pour le lieu et l'instant déclarés, le client ne connaîtrait plus la valeur attendue. La corroboration passerait de *déclarée* à *vérifiée*, et vaudrait alors contre l'injection — ce qu'elle ne fait pas. C'est l'invariant 1 appliqué à la lettre : le client mesure, le serveur juge.
+
+Deux raisons rendent l'arbitrage urgent plutôt que confortable :
+
+- **Android n'expose aucune altitude absolue.** Elle se dérive de `TYPE_PRESSURE`, ce qui exige justement cette pression de référence. Prise à la valeur standard de 1013,25 hPa, l'erreur atteint ~139 m par temps de haute pression — plus du double de la tolérance de 60 m. Un appareil honnête serait alors marqué « incohérence altimétrique » selon la météo du jour ;
+- le coût de la seconde option est une **source météo côté serveur**. Le vérificateur appelle déjà Google par enveloppe côté Android, donc la dépendance réseau n'est pas un tabou — mais elle en devient une côté iOS, où le jugement est aujourd'hui **entièrement hors ligne**. Choisir la seconde option pour Android seul briserait cette propriété, ou créerait une asymétrie de plus. À trancher en ADR.
 
 **Sur la vérification hors ligne, l'asymétrie entre les deux plateformes est le vrai sujet.** Côté iOS, une enveloppe se juge **entièrement hors ligne** : l'assertion App Attest se vérifie sous la clé retenue à l'enrôlement, sans jamais appeler Apple. Côté Android, le verdict Play Integrity exige un appel à Google **par enveloppe**, et ce n'est pas un choix : le déchiffrement local est fermé à toute application non disponible sur le Play Store (ADR-0006).
 
