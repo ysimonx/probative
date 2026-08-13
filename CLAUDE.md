@@ -262,6 +262,32 @@ route d'enrôlement ne l'appelle pas encore.
 
 ## Prochaine étape
 
+### À faire en premier, dès qu'un appareil est branché
+
+Deux exécutions sur matériel réel sont dues, **dans cet ordre**, avant toute
+nouvelle fonctionnalité. Elles sont notées ici et non dans un carnet extérieur :
+ce dépôt est destiné à être repris, et un état de campagne qui ne survit pas au
+poste ne vaut rien.
+
+1. **Rejouer C4.2 sur iPhone 16.** Les correctifs de concurrence du 2026-08-13
+   — course de données dans `LocationDelegate`, délai de garde sur
+   `Camera.capture` — **compilent proprement mais n'ont jamais tourné sur
+   l'appareil**, qui s'était déconnecté avant la vérification. Logique
+   inchangée, mais un scellement qui se suspend sans message ne se verrait qu'à
+   l'exécution. Attendu : `STANDARD`, `position` en A avec `baro-consistent`.
+2. **Lancer A4.1 sur SM-X200.** Jamais exécutée sur matériel Android : la
+   répétition du 2026-08-13 était sur émulateur, qui n'a ni clé matérielle ni
+   verdict d'appareil. C'est ce qui manque pour établir le critère de sortie du
+   spike côté Android — il l'est déjà côté iOS.
+
+**Deux contraintes de poste, apprises à l'usage.** L'iPhone se reverrouille
+entre deux campagnes et `devicectl` refuse alors de lancer (« Locked ») :
+désactiver le verrouillage automatique sur l'appareil de test règle la question.
+Et le serveur de dev se lance **depuis la racine du dépôt**, sans quoi le `.env`
+n'est pas trouvé et l'attestation retombe silencieusement sur le substitut.
+
+### Le cadre
+
 **Spike d'attestation natif** — plan détaillé et phases dans
 `docs/spike-attestation.md`. Cible précise : produire une enveloppe qu'un appareil
 réel fait accepter par le vérificateur. **Atteinte le 2026-08-13 sur iPhone 16**
