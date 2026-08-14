@@ -342,6 +342,24 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    réglementaire. Si les cas d'usage visés sont ceux du constat de terrain, cela mérite
    d'être instruit **avant** A4/C4 ; sinon, après. Cela ne déplace jamais la phase B,
    qui reste ce qui rend le reste opposable.
+5. **Empreinte de bruit de capteur (PRNU)** — ouverte, cadrée par ADR-0007. Seule piste
+   connue contre l'**injection de trames**, la faiblesse que la spec §2.5 reconnaît en
+   écrivant que l'acquisition par le cœur « ne prouve pas l'origine capteur ». Elle se
+   calculerait **côté serveur** à partir du payload, ce qui colle à l'invariant 1 sans
+   rien demander de plus au client.
+
+   Deux choses à ne pas reperdre. **Le PRNU ne répond pas à la recapture analogique** :
+   photographier un écran avec l'appareil enrôlé produit un bruit parfaitement conforme.
+   L'erreur a déjà été commise et corrigée une fois ; ADR-0007 point 6 la clôt. Et
+   **aucun précédent commercial n'a été trouvé** — la revendication sur Truepic a été
+   abaissée à confiance faible le 2026-08-15, faute de la moindre mention dans leur
+   documentation publique.
+
+   Trois mesures conditionnent tout engagement, dans cet ordre : ce que le pipeline
+   computationnel laisse du résidu — un iPhone 16 débruite par réseau de neurones
+   **avant** l'encodeur, et le résidu pourrait déjà être perdu, auquel cas seul le bayer
+   RAW aurait un sens ; si la SM-X200 sait produire du DNG via Camera2 ; le coût en
+   `media[6]` et en bande passante. Piste v0.3 : ne déplace ni A4.2, ni la phase B.
 
 ### Deux chantiers ouverts, aucun bloqué
 
