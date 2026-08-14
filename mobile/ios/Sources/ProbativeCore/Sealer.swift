@@ -258,7 +258,7 @@ extension Sealer {
         nonce: Data,
         previousDigest: Data? = nil
     ) async throws -> SealedEnvelope {
-        let mediaDigest = Data(SHA256.hash(data: image.jpeg))
+        let mediaDigest = Data(SHA256.hash(data: image.bytes))
 
         // L'origine est l'obturateur, pas l'entrée dans cette méthode : c'est
         // là seulement que `media[6]` discrimine une injection, en mesurant
@@ -270,8 +270,12 @@ extension Sealer {
             nonce: nonce,
             media: Media(
                 digest: mediaDigest,
-                mimeType: "image/jpeg",
-                sizeBytes: image.jpeg.count,
+                // Le type vient du format réellement encodé, jamais d'un
+                // littéral posé ici : deux sources se seraient contredites en
+                // silence, et l'enveloppe aurait porté un type faux mais signé
+                // (ADR-0007 point 3).
+                mimeType: image.format.mimeType,
+                sizeBytes: image.bytes.count,
                 signLatencyMs: Int((elapsed * 1000).rounded()),
                 pixelSize: image.pixelSize
             ),

@@ -220,8 +220,8 @@ enum SealProbe {
         async let claimsTask = Sensors.claims()
 
         let image = try await Camera.capture()
-        ok("capture          \(since(start)) — \(image.jpeg.count) octets, "
-            + "\(image.pixelSize.width)x\(image.pixelSize.height)")
+        ok("capture          \(since(start)) — \(image.bytes.count) octets, "
+            + "\(image.pixelSize.width)x\(image.pixelSize.height), \(image.format.mimeType)")
 
         let claims = await claimsTask
         ok("corroboration    \(since(start)) cumule — "
@@ -249,7 +249,7 @@ enum SealProbe {
             image: image, position: position, claims: claims, nonce: nonce
         )
         ok("scellement       \(since(sealStart))")
-        return (sealed, image.jpeg)
+        return (sealed, image.bytes)
     }
 
     /// Le résultat, propriété par propriété. Ni `level` seul, ni résumé
