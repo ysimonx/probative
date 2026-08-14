@@ -174,15 +174,22 @@ enum SealProbe {
                 // La sonde déroule l'acquisition étape par étape plutôt que
                 // d'appeler `capture()`, pour pouvoir chronométrer et
                 // rapporter chacune. Un intégrateur, lui, appelle `capture()`.
-                let (envelope, jpeg) = try await acquire(sealer: sealer, nonce: nonce, ok: ok)
+                let (envelope, acquired) = try await acquire(sealer: sealer, nonce: nonce, ok: ok)
                 sealed = envelope
-                media = jpeg
+                media = acquired
             }
             ok("charge utile     \(sealed.payloadBytes.count) octets")
             ok("defi R1          \(sealed.challenge.base64EncodedString())")
             ok("enveloppe        \(sealed.bytes.count) octets")
 
             // ── 5. Verdict ────────────────────────────────────────────────
+            //
+            // La sonde transmet les octets puis les jette : elle mesure une
+            // boucle, elle n'archive rien. Un déploiement réel ne peut pas se
+            // le permettre — l'enveloppe ne porte qu'une empreinte, et des
+            // octets perdus ou retouchés rendent le verdict sur le contenu
+            // invérifiable, définitivement (spec §2.3). Ne pas lire cette
+            // sonde comme un exemple d'intégration complet.
             let verifyStart = DispatchTime.now().uptimeNanoseconds
             let result = try await server.verify(envelope: sealed.bytes, media: media)
             ok("verification     \(since(verifyStart))")
