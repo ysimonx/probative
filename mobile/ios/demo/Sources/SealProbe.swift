@@ -30,6 +30,17 @@ enum SealProbe {
     private static let content = Data("probative — octets remis au scellement, sonde C4.1\n".utf8)
     private static let contentType = "text/plain"
 
+    /// Le format d'acquisition, **déclaré ici plutôt que laissé au défaut du
+    /// cœur**. Symétrique de `contentType` ci-dessus : les deux profils
+    /// annoncent au même endroit ce qu'ils mettent sous le sceau.
+    ///
+    /// Le cœur a bien un défaut, et il est le bon (ADR-0007 point 1) — mais
+    /// s'y fier ici rendrait la sonde muette sur un choix qui décide de la
+    /// taille du fichier, du coût d'encodage dans `media[6]`, et de ce qui
+    /// resterait du résidu de bruit si le PRNU devenait exploitable. Une sonde
+    /// existe pour mesurer ; ce qu'elle mesure doit être lisible à l'appel.
+    private static let captureFormat: CaptureFormat = .jpeg
+
     struct Line: Identifiable {
         let id = UUID()
         let text: String
@@ -226,7 +237,7 @@ enum SealProbe {
         async let fixTask = Sensors.location()
         async let claimsTask = Sensors.claims()
 
-        let image = try await Camera.capture()
+        let image = try await Camera.capture(format: captureFormat)
         ok("capture          \(since(start)) — \(image.bytes.count) octets, "
             + "\(image.pixelSize.width)x\(image.pixelSize.height), \(image.format.mimeType)")
 
