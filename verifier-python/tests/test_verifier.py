@@ -759,6 +759,52 @@ def test_s3_capture_hors_ligne_plafonnee(verifier, nonces, key):
     assert res.level is Level.DEGRADED
 
 
+def test_s3_encadrement_large_plafonne_sans_drapeau_hors_ligne(verifier, nonces, key):
+    """Le trou que le plafond `offline` laissait ouvert.
+
+    Nonce à longue durée de vie **déclaré en ligne**, consommé des heures
+    après son émission : l'encadrement est aussi lâche que celui d'un lot
+    hors ligne, et il échappait à toute pénalité parce que la note suivait un
+    mode déclaré et non la grandeur observée.
+    """
+    later_ms = int(time.time() * 1000) + 3 * 3_600_000
+    nonce = _issue(nonces, key, ttl_ms=86_400_000, offline=False)
+    # L'horloge de l'appareil est calée sur celle du serveur au moment du
+    # jugement : sans cela l'écart d'horloge plafonnerait *aussi* à C, et le
+    # test passerait sans rien prouver de la largeur.
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST, wall_ms=later_ms)
+    env = sign_envelope(key, payload, nonce=nonce)
+
+    # Trois heures après l'émission, et toujours dans la validité du nonce :
+    # ce n'est donc pas l'expiration qui joue, mais bien la largeur.
+    res = verifier.verify(env, media_bytes=MEDIA, now_ms=later_ms)
+
+    time_result = res.properties[Property.TIME]
+    assert res.level is Level.DEGRADED
+    assert time_result.grade is Grade.C
+    assert any("encadrement du nonce large" in n for n in time_result.notes)
+    # La seule cause : ni horloge, ni drapeau hors ligne.
+    assert not any("horloge" in n for n in time_result.notes)
+    assert not any("hors ligne" in n for n in time_result.notes)
+
+
+def test_s3_encadrement_serre_ne_penalise_pas(verifier, nonces, key):
+    """Le pendant : un nonce à longue durée de vie consommé aussitôt.
+
+    L'encadrement observé est serré, donc rien à pénaliser — c'est ce qui
+    distingue la mesure du drapeau. Sans ce test, un seuil posé sur `ttl_ms`
+    plutôt que sur la largeur observée passerait inaperçu.
+    """
+    nonce = _issue(nonces, key, ttl_ms=86_400_000, offline=False)
+    payload = make_payload(nonce=nonce, media_digest=MEDIA_DIGEST)
+    env = sign_envelope(key, payload, nonce=nonce)
+
+    res = verifier.verify(env, media_bytes=MEDIA)
+
+    assert res.properties[Property.TIME].grade is not Grade.C
+    assert not any("encadrement" in n for n in res.properties[Property.TIME].notes)
+
+
 # --- S4 : compromission du client — forge de preuves --------------------
 
 

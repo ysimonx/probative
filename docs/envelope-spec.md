@@ -282,6 +282,8 @@ L'émission de nonce est par ailleurs la seule opération du serveur qui **crée
 
 En mode hors ligne, le serveur pré-délivre un lot de nonces à durée de vie étendue. Toute enveloppe utilisant un nonce pré-délivré est plafonnée à `DEGRADED`.
 
+**Indépendamment de ce plafond, `time` retombe à C lorsque l'encadrement observé dépasse `max_nonce_window_ms`.** L'encadrement observé court de l'émission du nonce à l'instant du jugement ; il est toujours au moins aussi serré que la durée de vie du nonce, puisqu'une enveloppe reçue avant expiration a été produite avant sa réception. Cette règle mesure ce que le plafond ci-dessus ne fait que présumer : un lot consommé aussitôt donne un encadrement serré, un nonce ordinaire consommé trois heures plus tard un encadrement lâche. Les deux règles coexistent, la seconde ne relâchant jamais la première. Voir §9.
+
 ---
 
 ## 4. Résultat de vérification
@@ -484,6 +486,7 @@ Un vérificateur accepte les versions mineures qu'il ne connaît pas et signale 
 | Corroboration barométrique | Rester **déclarée** — le client envoie `baro-alt`, le serveur compare —, ou passer à **vérifiée** : le client n'envoie que la pression brute et le serveur va chercher la référence au niveau de la mer pour le lieu et l'instant déclarés | Avec A4.2. Voir ci-dessous : ce n'est pas un raffinement, c'est ce qui décide si la parade vaut contre autre chose qu'une application de simulation |
 | Horodatage par un tiers (RFC 3161) | Ne rien faire, ou conserver un jeton d'horodatage **à côté** de l'enveloppe, ou l'admettre comme champ optionnel du noyau | Sans urgence technique — à trancher sur le besoin d'opposabilité, pas sur la sécurité |
 | Vérification Android hors ligne | S'en tenir à `RootOfTrust` retenu à l'enrôlement, ou faire voyager une attestation de clé **par capture** dans l'enveloppe | Avec A4, quand la latence de capture sera mesurée |
+| Lot de nonces de session | Le plafond `DEGRADED` sur nonce pré-délivré reste ; le rouvrir à mieux pour un lot **court** demanderait de s'en remettre à la seule largeur | Sur besoin, et **par ADR** : c'est un desserrage. ~~La moitié qui resserre~~ **faite le 2026-08-15** — `max_nonce_window_ms` |
 
 **Sur la corroboration barométrique, la question n'est pas la précision mais qui détient la valeur attendue.** Aujourd'hui le client envoie `baro-alt` *et* `position[4]`, et le serveur ne fait que constater leur accord. Un client compromis fabrique donc une paire cohérente sans effort : la parade ne vaut que contre une application de simulation qui détourne le fournisseur de position sans toucher au baromètre — le plus faible des attaquants de S1 (voir `docs/threat-model.md` §S1, dont la première rédaction surestimait la portée).
 
@@ -504,6 +507,38 @@ Rendre ce signal vivant supposerait une attestation de clé **par capture**, don
 - **la latence** : la génération d'une clé matérielle coûte 38 ms à chaud, 264 ms à froid, et atterrirait dans `media[6]`, précisément la mesure qu'A4 doit établir.
 
 C'est une décision de **format** — la présence d'un champ détermine l'interopérabilité — donc à trancher, jamais à configurer. À reprendre quand A4 aura donné la latence de capture : si celle-ci écrase les 38 ms, l'argument du coût s'affaiblit ; si elle est du même ordre, il tient.
+
+**Sur le lot de nonces, la règle actuelle ne mesure pas ce qu'elle protège.** R3 plafonne à
+`DEGRADED` toute enveloppe utilisant un nonce **pré-délivré**. Le plafond porte donc sur un
+*mode déclaré*, alors que ce que le nonce établit est une *grandeur* : l'encadrement
+bilatéral décrit plus bas, dont **la largeur est exactement la durée de vie du nonce**. Un
+lot ne dégrade pas `time` parce qu'il est un lot, mais parce qu'il est à longue durée de vie.
+
+L'écart se voyait dans le vérificateur : `grade_time` ne recevait que `offline: bool` et ne
+consultait jamais la durée de vie, tandis que l'émission traite `ttl_ms` et `offline` comme
+deux entrées indépendantes. Deux conséquences symétriques, et une seule est bénigne :
+
+- un nonce à longue durée de vie déclaré en ligne échappait à toute pénalité, **alors même
+  qu'il portait l'encadrement lâche que le plafond vise**. C'était un trou, et le fermer
+  *resserre* : **fait le 2026-08-15** par `max_nonce_window_ms`, sans ADR puisque rien n'y
+  est desserré. La note porte désormais sur la **largeur observée**, mesurée de l'émission
+  au jugement, et non sur `ttl_ms` — un lot à longue durée de vie consommé aussitôt donne
+  un encadrement serré, et il n'y a rien à lui reprocher ;
+- un nonce de courte durée déclaré hors ligne reste plafonné sans que rien ne l'ait mérité.
+  C'est le cas du **lot dimensionné sur une session** — quelques dizaines de minutes, non
+  quelques jours —, que R3 n'a jamais examiné en écrivant « durée de vie étendue ».
+
+Rouvrir le second est un **desserrage**, donc un ADR et non un réglage : la convention du
+dépôt veut qu'une option puisse resserrer, jamais desserrer un angle mort assumé. La
+mécanique de mesure existant désormais, cet ADR se réduirait à trancher si la largeur seule
+suffit à noter `time`, le drapeau `offline` devenant redondant.
+
+Un fait de plateforme borne d'avance l'intérêt de la manœuvre : **le lot ne débloque que
+iOS.** Une assertion App Attest se produit dans la Secure Enclave, sans réseau, donc un
+scellement réellement hors ligne y est possible ; côté Android le jeton Play Integrity
+s'obtient auprès des serveurs de Google **par enveloppe**, si bien qu'une série hors ligne
+échouerait un pas après le nonce, faute de preuve de fraîcheur. C'est le pendant, côté
+client, de l'asymétrie de vérification décrite plus haut.
 
 **Sur l'horodatage, la formulation compte plus que la décision.** La propriété `time` est déjà solidement établie par le nonce, qui donne un **encadrement bilatéral** : la charge utile le contient et il est imprévisible, donc la capture est postérieure à son émission ; le serveur l'a reçue avant son expiration, donc elle lui est antérieure. Un jeton RFC 3161 ne resserre aucune de ces deux bornes — il prouve seulement qu'une donnée existait au plus tard à tel instant. **En sécurité pure, il n'apporte rien.**
 

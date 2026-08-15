@@ -56,6 +56,22 @@ class GradingPolicy:
     max_clock_skew_ms: int = 300_000    # écart toléré avec l'horloge serveur
     baro_alt_tolerance_m: float = 60.0  # écart toléré GNSS / barométrique
 
+    # Largeur maximale de l'encadrement du nonce avant que `time` ne retombe
+    # à C. **C'est la grandeur que le plafond hors ligne visait sans la
+    # mesurer** (spec §9) : ce que le nonce établit est un encadrement
+    # bilatéral — capture postérieure à l'émission, antérieure à la réception
+    # par le serveur — et sa largeur est ce qui fait la valeur de la preuve
+    # de temps. Un drapeau `offline` ne la mesure pas ; un lot à longue durée
+    # de vie consommé aussitôt donne un encadrement serré, et un nonce
+    # ordinaire consommé trois heures plus tard un encadrement lâche.
+    #
+    # 15 min, et le choix n'est pas rond par hasard : il doit dépasser
+    # confortablement le défaut d'émission (120 s), y compris avec un nonce
+    # d'avance, et **ne jamais descendre sous `max_clock_skew_ms`** — borner
+    # l'instant de capture plus finement que l'erreur d'horloge tolérée
+    # n'aurait aucun sens.
+    max_nonce_window_ms: int = 900_000
+
     # --- Politique de distribution ---
     #
     # Sur Android, « binaire reconnu » signifie très précisément *ce binaire
@@ -353,8 +369,23 @@ def grade_time(
     offline: bool,
     counter_verified: bool,
     chain_verified: bool,
+    nonce_window_ms: int,
     policy: GradingPolicy = DEFAULT_POLICY,
 ) -> PropertyResult:
+    """Note la propriété `time`.
+
+    `nonce_window_ms` est l'encadrement **observé** : de l'émission du nonce à
+    l'instant où le serveur juge. Observé et non déclaré — c'est la borne que
+    le serveur peut réellement tenir, et elle est toujours au moins aussi
+    serrée que la durée de vie du nonce.
+
+    Conséquence à connaître d'un déploiement qui met ses envois en file : une
+    enveloppe téléversée longtemps après sa capture retombe à C, parce que
+    l'encadrement *est* large. Ce n'est pas une pénalité arbitraire mais la
+    lecture juste de ce que le serveur sait ; `max_nonce_window_ms` se règle
+    si le compromis ne convient pas, et l'écart voyage alors dans
+    `VerificationResult.policy`.
+    """
     r = PropertyResult(Grade.B, evidence=["nonce-fresh"])
 
     skew = abs(claims.timing.wall_ms - server_now_ms)
@@ -376,9 +407,19 @@ def grade_time(
         r.grade = Grade.A
         r.evidence.append("envelope-chain-verified")
 
+    # Les deux plafonds suivent le même barème, et c'est voulu : ils visent le
+    # même défaut. Le second le mesure, le premier se fie à une déclaration —
+    # d'où l'ordre, qui laisse la mesure avoir le dernier mot dans le motif.
     if offline:
         r.grade = min(r.grade, Grade.C, key=_grade_rank)
         r.notes.append("nonce pré-délivré : capture hors ligne")
+
+    if nonce_window_ms > policy.max_nonce_window_ms:
+        r.grade = min(r.grade, Grade.C, key=_grade_rank)
+        r.notes.append(
+            f"encadrement du nonce large : {nonce_window_ms // 1000} s "
+            f"entre émission et vérification"
+        )
 
     return r
 
