@@ -1,8 +1,8 @@
 # État de l'art et positionnement
 
-**Vérifié le 2026-08-11, complété le 2026-08-12.** Ce document périme vite : le marché
-bouge, et une partie des sources sont commerciales. Chaque affirmation porte son niveau
-de confiance ; les liens sont en fin de document.
+**Vérifié le 2026-08-11, complété le 2026-08-12, passe ciblée le 2026-08-15.** Ce
+document périme vite : le marché bouge, et une partie des sources sont commerciales.
+Chaque affirmation porte son niveau de confiance ; les liens sont en fin de document.
 
 > **Ajout du 2026-08-12.** Une seconde passe a montré que la première rédaction ratait
 > une couche entière — la **valeur juridique**, voir §1 et l'entrée TrueScreen — et deux
@@ -115,6 +115,45 @@ l'*interopérabilité*, pas la *crédibilité*. Les deux se composent, et §9 de
 `envelope-spec.md` prévoit déjà l'alignement C2PA en v0.3. Ce document conforte ce choix
 d'ordre : d'abord la liaison dure, ensuite l'emballage interopérable.
 
+#### Liaison dure, liaison molle — le compromis symétrique du nôtre
+
+*Ajouté le 2026-08-15. Manquait aux deux passes précédentes, et il change la lecture de
+toute la section.* Confiance : élevée, sources normatives.
+
+C2PA embarque le manifeste signé **dans** le fichier, en boîte JUMBF. Sa *liaison dure*
+est l'assertion `c2pa.hash.data` : un SHA-256 sur les octets exacts, **assorti de zones
+d'exclusion**. Ces zones ne sont pas un confort, elles sont mécaniquement obligatoires —
+le manifeste vit dans le fichier qu'il hache, et sans elles le hachage devrait s'inclure
+lui-même.
+
+**Deux conséquences, opposées.**
+
+D'abord, la question qui nous occupe — conserver les octets — ne se pose pas chez eux :
+les octets *sont* la preuve. C'est plus simple à déployer que notre séparation, et il
+faut le concéder.
+
+Ensuite, et c'est le renversement : **les zones d'exclusion sont exactement là où
+l'article de 2026 a trouvé son trou**, les métadonnées GPS modifiables sans invalider la
+signature. Nous n'avons aucune zone d'exclusion, et pas par mérite de conception : c'est
+la conséquence mécanique d'ADR-0004, qui garde le manifeste hors du fichier. Le trou et
+sa cause sont le même choix d'architecture.
+
+**Le hachage exact casse en distribution**, et c'est admis dans la norme : WhatsApp,
+iMessage et Facebook ré-encodent à l'envoi, ce qui invalide silencieusement les Content
+Credentials. La réponse est **Durable Content Credentials** (C2PA 2.1 et suivantes) :
+au-dessus de la liaison dure s'ajoutent une *liaison molle* — filigrane invisible
+(Digimarc, SynthID) et empreinte perceptuelle, tirés d'une liste d'algorithmes
+approuvés — et une **copie du manifeste dans une base en ligne**, retrouvable par la
+liaison molle quand les octets ont bougé. Une API de liaison molle découplée est
+spécifiée.
+
+**Ce que cela vaut pour nous : rien, et il faut savoir dire pourquoi.** Une liaison molle
+est probabiliste : elle restaure un *lien*, pas une *preuve*, et rendrait un score de
+similarité là où l'invariant 5 exige un verdict par propriété. Surtout, elle répond à la
+survie en distribution, quand notre verdict est rendu **à la réception**, avant toute
+redistribution. C'est le même classement que l'ancrage de Numbers Protocol : une bonne
+réponse à une question que nous ne posons pas — à ne pas confondre avec une lacune.
+
 ### ProofMode (Guardian Project + WITNESS) — le plus proche en esprit
 
 Application et protocole **open source** ajoutant à la capture des signatures
@@ -159,6 +198,21 @@ Deux points où Truepic est devant :
    > ou image générée ne portent pas le PRNU attendu. C'est une liaison au matériel fondée
    > sur le contenu et *indépendante de la clé* — elle tiendrait même si le chemin de
    > signature légitime était détourné pour signer des octets étrangers.
+
+   > **Passe du 2026-08-15 : la revendication ressort affaiblie, pas confirmée.** Une
+   > recherche ciblée n'a trouvé **aucune mention** de bruit de capteur, de PRNU ni
+   > d'empreinte de capteur dans la documentation publique de Truepic, qui parle de
+   > « pixels d'origine » et de scellement C2PA. La technique reste académiquement
+   > solide — attribution de source établie de longue date — et **commercialement
+   > introuvable**. Pour un différenciateur qui serait évident s'il fonctionnait sur
+   > téléphone, c'est un signal : probablement le cumul du coût d'enrôlement, de la
+   > forgeabilité documentée et de ce que la photographie computationnelle laisse du
+   > résidu. *Confiance abaissée de « moyenne » à « faible » : absence de mention dans
+   > des pages promotionnelles, ce qui n'est toujours pas une preuve d'absence, mais
+   > deux passes sans rien trouver pèsent davantage qu'une.* Conséquence : ce point 1
+   > n'est plus un endroit où Truepic est **établi** devant nous, seulement un endroit
+   > où il pourrait l'être. Voir ADR-0007 point 7, qui refuse tout engagement avant
+   > trois mesures.
 
 2. **La maturité** : autorité de certification opérée, écosystème C2PA, clients en
    production. Nous n'avons rien de tout cela.
@@ -373,3 +427,11 @@ Ajoutées le 2026-08-12 :
 - [RoloBits/attestation-photo-mobile](https://github.com/RoloBits/attestation-photo-mobile) *(libre, MIT — lu directement, la source la plus fiable de cette passe)*
 - [VeraSnap — Content Provenance Protocol](https://dev.to/veritaschain/verasnap-building-a-cryptographic-evidence-capture-app-for-android-with-kotlin-camerax-and-3p2f) *(billet des auteurs)*
 - [Truepic Vision — prévention et détection de la fraude](https://www.truepic.com/vision/fraud-prevention-detection) *(éditeur — source de la revendication « plus de 50 contrôles », dont les attaques par rediffusion)*
+
+Ajoutées le 2026-08-15, passe ciblée sur la liaison molle et le PRNU :
+
+- [C2PA — Durable Content Credentials](https://opensource.contentauthenticity.org/docs/durable-cr/) et [Soft Binding API découplée](https://spec.c2pa.org/specifications/specifications/2.2/softbinding/Decoupled.html) *(normatif)*
+- [C2PA — spécification technique 2.4](https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html) *(normatif — `c2pa.hash.data`, zones d'exclusion, conteneur JUMBF)*
+- [Digimarc — C2PA 2.1 et filigranes](https://www.digimarc.com/blog/c2pa-21-strengthening-content-credentials-digital-watermarks) *(éditeur d'un algorithme de liaison molle approuvé)*
+- [Sensor Fingerprints: Camera Identification and Beyond](https://link.springer.com/chapter/10.1007/978-981-16-7621-5_4) *(académique — le PRNU comme technique d'attribution de source)*
+- [A Stress Test for Robustness of PRNU Identification on Smartphones](https://pmc.ncbi.nlm.nih.gov/articles/PMC10098672/) *(académique — contre-forensique ; **ne mesure pas** l'effet de la photographie computationnelle, qui reste la question ouverte d'ADR-0007 point 7)*

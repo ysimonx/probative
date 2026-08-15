@@ -51,6 +51,7 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 | `docs/threat-model.md` | Spécification de référence. Toute fonctionnalité doit répondre à une menace identifiée. |
 | `docs/envelope-spec.md` | Format `probative/0.1`, noyau et profils (§2.5), règles de liaison R1/R2/R3, ordre de vérification |
 | `docs/decisions/` | ADR. Les compléter plutôt que revenir silencieusement sur un choix. |
+| `docs/acquisition-et-liaisons.md` | **Discussion ouverte, rien de décidé.** Prévisualisation, commandes de prise de vue et couture avec les liaisons Flutter/RN. Porte une décision à prendre en premier — la propriété de la session de capture — et deux pièges à ne pas redécouvrir. À lire avant d'ouvrir le chantier des liaisons ou de toucher à `Camera`. |
 | `spec/envelope-v0.1.cddl` | Extrait normatif de la spec. **Aucun générateur** : à tenir synchrone à la main, dans les deux sens. Un test le vérifierait mieux qu'une consigne — non écrit à ce jour. |
 | `docs/etat-de-l-art.md` | Solutions voisines (Approov, Guardsquare, Truepic, C2PA, ProofMode) et ce qui distingue réellement ce dépôt. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier les faits avant de s'en servir. |
 | `docs/certification-anssi.md` | Piste de certification : pourquoi une cible de sécurité propre au produit plutôt qu'un profil de protection, et pourquoi elle ne remplace pas la piste réglementaire européenne de la spec §9. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier référentiels et coûts avant de s'en servir. |
@@ -199,7 +200,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 | Vecteurs d'appareil | Android (chaîne à 4 certificats, SM-X200) et iOS (App Attest, iPhone 16) versionnés dans `tests/device-vectors/` |
 | Cœur natif Android | A1–A3 et **A5 faites, validées sur SM-X200**. **A4.1 écrite** — `seal(bytes)`, profil `core` : le cœur assemble et signe une enveloppe complète, épinglée au vecteur d'or par un test d'hôte. **Jamais exécutée sur appareil** : c'est la seule case qui reste pour le critère de sortie du spike. Puis A4.2, capture CameraX |
 | Cœur natif iOS | C1–C3, **C4.1 et C4.2 faites** (iPhone 16, iOS 26.6, 2026-08-13). **Critère de sortie du spike atteint** en `core` (`STRONG`), puis **une photo réelle scellée** en `capture` : `STANDARD`, `integrity`/`position`/`time` au grade A, `origin` à B par le seul plafond de recapture — le maximum de la v0.1. Reste : chemin de production, chaînage |
-| Liaisons Flutter / React Native | Non commencées |
+| Liaisons Flutter / React Native | Non commencées. Couture, prévisualisation et commandes de prise de vue instruites dans `docs/acquisition-et-liaisons.md` — une décision y attend avant toute ligne de code |
 | Banc de triche | Non commencé |
 
 **Ce qui est réellement prouvé, et ce qui ne l'est pas.** Les deux plateformes
@@ -264,27 +265,37 @@ route d'enrôlement ne l'appelle pas encore.
 
 ### À faire en premier, dès qu'un appareil est branché
 
-Deux exécutions sur matériel réel sont dues, **dans cet ordre**, avant toute
-nouvelle fonctionnalité. Elles sont notées ici et non dans un carnet extérieur :
-ce dépôt est destiné à être repris, et un état de campagne qui ne survit pas au
-poste ne vaut rien.
+Les exécutions dues sur matériel réel sont notées ici et non dans un carnet
+extérieur : ce dépôt est destiné à être repris, et un état de campagne qui ne
+survit pas au poste ne vaut rien.
 
-1. **Rejouer C4.2 sur iPhone 16.** Les correctifs de concurrence du 2026-08-13
-   — course de données dans `LocationDelegate`, délai de garde sur
-   `Camera.capture` — **compilent proprement mais n'ont jamais tourné sur
-   l'appareil**, qui s'était déconnecté avant la vérification. Logique
-   inchangée, mais un scellement qui se suspend sans message ne se verrait qu'à
-   l'exécution. Attendu : `STANDARD`, `position` en A avec `baro-consistent`.
+1. ~~**Rejouer C4.2 sur iPhone 16.**~~ **Fait le 2026-08-15.** Les correctifs de
+   concurrence du 2026-08-13 — course de données dans `LocationDelegate`, délai
+   de garde sur `Camera.capture` — ont tourné sur l'appareil. Résultat conforme
+   à l'attendu : `STANDARD`, `position` en A avec `baro-consistent`, `origin` en
+   B par le seul plafond de recapture, **aucun drapeau**, attestation réelle et
+   non substitut.
+
+   Un chiffre à surveiller : la capture a pris **2 494 ms** de temps mural,
+   contre 1 904 ms le 2026-08-13, même appareil et même code. Le verdict ne
+   signale aucune latence anormale — `media[6]` reste donc dans les clous, cette
+   ligne incluant les 400 ms de convergence de session — mais la variabilité
+   entre deux exécutions identiques est elle-même l'information, face à un seuil
+   à 3 000 ms. Voir l'inconnue n° 2, et l'effet favorable qu'aurait un aperçu
+   vivant (`docs/acquisition-et-liaisons.md` §2).
 2. **Lancer A4.1 sur SM-X200.** Jamais exécutée sur matériel Android : la
    répétition du 2026-08-13 était sur émulateur, qui n'a ni clé matérielle ni
    verdict d'appareil. C'est ce qui manque pour établir le critère de sortie du
    spike côté Android — il l'est déjà côté iOS.
 
-**Deux contraintes de poste, apprises à l'usage.** L'iPhone se reverrouille
+**Trois contraintes de poste, apprises à l'usage.** L'iPhone se reverrouille
 entre deux campagnes et `devicectl` refuse alors de lancer (« Locked ») :
 désactiver le verrouillage automatique sur l'appareil de test règle la question.
-Et le serveur de dev se lance **depuis la racine du dépôt**, sans quoi le `.env`
-n'est pas trouvé et l'attestation retombe silencieusement sur le substitut.
+Le serveur de dev se lance **depuis la racine du dépôt**, sans quoi le `.env`
+n'est pas trouvé et l'attestation retombe silencieusement sur le substitut. Et
+`ipconfig getifaddr en0` ne rend **rien** sur le Mac mini, dont l'adresse est sur
+`en1` — la commande de la section iOS suppose un poste où en0 est l'interface
+active, ce qui n'est pas universel. Balayer les interfaces plutôt que présumer.
 
 ### Le cadre
 
@@ -342,6 +353,24 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    réglementaire. Si les cas d'usage visés sont ceux du constat de terrain, cela mérite
    d'être instruit **avant** A4/C4 ; sinon, après. Cela ne déplace jamais la phase B,
    qui reste ce qui rend le reste opposable.
+5. **Empreinte de bruit de capteur (PRNU)** — ouverte, cadrée par ADR-0007. Seule piste
+   connue contre l'**injection de trames**, la faiblesse que la spec §2.5 reconnaît en
+   écrivant que l'acquisition par le cœur « ne prouve pas l'origine capteur ». Elle se
+   calculerait **côté serveur** à partir du payload, ce qui colle à l'invariant 1 sans
+   rien demander de plus au client.
+
+   Deux choses à ne pas reperdre. **Le PRNU ne répond pas à la recapture analogique** :
+   photographier un écran avec l'appareil enrôlé produit un bruit parfaitement conforme.
+   L'erreur a déjà été commise et corrigée une fois ; ADR-0007 point 6 la clôt. Et
+   **aucun précédent commercial n'a été trouvé** — la revendication sur Truepic a été
+   abaissée à confiance faible le 2026-08-15, faute de la moindre mention dans leur
+   documentation publique.
+
+   Trois mesures conditionnent tout engagement, dans cet ordre : ce que le pipeline
+   computationnel laisse du résidu — un iPhone 16 débruite par réseau de neurones
+   **avant** l'encodeur, et le résidu pourrait déjà être perdu, auquel cas seul le bayer
+   RAW aurait un sens ; si la SM-X200 sait produire du DNG via Camera2 ; le coût en
+   `media[6]` et en bande passante. Piste v0.3 : ne déplace ni A4.2, ni la phase B.
 
 ### Deux chantiers ouverts, aucun bloqué
 

@@ -30,6 +30,17 @@ enum SealProbe {
     private static let content = Data("probative — octets remis au scellement, sonde C4.1\n".utf8)
     private static let contentType = "text/plain"
 
+    /// Le format d'acquisition, **déclaré ici plutôt que laissé au défaut du
+    /// cœur**. Symétrique de `contentType` ci-dessus : les deux profils
+    /// annoncent au même endroit ce qu'ils mettent sous le sceau.
+    ///
+    /// Le cœur a bien un défaut, et il est le bon (ADR-0007 point 1) — mais
+    /// s'y fier ici rendrait la sonde muette sur un choix qui décide de la
+    /// taille du fichier, du coût d'encodage dans `media[6]`, et de ce qui
+    /// resterait du résidu de bruit si le PRNU devenait exploitable. Une sonde
+    /// existe pour mesurer ; ce qu'elle mesure doit être lisible à l'appel.
+    private static let captureFormat: CaptureFormat = .jpeg
+
     struct Line: Identifiable {
         let id = UUID()
         let text: String
@@ -174,15 +185,22 @@ enum SealProbe {
                 // La sonde déroule l'acquisition étape par étape plutôt que
                 // d'appeler `capture()`, pour pouvoir chronométrer et
                 // rapporter chacune. Un intégrateur, lui, appelle `capture()`.
-                let (envelope, jpeg) = try await acquire(sealer: sealer, nonce: nonce, ok: ok)
+                let (envelope, acquired) = try await acquire(sealer: sealer, nonce: nonce, ok: ok)
                 sealed = envelope
-                media = jpeg
+                media = acquired
             }
             ok("charge utile     \(sealed.payloadBytes.count) octets")
             ok("defi R1          \(sealed.challenge.base64EncodedString())")
             ok("enveloppe        \(sealed.bytes.count) octets")
 
             // ── 5. Verdict ────────────────────────────────────────────────
+            //
+            // La sonde transmet les octets puis les jette : elle mesure une
+            // boucle, elle n'archive rien. Un déploiement réel ne peut pas se
+            // le permettre — l'enveloppe ne porte qu'une empreinte, et des
+            // octets perdus ou retouchés rendent le verdict sur le contenu
+            // invérifiable, définitivement (spec §2.3). Ne pas lire cette
+            // sonde comme un exemple d'intégration complet.
             let verifyStart = DispatchTime.now().uptimeNanoseconds
             let result = try await server.verify(envelope: sealed.bytes, media: media)
             ok("verification     \(since(verifyStart))")
@@ -219,9 +237,9 @@ enum SealProbe {
         async let fixTask = Sensors.location()
         async let claimsTask = Sensors.claims()
 
-        let image = try await Camera.capture()
-        ok("capture          \(since(start)) — \(image.jpeg.count) octets, "
-            + "\(image.pixelSize.width)x\(image.pixelSize.height)")
+        let image = try await Camera.capture(format: captureFormat)
+        ok("capture          \(since(start)) — \(image.bytes.count) octets, "
+            + "\(image.pixelSize.width)x\(image.pixelSize.height), \(image.format.mimeType)")
 
         let claims = await claimsTask
         ok("corroboration    \(since(start)) cumule — "
@@ -249,7 +267,7 @@ enum SealProbe {
             image: image, position: position, claims: claims, nonce: nonce
         )
         ok("scellement       \(since(sealStart))")
-        return (sealed, image.jpeg)
+        return (sealed, image.bytes)
     }
 
     /// Le résultat, propriété par propriété. Ni `level` seul, ni résumé

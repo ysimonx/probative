@@ -116,6 +116,23 @@ Le profil `capture` exige **l'un ou l'autre**, jamais les dimensions seules : c'
 
 > La latence du champ 6 est un signal de détection sous-estimé. Une acquisition légitime signe en quelques dizaines de millisecondes. Une injection par caméra virtuelle ou une manipulation intermédiaire allonge presque toujours ce délai.
 
+#### Conservation des octets — obligation normative
+
+L'enveloppe **ne contient pas le payload**. `media[2]` n'en porte que l'empreinte, et les octets circulent et s'archivent séparément. Il en découle une obligation qui ne pèse pas sur le format mais sur celui qui l'exploite : **les octets scellés doivent être conservés à l'identique, octet pour octet.**
+
+Un vérificateur auquel on ne remet pas les octets rend un verdict amputé de la liaison au contenu, et le signale par le drapeau `MEDIA_NOT_PROVIDED`. Ce drapeau dit que les octets sont absents *à cette vérification* ; il ne dit rien de leur perte définitive, qui est irrattrapable. Une enveloppe dont les octets ont été altérés ne prouve plus rien sur le contenu — elle continue d'attester qu'un appareil sain a signé *un* payload, dont plus personne ne peut exhiber la contrepartie.
+
+Rompent la liaison, sans rattrapage et sans avertissement :
+
+- toute recompression ou tout ré-encodage, y compris à qualité supérieure ;
+- le nettoyage, la réécriture ou la normalisation des métadonnées, EXIF compris ;
+- le redimensionnement, le recadrage et la correction d'orientation ;
+- l'insertion d'un manifeste ou de toute donnée dans le fichier lui-même.
+
+Les dérivés — vignette, version de diffusion, copie recadrée — se fabriquent **à côté**, jamais à la place.
+
+> **Pourquoi cette obligation existe ici et pas ailleurs.** Les formats qui embarquent le manifeste *dans* le fichier n'ont pas ce problème : les octets sont la preuve. Ils le paient par des zones d'exclusion, mécaniquement nécessaires puisque le manifeste est inclus dans ce qu'il couvre — et ces zones sont une surface d'attaque documentée. Le choix inverse, posé en ADR-0004 et confirmé en ADR-0007, supprime cette surface et déplace le coût sur l'archivage. C'est un arbitrage, pas un oubli.
+
 ```cddl
 position = {
   1   => float64,           ; latitude WGS84

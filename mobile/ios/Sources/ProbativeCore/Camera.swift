@@ -3,15 +3,71 @@
 import AVFoundation
 import Foundation
 
+/// Format d'encodage du chemin d'acquisition.
+///
+/// **Une seule source de vérité**, et c'est sa raison d'être. Le codec demandé
+/// à AVFoundation et le type MIME inscrit dans `media[3]` sortent tous deux
+/// d'ici. Ils vivaient auparavant dans deux littéraux indépendants : changer
+/// le codec laissait l'enveloppe annoncer l'ancien type, **signé**, sans que
+/// rien ne le voie — aucun test ne les confrontait, et le vérificateur ne le
+/// peut pas, l'invariant 6 lui interdisant de connaître le type de contenu.
+/// C'est le mode de défaillance décrit en spec §2.4 à propos des unités : rien
+/// ne casse, la donnée est simplement fausse, aucun verdict ne le signale.
+/// Voir ADR-0007 point 3.
+public enum CaptureFormat {
+
+    /// JPEG — le défaut, et un choix motivé plutôt qu'hérité.
+    ///
+    /// Ce n'est pas ce que produit iOS si on ne dit rien : un appareil récent
+    /// encode en HEIC. La déviation est délibérée, et elle repose sur
+    /// l'**opposabilité** — une pièce destinée à être opposée dans dix ans se
+    /// conserve dans le format qu'on saura ouvrir dans dix ans. Elle se paie
+    /// en taille, et en finesse du résidu de bruit de capteur si l'empreinte
+    /// PRNU devenait un jour exploitable. Voir ADR-0007 points 1 et 7.
+    case jpeg
+
+    /// Ce qui est inscrit dans `media[3]`.
+    public var mimeType: String {
+        switch self {
+        case .jpeg: return "image/jpeg"
+        }
+    }
+
+    /// Ce qui est demandé au pipeline photo.
+    var codec: AVVideoCodecType {
+        switch self {
+        case .jpeg: return .jpeg
+        }
+    }
+}
+
 /// Ce que rend une acquisition photographique.
 ///
-/// `jpeg` porte **les octets tels que le pipeline photo les a produits**.
-/// C'est le piège le plus coûteux de cette étape : décoder en `UIImage` puis
-/// ré-encoder change les octets, et le serveur rejetterait en
-/// `MEDIA_DIGEST_MISMATCH` sans que la cause soit lisible. On hache ce tampon
-/// tel quel, et on envoie ce même tampon.
+/// `bytes` porte **les octets tels que le pipeline photo les a produits**, et
+/// `format` dit dans quel encodage. Les deux voyagent ensemble pour que le
+/// type MIME de l'enveloppe ne puisse pas contredire ce qui a réellement été
+/// encodé.
+///
+/// Le champ ne se nomme plus d'après son format. Le nommer `jpeg` gravait
+/// l'encodage dans une API publique, et faisait d'un futur changement une
+/// rupture d'interface au lieu d'un réglage — alors que `media[3]` est déclaré
+/// par capture et qu'une version mineure peut ajouter un format sans casser
+/// une enveloppe existante. Voir ADR-0007 point 2.
+///
+/// **Ne jamais ré-encoder.** C'est le piège le plus coûteux de cette étape :
+/// décoder en `UIImage` puis ré-encoder change les octets, et le serveur
+/// rejetterait en `MEDIA_DIGEST_MISMATCH` sans que la cause soit lisible. On
+/// hache ce tampon tel quel, et on envoie ce même tampon.
+///
+/// La règle ne s'arrête pas à la sortie du cœur. L'enveloppe ne portant qu'une
+/// **empreinte**, ces octets-là doivent être archivés intacts : recompression,
+/// nettoyage d'EXIF, redimensionnement ou normalisation d'orientation rompent
+/// la liaison sans rattrapage possible, et un verdict sur le contenu qu'on ne
+/// peut plus produire ne vaut rien. Les dérivés se fabriquent à côté, jamais à
+/// la place. Voir ADR-0007 points 4 et 5, et spec §2.3.
 public struct CapturedImage {
-    public let jpeg: Data
+    public let bytes: Data
+    public let format: CaptureFormat
     public let pixelSize: (width: Int, height: Int)
     /// Instant de l'obturateur sur l'horloge monotone — l'origine de
     /// `media[6]`, et la référence de l'âge du point de position.
@@ -62,10 +118,15 @@ public enum Camera {
     /// Prend une photo et rend ses octets bruts. Bloquant côté matériel, donc
     /// `async` : la configuration de session ne doit pas tenir le fil
     /// principal, ce dont AVFoundation se plaint bruyamment.
+    /// - Parameter format: encodage demandé au pipeline photo. Le type MIME de
+    ///   l'enveloppe en découle, il n'est jamais choisi séparément.
     /// - Parameter timeout: délai de garde du pipeline photo. Il n'interrompt
     ///   jamais une capture lente — 2 s suffisent sur iPhone 16 — seulement une
     ///   capture morte.
-    public static func capture(timeout: TimeInterval = 20) async throws -> CapturedImage {
+    public static func capture(
+        format: CaptureFormat = .jpeg,
+        timeout: TimeInterval = 20
+    ) async throws -> CapturedImage {
         guard await requestAccess() else { throw CameraError.denied }
 
         let session = AVCaptureSession()
@@ -97,9 +158,9 @@ public enum Camera {
         try? await Task.sleep(nanoseconds: 400_000_000)
 
         let settings = AVCapturePhotoSettings(
-            format: [AVVideoCodecKey: AVVideoCodecType.jpeg]
+            format: [AVVideoCodecKey: format.codec]
         )
-        let delegate = PhotoDelegate()
+        let delegate = PhotoDelegate(format: format)
         return try await withCheckedThrowingContinuation { continuation in
             delegate.continuation = continuation
             // Le délégué n'est pas retenu par AVFoundation : sans cette
@@ -116,6 +177,15 @@ public enum Camera {
         private var pending: CheckedContinuation<CapturedImage, Error>?
         var retain: PhotoDelegate?
         private var shutterUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+
+        /// Le format demandé au pipeline, reporté tel quel dans le résultat :
+        /// c'est ce qui interdit à `media[3]` de diverger du codec réellement
+        /// utilisé.
+        private let format: CaptureFormat
+
+        init(format: CaptureFormat) {
+            self.format = format
+        }
 
         var continuation: CheckedContinuation<CapturedImage, Error>? {
             get { lock.withLock { pending } }
@@ -148,8 +218,10 @@ public enum Camera {
         }
 
         /// L'instant de l'obturateur est celui-ci — pas celui du rappel de
-        /// fin, qui inclut l'encodage JPEG. La différence est exactement ce
-        /// que `media[6]` doit mesurer.
+        /// fin, qui inclut l'encodage. La différence est exactement ce que
+        /// `media[6]` doit mesurer, et c'est aussi par elle qu'un format plus
+        /// lourd se paierait : le coût d'encodage entre dans la latence, pas
+        /// à côté.
         func photoOutput(
             _ output: AVCapturePhotoOutput,
             willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings
@@ -166,7 +238,7 @@ public enum Camera {
                 finish(.failure(CameraError.failed(error.localizedDescription)))
                 return
             }
-            // `fileDataRepresentation` rend le conteneur JPEG complet, EXIF
+            // `fileDataRepresentation` rend le conteneur complet, EXIF
             // compris. C'est ce tampon qui part au serveur et c'est lui qu'on
             // hache — jamais une image reconstruite.
             guard let data = photo.fileDataRepresentation() else {
@@ -177,7 +249,8 @@ public enum Camera {
             finish(
                 .success(
                     CapturedImage(
-                        jpeg: data,
+                        bytes: data,
+                        format: format,
                         pixelSize: (width: Int(dimensions.width), height: Int(dimensions.height)),
                         shutterUptime: shutterUptime
                     )
