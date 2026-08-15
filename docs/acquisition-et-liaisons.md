@@ -2,9 +2,13 @@
 
 **Ouvert le 2026-08-15. Rien n'est décidé ici.** Ce document existe pour qu'une
 discussion tenue à l'oral survive au poste et se reprenne ailleurs. Il porte des
-constats, des pièges identifiés et **une décision à prendre** ; il ne fait autorité sur
-rien. Le jour où l'un de ces sujets se tranche, cela devient un ADR et cette section
-disparaît d'ici.
+constats, des pièges identifiés et **deux décisions à prendre** — la propriété de la
+session de capture (§ 2), et le niveau que doit viser une série hors ligne (§ 4) ; il ne
+fait autorité sur rien. Le jour où l'un de ces sujets se tranche, cela devient un ADR et
+cette section disparaît d'ici.
+
+La première décision commande : l'aperçu et la série de captures sont le **même**
+remaniement, et le trancher deux fois donnerait deux réponses.
 
 ## Pourquoi maintenant
 
@@ -67,10 +71,20 @@ prévisible de toute intégration naïve, et la raison pour laquelle un intégra
 tenté d'utiliser `camera.dart` pour l'aperçu et le cœur pour la capture. **À trancher avant
 d'écrire quoi que ce soit**, y compris avant la liaison Flutter.
 
-**Un effet de bord favorable, à ne pas rater.** Les 400 ms de convergence de session sont
-aujourd'hui *dans* `capture()`. Avec un aperçu vivant, la session est déjà convergée au
-déclenchement : `media[6]` devrait s'améliorer. Vu la marge mesurée (inconnue n° 2), ce
-n'est pas anecdotique.
+**Un effet de bord favorable, à ne pas rater — mais pas là où on le croit.** Avec un aperçu
+vivant, la session est déjà sous tension et convergée au déclenchement. Ce que cela supprime
+est **la latence perçue par l'utilisateur** : mise sous tension du capteur, délai de garde de
+400 ms, et attente 3A avant l'obturateur. C'est le gros du temps mural, et c'est déjà une
+raison suffisante.
+
+> ~~`media[6]` devrait s'améliorer parce que les 400 ms de convergence sont aujourd'hui
+> *dans* `capture()`.~~ **Le raisonnement est faux, corrigé le 2026-08-15.** Elles y sont,
+> mais `media[6]` part de l'obturateur (`willCapturePhotoFor`) : ni elles, ni la mise sous
+> tension, ni l'attente 3A n'y ont jamais figuré — les trois sont en amont. Ce que le champ
+> noté mesure après l'obturateur, c'est l'encodage puis le scellement, et **rien n'établit
+> qu'un aperçu les raccourcisse**. Ne pas justifier l'aperçu par `media[6]` : il se justifie
+> par la latence perçue, qui suffit. `CaptureTimings` dira terme à terme s'il y a un gain
+> résiduel.
 
 > **Le piège à écrire avant que quelqu'un ne l'essaie.** Ne jamais produire les octets
 > scellés en attrapant la trame d'aperçu courante. C'est tentant — obturateur instantané,
@@ -127,6 +141,90 @@ l'objectif devra être enrôlée et inscrite dans l'enveloppe.
 
 ---
 
+## 4. La série de captures — une session, plusieurs prises
+
+**La proposition, telle que posée le 2026-08-15 :** démarrer la session une fois, enchaîner
+plusieurs prises, la couper à la fin. La forme naturelle d'un relevé de terrain, où
+l'opérateur prend dix photos d'affilée et non une.
+
+**Ce n'est pas un gain sur `media[6]`, et il faut le dire d'emblée.** Les quatre bornes
+qu'une session persistante mutualise — configuration, mise sous tension, garde de 400 ms,
+convergence 3A — sont **toutes en amont de l'obturateur**. Elles ne sont pas dans le champ
+noté et ne l'ont jamais été. Le gain est du temps mural : réel, considérable pour les prises
+2 à N, et sans effet sur le verdict. C'est exactement l'erreur corrigée au § 2, et elle se
+réintroduirait volontiers par cette porte.
+
+**Le blocage n'est pas la caméra, c'est le nonce.** Un nonce vaut pour une enveloppe : émis
+par le serveur, à usage unique, refusé définitivement une fois consommé (spec § R3), 120 s
+de durée de vie par défaut dans le serveur de développement. N prises, N nonces. Deux voies,
+et une seule est bonne :
+
+- **un lot pré-délivré** — c'est le mode hors ligne, que la spec **plafonne à `DEGRADED`**
+  (même section). Le lot est précisément le gisement que R3 ferme ;
+- **un nonce d'avance**, obtenu pendant que l'opérateur cadre la prise suivante. Préserve
+  `nonce-fresh`, ne coûte rien au temps perçu, exige de la connectivité tout du long.
+
+> **La tension à ne pas escamoter.** Le cas d'usage qui motive la série est celui où le
+> réseau manque. Le format a déjà tranché ce compromis — hors ligne, c'est `DEGRADED` — donc
+> la question ouverte n'est pas technique mais d'exigence : *une série de terrain doit-elle
+> viser `STANDARD` avec réseau, ou accepter `DEGRADED` sans ?* Y répondre par un lot de
+> nonces sans le dire reviendrait à desserrer R3 en silence.
+
+### Le lot de session, et pourquoi il n'est pas le lot de la spec
+
+L'objection immédiate — *demander un lot au début de la série* — mérite mieux qu'un renvoi à
+R3, parce qu'elle vise autre chose que ce que R3 avait en tête. La spec écrit « durée de vie
+étendue » en pensant au hors-ligne au long cours ; **un lot de session est borné par la
+session** : quarante-cinq minutes de validité pour trente minutes de relevé.
+
+Ce que le nonce achète est un encadrement bilatéral, et **sa largeur est exactement la durée
+de vie du nonce**. Un lot ne dégrade donc pas `time` par sa cardinalité mais par sa
+longévité — ce que le plafond actuel ne distingue pas, puisqu'il porte sur un drapeau et non
+sur une largeur. La question est ouverte en spec § 9 ; elle n'appartient pas à ce document,
+qui n'a qu'à en connaître la conclusion.
+
+**Ce qui appartient à ce document, en revanche :** le lot ne débloquerait qu'iOS. Côté
+Android, chaque enveloppe exige un jeton Play Integrity obtenu auprès de Google, si bien
+qu'une série hors ligne s'arrêterait un pas après le nonce. Concevoir la série autour d'un
+lot reviendrait à concevoir une fonctionnalité qui ne fonctionne que sur une plateforme —
+ce que l'invariant 4 déconseille précisément.
+
+**D'où la forme à privilégier, qui ne demande aucun changement de spec : un nonce d'avance.**
+Le récupérer pendant que l'opérateur cadre la prise suivante. Il ne faut alors pas du réseau
+*à l'obturateur*, seulement dans les secondes autour — ce qui couvre le réseau intermittent,
+c'est-à-dire l'essentiel des situations de terrain. Encadrement serré conservé, `STANDARD`
+accessible, et le lot reste disponible comme repli hors ligne assumé.
+
+**Le vrai gain est ailleurs : le chaînage.** `previousDigest` existe déjà sur les deux
+points d'entrée de `Sealer`, et le champ 7 est dans le format. Aujourd'hui il ne sert à
+rien — une prise isolée n'a rien à chaîner. Une série lui donne son sens : elle établit
+l'ordre des prises et le fait qu'aucune n'a été retirée. Et l'asymétrie compte, à l'étape 7
+de l'ordre de vérification : le chaînage est **noté côté Android**, là où iOS obtient `time`
+au grade A par le compteur d'assertion signé. C'est donc un gain de grade concret sur la
+plateforme qui en a besoin — et la série est le cas d'usage qui instruirait enfin
+l'inconnue n° 3.
+
+**Multi-captures et aperçu sont le même remaniement.** Une session qui survit à un appel
+cesse d'être une fonction pour devenir un objet à durée de vie. C'est mot pour mot le
+changement de forme qu'appelle l'aperçu, et donc la même question de propriété qu'au § 2.
+**Ne pas ouvrir ce chantier avant de l'avoir tranchée** : on la trancherait deux fois, et
+probablement pas dans le même sens.
+
+**Trois points à ne pas perdre.** Une session longue se fait interrompre — appel entrant,
+passage en arrière-plan, autre application qui prend la caméra ; aujourd'hui elle vit deux
+secondes et le cas ne se pose pas. Il faudra le traiter, et surtout garantir qu'une session
+morte ne produise jamais une enveloppe d'apparence valide. Chaque prise consomme sa propre
+preuve de fraîcheur : 18 ms d'assertion sur iPhone 16, donc négligeable, mais côté Android
+c'est une requête Play Integrity par enveloppe et **les quotas sont à vérifier avant de
+promettre une cadence**. Enfin l'échauffement, sur une session qui dure des minutes.
+
+> **Invariant 3, et ce n'est pas une formalité.** Le mot qui a amené cette discussion
+> — « inspection » — est du vocabulaire métier et n'entre pas dans ce dépôt. Le concept s'y
+> nomme **série de captures**. C'est typiquement par une fonctionnalité motivée par un
+> terrain précis qu'un domaine applicatif s'installe dans une API.
+
+---
+
 ## Ce qui est acquis, ce qui est ouvert
 
 | Sujet | État |
@@ -139,11 +237,19 @@ l'objectif devra être enrôlée et inscrite dans l'enveloppe.
 | Réglages en type valeur plutôt qu'en méthodes mutantes | Proposé, non écrit |
 | Traitement du zoom numérique | **Ouvert** — `claim`, ou angle mort nommé |
 | Identité de l'objectif si le zoom optique s'ouvre | Ouvert, lié à l'inconnue n° 5 |
+| Série de captures : même remaniement que l'aperçu | Constat, dépend de la même décision |
+| Un nonce d'avance plutôt qu'un lot | Proposé — sans changement de spec, et marche sur les deux plateformes |
+| Lot de session noté à la largeur, non au drapeau | **Ouvert en spec § 9** — desserrage, donc ADR |
+| Niveau visé par une série hors ligne | **Ouvert** — exigence, pas technique |
+| Le chaînage prend son sens dans une série | Constat, instruirait l'inconnue n° 3 |
 
 ## Renvois
 
 - `docs/decisions/ADR-0003-coeurs-natifs-liaisons-minces.md` — la stratégie de liaison
 - `docs/decisions/ADR-0007-format-acquisition-octets-immuables.md` — format et conservation
 - `docs/envelope-spec.md` §2.3 (conservation des octets), §2.4 (`claim`), §2.5 (profils, et
-  ce que l'acquisition par le cœur apporte ou non)
-- `CLAUDE.md`, inconnues n° 2 (latence) et n° 5 (PRNU)
+  ce que l'acquisition par le cœur apporte ou non), R3 (unicité du nonce, lot hors ligne),
+  §9 (chaînage)
+- `CLAUDE.md`, inconnues n° 2 (latence), n° 3 (chaînage Android) et n° 5 (PRNU)
+- `CaptureTimings` dans `mobile/ios/Sources/ProbativeCore/Camera.swift` — la décomposition
+  qui rend les affirmations de latence de ce document vérifiables plutôt que plausibles

@@ -194,6 +194,11 @@ class Verifier:
                 offline=nonce_rec.offline,
                 counter_verified=counter_verified,
                 chain_verified=chain_verified,
+                # L'encadrement **observé**, borné à zéro : une horloge
+                # serveur qui recule rendrait une largeur négative, donc un
+                # encadrement flatteur là où il faudrait au contraire se
+                # méfier.
+                nonce_window_ms=max(0, now_ms - nonce_rec.issued_at_ms),
                 policy=self._policy,
             ),
         }

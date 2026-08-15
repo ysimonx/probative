@@ -57,6 +57,17 @@ public struct SealedEnvelope {
     public let payloadBytes: Data
     public let challenge: Data
     public let mediaDigest: Data
+
+    /// La valeur de `media[6]` **telle qu'elle a été scellée**, en
+    /// millisecondes.
+    ///
+    /// Remontée plutôt que laissée enfouie dans la charge utile parce qu'une
+    /// sonde n'avait aucun moyen de la dire, et la recalculer après coup en
+    /// rendrait une autre — plus grande, et fausse. C'est le seul chiffre de
+    /// latence que le vérificateur confronte à `max_sign_latency_ms` ; tous les
+    /// autres que rapporte une sonde sont du temps mural, qui ne se compare
+    /// à rien.
+    public let signLatencyMs: Int
 }
 
 /// Scellement d'octets **remis** — le second point d'entrée du cœur, à côté de
@@ -123,6 +134,10 @@ public struct Sealer {
         // le temps passé *avant*.
         let elapsed = ProcessInfo.processInfo.systemUptime - acquiredAtUptime
         precondition(elapsed >= 0, "instant d'acquisition postérieur au scellement")
+        // Arrondi **une seule fois**, puis porté jusqu'au résultat : ce que la
+        // sonde affichera est l'entier réellement signé, pas une seconde
+        // lecture de l'horloge qui donnerait un autre nombre.
+        let signLatencyMs = Int((elapsed * 1000).rounded())
 
         let payload = CorePayload.build(
             nonce: nonce,
@@ -130,7 +145,7 @@ public struct Sealer {
                 digest: mediaDigest,
                 mimeType: mimeType,
                 sizeBytes: content.count,
-                signLatencyMs: Int((elapsed * 1000).rounded())
+                signLatencyMs: signLatencyMs
             ),
             timing: timing,
             posture: posture,
@@ -140,7 +155,8 @@ public struct Sealer {
             payload: payload,
             nonce: nonce,
             profile: CorePayload.profile,
-            mediaDigest: mediaDigest
+            mediaDigest: mediaDigest,
+            signLatencyMs: signLatencyMs
         )
     }
 
@@ -154,7 +170,8 @@ public struct Sealer {
         payload: CborValue,
         nonce: Data,
         profile: String,
-        mediaDigest: Data
+        mediaDigest: Data,
+        signLatencyMs: Int
     ) async throws -> SealedEnvelope {
         let payloadBytes = Cbor.encode(payload)
 
@@ -189,7 +206,8 @@ public struct Sealer {
             ),
             payloadBytes: payloadBytes,
             challenge: challenge,
-            mediaDigest: mediaDigest
+            mediaDigest: mediaDigest,
+            signLatencyMs: signLatencyMs
         )
     }
 }
@@ -265,6 +283,7 @@ extension Sealer {
         // le temps réellement passé entre capteur et charge utile.
         let elapsed = ProcessInfo.processInfo.systemUptime - image.shutterUptime
         precondition(elapsed >= 0, "obturateur postérieur au scellement")
+        let signLatencyMs = Int((elapsed * 1000).rounded())
 
         let payload = CapturePayload.build(
             nonce: nonce,
@@ -276,7 +295,7 @@ extension Sealer {
                 // (ADR-0007 point 3).
                 mimeType: image.format.mimeType,
                 sizeBytes: image.bytes.count,
-                signLatencyMs: Int((elapsed * 1000).rounded()),
+                signLatencyMs: signLatencyMs,
                 pixelSize: image.pixelSize
             ),
             position: position,
@@ -289,7 +308,8 @@ extension Sealer {
             payload: payload,
             nonce: nonce,
             profile: CapturePayload.profile,
-            mediaDigest: mediaDigest
+            mediaDigest: mediaDigest,
+            signLatencyMs: signLatencyMs
         )
     }
 

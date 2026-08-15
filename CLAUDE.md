@@ -51,7 +51,7 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
 | `docs/threat-model.md` | Spécification de référence. Toute fonctionnalité doit répondre à une menace identifiée. |
 | `docs/envelope-spec.md` | Format `probative/0.1`, noyau et profils (§2.5), règles de liaison R1/R2/R3, ordre de vérification |
 | `docs/decisions/` | ADR. Les compléter plutôt que revenir silencieusement sur un choix. |
-| `docs/acquisition-et-liaisons.md` | **Discussion ouverte, rien de décidé.** Prévisualisation, commandes de prise de vue et couture avec les liaisons Flutter/RN. Porte une décision à prendre en premier — la propriété de la session de capture — et deux pièges à ne pas redécouvrir. À lire avant d'ouvrir le chantier des liaisons ou de toucher à `Camera`. |
+| `docs/acquisition-et-liaisons.md` | **Discussion ouverte, rien de décidé.** Prévisualisation, commandes de prise de vue, série de captures et couture avec les liaisons Flutter/RN. Porte deux décisions — la propriété de la session de capture, qui commande tout le reste, et le niveau visé par une série hors ligne — plus les pièges à ne pas redécouvrir. À lire avant d'ouvrir le chantier des liaisons ou de toucher à `Camera`. |
 | `spec/envelope-v0.1.cddl` | Extrait normatif de la spec. **Aucun générateur** : à tenir synchrone à la main, dans les deux sens. Un test le vérifierait mieux qu'une consigne — non écrit à ce jour. |
 | `docs/etat-de-l-art.md` | Solutions voisines (Approov, Guardsquare, Truepic, C2PA, ProofMode) et ce qui distingue réellement ce dépôt. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier les faits avant de s'en servir. |
 | `docs/certification-anssi.md` | Piste de certification : pourquoi une cible de sécurité propre au produit plutôt qu'un profil de protection, et pourquoi elle ne remplace pas la piste réglementaire européenne de la spec §9. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier référentiels et coûts avant de s'en servir. |
@@ -88,7 +88,7 @@ C'est leur seule raison d'être — ne rien y loger qui appartienne au cœur.
 cd verifier-python
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest              # 214 tests doivent passer
+pytest              # 216 tests doivent passer
 ruff check .
 mypy src
 ```
@@ -193,7 +193,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Noyau et profils (ADR-0005) | **Fait de bout en bout** : spec §2.5, CDDL, vérificateur, vecteurs, et les deux cœurs natifs |
-| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 214 tests au vert |
+| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 216 tests au vert |
 | `AppAttestVerifier` — **phase D faite** | Attestation d'enrôlement validée **jusqu'à la racine publiée par Apple**, assertion validée par enveloppe. Éprouvé contre le vecteur iPhone 16 réel, 26 tests |
 | `PlayIntegrityVerifier` — **phase B faite** | Jeton déchiffré par `decodeIntegrityToken`, `requestHash` recalculé et confronté, verdicts traduits. Chaîne d'attestation de clé ancrée à la racine Google (`key_attestation.py`). 35 tests |
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
@@ -277,12 +277,24 @@ survit pas au poste ne vaut rien.
    non substitut.
 
    Un chiffre à surveiller : la capture a pris **2 494 ms** de temps mural,
-   contre 1 904 ms le 2026-08-13, même appareil et même code. Le verdict ne
-   signale aucune latence anormale — `media[6]` reste donc dans les clous, cette
-   ligne incluant les 400 ms de convergence de session — mais la variabilité
-   entre deux exécutions identiques est elle-même l'information, face à un seuil
-   à 3 000 ms. Voir l'inconnue n° 2, et l'effet favorable qu'aurait un aperçu
-   vivant (`docs/acquisition-et-liaisons.md` §2).
+   contre 1 904 ms le 2026-08-13, même appareil et même code. La variabilité
+   entre deux exécutions identiques est elle-même l'information.
+
+   ~~`media[6]` reste dans les clous, cette ligne incluant les 400 ms de
+   convergence de session.~~ **Faux, corrigé le 2026-08-15 :** `shutterUptime`
+   est estampillé dans `willCapturePhotoFor`, *après* `startRunning()` et après
+   le délai de garde. Ni la mise sous tension du capteur ni les 400 ms n'entrent
+   dans `media[6]` (`Sealer.swift`, `elapsed`). **Ces 2 494 ms ne sont donc pas
+   ce qu'on compare aux 3 000 ms** de `max_sign_latency_ms`, et la marge réelle
+   n'a jamais été lue — elle est plus large, d'un montant inconnu à ce jour.
+
+   `Camera.capture` porte depuis une décomposition en six bornes
+   (`CaptureTimings`), que la sonde imprime. Elle sépare ce qui est structurel
+   et disparaîtrait avec un aperçu (mise sous tension), ce qui est en dur
+   (garde), ce qui dépend de la scène (3A), et **le seul terme qui pèse dans
+   `media[6]`** (encodage). La prochaine campagne rendra donc l'écart
+   attribuable au lieu de le constater. Voir l'inconnue n° 2 et
+   `docs/acquisition-et-liaisons.md` §2.
 2. **Lancer A4.1 sur SM-X200.** Jamais exécutée sur matériel Android : la
    répétition du 2026-08-13 était sur émulateur, qui n'a ni clé matérielle ni
    verdict d'appareil. C'est ce qui manque pour établir le critère de sortie du
@@ -329,13 +341,25 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    formalité : rendre l'encodage normatif dans ADR-0002.
 2. **Latence — levée le 2026-08-13 par C4.2.** La fraîcheur ne coûte rien
    (36–39 ms sur SM-X200, 18 ms sur iPhone 16) ; la **capture domine de deux
-   ordres de grandeur** : 1 904 ms sur iPhone 16, scellement 49 ms. Le seuil de
-   3 000 ms tient, mais la marge est mince — et c'est ce qui rend décisif
-   l'ordonnancement du client : **la corroboration doit courir *pendant*
-   l'acquisition**, faute de quoi elle entre dans `media[6]` et fait accuser une
-   latence anormale là où il n'y en a aucune (mesuré : +4,2 s). Reste à mesurer
-   sur un appareil d'entrée de gamme, la SM-X200 étant la cible du pire cas.
-3. **Chaînage Android** (spec §9) : inchangée, non instruite.
+   ordres de grandeur** : 1 904 ms sur iPhone 16, scellement 49 ms.
+
+   ~~Le seuil de 3 000 ms tient, mais la marge est mince.~~ **Confusion, levée le
+   2026-08-15 :** ces 1 904 ms sont du temps mural de `capture()`, dont
+   `media[6]` ne voit que la part **postérieure à l'obturateur**. On comparait à
+   3 000 ms un nombre qui n'y entre pas. La marge n'est pas mince, elle est
+   **non mesurée** — `CaptureTimings` la donne désormais.
+
+   Ce qui reste vrai, et décisif, est l'ordonnancement du client : **la
+   corroboration doit courir *pendant* l'acquisition**, faute de quoi elle entre
+   bel et bien dans `media[6]` — elle, elle est en aval de l'obturateur — et fait
+   accuser une latence anormale là où il n'y en a aucune (mesuré : +4,2 s). La
+   jointure d'`acquire()` étant après l'obturateur, **tout capteur qui survit à
+   la capture verse son excédent dans le champ noté** : c'est là qu'est la marge
+   à surveiller, pas dans la durée de la photo. Reste à mesurer sur un appareil
+   d'entrée de gamme, la SM-X200 étant la cible du pire cas.
+3. **Chaînage Android** (spec §9) : inchangée, non instruite. La **série de captures**
+   (`docs/acquisition-et-liaisons.md` §4) est le cas d'usage qui l'instruirait : une prise
+   isolée n'a rien à chaîner, une série établit l'ordre et l'absence de retrait.
 4. **Horodatage par un tiers, RFC 3161** (spec §9) : ouverte. **Ne relève pas de la
    sécurité** — le nonce encadre déjà la capture des deux côtés, et un jeton
    d'horodatage ne resserre aucune borne. Relève de l'**opposabilité** : l'encadrement
@@ -371,6 +395,28 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    **avant** l'encodeur, et le résidu pourrait déjà être perdu, auquel cas seul le bayer
    RAW aurait un sens ; si la SM-X200 sait produire du DNG via Camera2 ; le coût en
    `media[6]` et en bande passante. Piste v0.3 : ne déplace ni A4.2, ni la phase B.
+6. **Largeur d'encadrement du nonce contre drapeau `offline`** — ouverte le 2026-08-15,
+   cadrée en spec §9, **moitié close le jour même**. Ce que le nonce établit est un
+   encadrement bilatéral dont la largeur fait toute la valeur ; or `grade_time` ne
+   consultait que `offline: bool`, et l'émission traite `ttl_ms` et `offline` comme deux
+   entrées indépendantes. Le verdict suivait donc un mode déclaré, pas une grandeur
+   mesurée.
+
+   ~~**Fermer le cas « longue durée de vie déclarée en ligne » resserre**, aucun ADR
+   nécessaire.~~ **Fait** : `max_nonce_window_ms` (15 min par défaut), plafond à C, deux
+   tests. **Rouvrir le lot court à mieux que `DEGRADED` desserre** — ADR obligatoire, et
+   c'est la moitié qui reste ouverte.
+
+   Le point à ne pas reperdre, parce qu'il n'est pas celui qu'on pose d'instinct : la note
+   porte sur la **largeur observée** — émission du nonce → jugement — et non sur `ttl_ms`.
+   Un seuil sur la durée de vie déclarée aurait puni un lot consommé aussitôt, dont
+   l'encadrement est pourtant serré, et c'est exactement l'erreur qu'on reprochait au
+   drapeau. Un test épingle ce cas.
+
+   Née de la question de la série de captures (`docs/acquisition-et-liaisons.md` §4), mais
+   elle n'en dépend pas : le trou existait indépendamment de toute série. À noter que le
+   lot ne débloquerait qu'iOS — côté Android, le jeton Play Integrity par enveloppe rend
+   une série hors ligne impossible un pas plus loin.
 
 ### Deux chantiers ouverts, aucun bloqué
 
