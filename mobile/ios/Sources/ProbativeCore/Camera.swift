@@ -41,6 +41,63 @@ public enum CaptureFormat {
     }
 }
 
+/// Décomposition du temps d'acquisition, sur l'horloge monotone
+/// (`systemUptime`), en six bornes.
+///
+/// Elle existe pour une raison précise. La sonde ne rapportait qu'une durée
+/// totale, et deux campagnes identiques sur le même iPhone 16 ont rendu
+/// 1 904 ms puis 2 494 ms sans qu'on puisse dire *où*. Or les termes n'ont ni
+/// la même nature ni le même remède : la mise sous tension du capteur est
+/// structurelle et disparaîtrait avec un aperçu vivant, la convergence 3A
+/// dépend de la scène et ne se corrige pas, l'encodage dépend du format
+/// demandé. Une somme ne se pilote pas.
+///
+/// **Une seule de ces bornes entre dans `media[6]`.** Le champ noté part de
+/// l'obturateur : tout ce qui précède mesure le coût du client, tout ce qui
+/// suit mesure le chemin capteur→charge utile. Les avoir confondus a fait
+/// croire la marge contre `max_sign_latency_ms` plus mince qu'elle n'est.
+public struct CaptureTimings: Sendable {
+
+    /// Entrée dans `capture()`.
+    public let start: TimeInterval
+    /// Session assemblée : périphérique ouvert, entrée et sortie rattachées.
+    public let configured: TimeInterval
+    /// `startRunning()` a rendu — le capteur est sous tension.
+    public let running: TimeInterval
+    /// Fin du délai de convergence tenu par le cœur.
+    public let armed: TimeInterval
+    /// Obturateur. **L'origine de `media[6]`** : rien de ce qui précède n'y entre.
+    public let shutter: TimeInterval
+    /// Octets encodés disponibles.
+    public let delivered: TimeInterval
+
+    /// Ouverture du périphérique et configuration de la session.
+    public var configureMs: Int { Self.ms(start, configured) }
+
+    /// Mise sous tension du capteur. **Payée à chaque photo faute d'aperçu** :
+    /// la session naît et meurt dans `capture()`.
+    public var startupMs: Int { Self.ms(configured, running) }
+
+    /// Le délai de garde en dur du cœur. Constant par construction, donc sans
+    /// intérêt en soi — c'est le **témoin** : s'il s'écarte de sa consigne,
+    /// une file était saturée et les autres bornes ne sont pas lisibles.
+    public var settleMs: Int { Self.ms(running, armed) }
+
+    /// Convergence 3A avant déclenchement, à la main d'AVFoundation. Le terme
+    /// qui dépend de la scène : lumière faible, autofocus qui cherche.
+    public var shutterLagMs: Int { Self.ms(armed, shutter) }
+
+    /// Traitement et encodage. **Le seul terme qui pèse dans `media[6]`.**
+    public var encodeMs: Int { Self.ms(shutter, delivered) }
+
+    /// Le total — ce que la sonde rapportait seul avant cette décomposition.
+    public var totalMs: Int { Self.ms(start, delivered) }
+
+    private static func ms(_ from: TimeInterval, _ to: TimeInterval) -> Int {
+        Int(((to - from) * 1000).rounded())
+    }
+}
+
 /// Ce que rend une acquisition photographique.
 ///
 /// `bytes` porte **les octets tels que le pipeline photo les a produits**, et
@@ -69,9 +126,14 @@ public struct CapturedImage {
     public let bytes: Data
     public let format: CaptureFormat
     public let pixelSize: (width: Int, height: Int)
+
+    /// Où le temps est passé. Diagnostic seul : rien de ce que porte ce champ
+    /// n'entre dans l'enveloppe, sauf par `shutterUptime` ci-dessous.
+    public let timings: CaptureTimings
+
     /// Instant de l'obturateur sur l'horloge monotone — l'origine de
     /// `media[6]`, et la référence de l'âge du point de position.
-    public let shutterUptime: TimeInterval
+    public var shutterUptime: TimeInterval { timings.shutter }
 }
 
 public enum CameraError: Error, CustomStringConvertible {
@@ -127,6 +189,7 @@ public enum Camera {
         format: CaptureFormat = .jpeg,
         timeout: TimeInterval = 20
     ) async throws -> CapturedImage {
+        let start = ProcessInfo.processInfo.systemUptime
         guard await requestAccess() else { throw CameraError.denied }
 
         let session = AVCaptureSession()
@@ -148,19 +211,32 @@ public enum Camera {
         session.addInput(input)
         session.addOutput(output)
         session.commitConfiguration()
+        let configured = ProcessInfo.processInfo.systemUptime
 
+        // Synchrone, et **à froid à chaque photo** faute d'aperçu : capteur mis
+        // sous tension, chaîne de traitement configurée, tampons alloués. C'est
+        // le terme que la question de propriété de session ferait disparaître
+        // (`docs/acquisition-et-liaisons.md` §2), d'où la borne posée ici — un
+        // coût qu'on prétend supprimer se mesure d'abord.
         session.startRunning()
         defer { session.stopRunning() }
+        let running = ProcessInfo.processInfo.systemUptime
 
         // La session met un instant à converger (exposition, mise au point).
         // Déclencher immédiatement rend une image noire sur certains
         // appareils — ce n'est pas une erreur, juste une photo inutilisable.
         try? await Task.sleep(nanoseconds: 400_000_000)
+        let armed = ProcessInfo.processInfo.systemUptime
 
         let settings = AVCapturePhotoSettings(
             format: [AVVideoCodecKey: format.codec]
         )
-        let delegate = PhotoDelegate(format: format)
+        let delegate = PhotoDelegate(
+            format: format,
+            stamps: SessionStamps(
+                start: start, configured: configured, running: running, armed: armed
+            )
+        )
         return try await withCheckedThrowingContinuation { continuation in
             delegate.continuation = continuation
             // Le délégué n'est pas retenu par AVFoundation : sans cette
@@ -172,19 +248,37 @@ public enum Camera {
         }
     }
 
+    /// Les bornes déjà connues au moment d'armer le délégué.
+    ///
+    /// Groupées plutôt que passées à la file : quatre `TimeInterval`
+    /// positionnels de suite, dont deux diffèrent de 400 ms, se seraient
+    /// intervertis sans que rien ne le signale — et une décomposition fausse
+    /// est pire que pas de décomposition du tout.
+    private struct SessionStamps {
+        let start, configured, running, armed: TimeInterval
+    }
+
     private final class PhotoDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         private let lock = NSLock()
         private var pending: CheckedContinuation<CapturedImage, Error>?
         var retain: PhotoDelegate?
-        private var shutterUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+        private let stamps: SessionStamps
+        private var shutterUptime: TimeInterval
 
         /// Le format demandé au pipeline, reporté tel quel dans le résultat :
         /// c'est ce qui interdit à `media[3]` de diverger du codec réellement
         /// utilisé.
         private let format: CaptureFormat
 
-        init(format: CaptureFormat) {
+        init(format: CaptureFormat, stamps: SessionStamps) {
             self.format = format
+            self.stamps = stamps
+            // Repli si le rappel d'obturateur n'arrive pas : l'instant
+            // d'armement est **antérieur** à toute photo possible, donc
+            // `media[6]` se trouve surestimé et jamais l'inverse. Une latence
+            // trop haute fait rejeter à tort, ce qui se voit ; une latence
+            // sous-estimée laisserait passer, ce qui ne se voit pas.
+            self.shutterUptime = stamps.armed
         }
 
         var continuation: CheckedContinuation<CapturedImage, Error>? {
@@ -245,6 +339,10 @@ public enum Camera {
                 finish(.failure(CameraError.noData))
                 return
             }
+            // Borne posée **après** l'extraction, pas à l'entrée du rappel :
+            // c'est l'instant où les octets existent, et donc le coût réel que
+            // paierait un format plus lourd.
+            let delivered = ProcessInfo.processInfo.systemUptime
             let dimensions = photo.resolvedSettings.photoDimensions
             finish(
                 .success(
@@ -252,7 +350,14 @@ public enum Camera {
                         bytes: data,
                         format: format,
                         pixelSize: (width: Int(dimensions.width), height: Int(dimensions.height)),
-                        shutterUptime: shutterUptime
+                        timings: CaptureTimings(
+                            start: stamps.start,
+                            configured: stamps.configured,
+                            running: stamps.running,
+                            armed: stamps.armed,
+                            shutter: shutterUptime,
+                            delivered: delivered
+                        )
                     )
                 )
             )

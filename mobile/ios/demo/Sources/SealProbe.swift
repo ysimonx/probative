@@ -190,6 +190,18 @@ enum SealProbe {
                 media = acquired
             }
             ok("charge utile     \(sealed.payloadBytes.count) octets")
+            // **Le seul chiffre de latence qui se compare à un seuil.** Toutes
+            // les autres durées de ce journal sont du temps mural : elles
+            // disent où passe le temps, pas ce que le vérificateur note. Les
+            // avoir confondues a fait tenir pour mince une marge jamais lue.
+            //
+            // L'origine diffère selon le profil, et le dire évite de relire ce
+            // nombre comme une durée de photo : en `capture` c'est l'obturateur,
+            // en `core` l'entrée dans `seal()` — le cœur ignorant l'âge d'octets
+            // qu'on lui remet, il ne peut rien mesurer de plus ancien.
+            let origin = mode == .capture ? "obturateur" : "remise des octets"
+            ok("media[6]         \(sealed.signLatencyMs) ms depuis \(origin) — "
+                + "seul chiffre confronte au seuil")
             ok("defi R1          \(sealed.challenge.base64EncodedString())")
             ok("enveloppe        \(sealed.bytes.count) octets")
 
@@ -240,6 +252,14 @@ enum SealProbe {
         let image = try await Camera.capture(format: captureFormat)
         ok("capture          \(since(start)) — \(image.bytes.count) octets, "
             + "\(image.pixelSize.width)x\(image.pixelSize.height), \(image.format.mimeType)")
+        // Sans cette ligne, une variation d'une demi-seconde entre deux
+        // campagnes identiques reste inattribuable — c'est exactement ce qui
+        // s'est produit entre le 13 et le 15 août. La barre marque l'obturateur :
+        // à sa gauche, du coût client ; à sa droite, seul, ce que `media[6]`
+        // mesure.
+        let t = image.timings
+        ok("                 config \(t.configureMs) + session \(t.startupMs) + garde "
+            + "\(t.settleMs) + 3A \(t.shutterLagMs) │obturateur│ encodage \(t.encodeMs) ms")
 
         let claims = await claimsTask
         ok("corroboration    \(since(start)) cumule — "
