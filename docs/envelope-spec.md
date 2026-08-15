@@ -533,13 +533,6 @@ dépôt veut qu'une option puisse resserrer, jamais desserrer un angle mort assu
 mécanique de mesure existant désormais, cet ADR se réduirait à trancher si la largeur seule
 suffit à noter `time`, le drapeau `offline` devenant redondant.
 
-Un fait de plateforme borne d'avance l'intérêt de la manœuvre : **le lot ne débloque que
-iOS.** Une assertion App Attest se produit dans la Secure Enclave, sans réseau, donc un
-scellement réellement hors ligne y est possible ; côté Android le jeton Play Integrity
-s'obtient auprès des serveurs de Google **par enveloppe**, si bien qu'une série hors ligne
-échouerait un pas après le nonce, faute de preuve de fraîcheur. C'est le pendant, côté
-client, de l'asymétrie de vérification décrite plus haut.
-
 **Sur l'horodatage, la formulation compte plus que la décision.** La propriété `time` est déjà solidement établie par le nonce, qui donne un **encadrement bilatéral** : la charge utile le contient et il est imprévisible, donc la capture est postérieure à son émission ; le serveur l'a reçue avant son expiration, donc elle lui est antérieure. Un jeton RFC 3161 ne resserre aucune de ces deux bornes — il prouve seulement qu'une donnée existait au plus tard à tel instant. **En sécurité pure, il n'apporte rien.**
 
 Ce qu'il apporte est sur un autre axe : l'encadrement du nonce repose sur l'horloge et les journaux de *votre propre serveur*, une preuve que vous vous fabriquez à vous-même, alors qu'un jeton délivré par un tiers accrédité se vérifie sans avoir à vous faire confiance. C'est une propriété **probatoire, pas sécuritaire**.

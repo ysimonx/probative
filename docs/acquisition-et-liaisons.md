@@ -183,13 +183,7 @@ longévité — ce que le plafond actuel ne distingue pas, puisqu'il porte sur u
 sur une largeur. La question est ouverte en spec § 9 ; elle n'appartient pas à ce document,
 qui n'a qu'à en connaître la conclusion.
 
-**Ce qui appartient à ce document, en revanche :** le lot ne débloquerait qu'iOS. Côté
-Android, chaque enveloppe exige un jeton Play Integrity obtenu auprès de Google, si bien
-qu'une série hors ligne s'arrêterait un pas après le nonce. Concevoir la série autour d'un
-lot reviendrait à concevoir une fonctionnalité qui ne fonctionne que sur une plateforme —
-ce que l'invariant 4 déconseille précisément.
-
-**D'où la forme à privilégier, qui ne demande aucun changement de spec : un nonce d'avance.**
+**La forme à privilégier ne demande aucun changement de spec : un nonce d'avance.**
 Le récupérer pendant que l'opérateur cadre la prise suivante. Il ne faut alors pas du réseau
 *à l'obturateur*, seulement dans les secondes autour — ce qui couvre le réseau intermittent,
 c'est-à-dire l'essentiel des situations de terrain. Encadrement serré conservé, `STANDARD`
@@ -238,7 +232,7 @@ promettre une cadence**. Enfin l'échauffement, sur une session qui dure des min
 | Traitement du zoom numérique | **Ouvert** — `claim`, ou angle mort nommé |
 | Identité de l'objectif si le zoom optique s'ouvre | Ouvert, lié à l'inconnue n° 5 |
 | Série de captures : même remaniement que l'aperçu | Constat, dépend de la même décision |
-| Un nonce d'avance plutôt qu'un lot | Proposé — sans changement de spec, et marche sur les deux plateformes |
+| Un nonce d'avance plutôt qu'un lot | Proposé — sans changement de spec |
 | Lot de session noté à la largeur, non au drapeau | **Ouvert en spec § 9** — desserrage, donc ADR |
 | Niveau visé par une série hors ligne | **Ouvert** — exigence, pas technique |
 | Le chaînage prend son sens dans une série | Constat, instruirait l'inconnue n° 3 |

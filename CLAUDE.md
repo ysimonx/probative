@@ -414,9 +414,7 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    drapeau. Un test épingle ce cas.
 
    Née de la question de la série de captures (`docs/acquisition-et-liaisons.md` §4), mais
-   elle n'en dépend pas : le trou existait indépendamment de toute série. À noter que le
-   lot ne débloquerait qu'iOS — côté Android, le jeton Play Integrity par enveloppe rend
-   une série hors ligne impossible un pas plus loin.
+   elle n'en dépend pas : le trou existait indépendamment de toute série.
 
 ### Deux chantiers ouverts, aucun bloqué
 
