@@ -572,8 +572,18 @@ public class MainActivity : ComponentActivity() {
             profil = result.getString("profile"),
             niveau = result.getString("level"),
             motif = result.getString("level_reason"),
+            // Le grade **et** son evidence. Le grade seul disait « origin B »
+            // sans dire pourquoi ; or c'est dans l'evidence que se lit ce que
+            // Google a réellement établi sur cette photo-là — `app-recognized`
+            // pour le binaire, `play-integrity:r1-bound` pour la liaison à
+            // cette charge utile.
             proprietes = proprietes.keys().asSequence().map {
-                "%-10s %s".format(it, proprietes.getJSONObject(it).getString("grade"))
+                val propriete = proprietes.getJSONObject(it)
+                "%-10s %s  %s".format(
+                    it,
+                    propriete.getString("grade"),
+                    propriete.optString("evidence"),
+                )
             }.toList(),
             drapeaux = result.getJSONArray("flags").let {
                 if (it.length() == 0) "aucun" else it.join(", ")
