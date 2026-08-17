@@ -402,37 +402,41 @@ survit pas au poste ne vaut rien.
    comme « le signal le plus rentable des deux plateformes », est simplement
    indisponible sur cet appareil. Toute calibration devra en tenir compte.
 
-   **L'aperçu dégrade la prise sur cet appareil — résultat inverse de
-   l'attendu, mesuré le 2026-08-17.** Le viseur de la 0.2.0 garde la session
-   ouverte ; le capteur est donc sous tension et convergé au déclenchement, et
-   l'on attendait une convergence 3A plus courte.
+   **L'aperçu divise la convergence par six — mesuré le 2026-08-17, après une
+   première mesure fausse qu'il faut savoir avoir faite.**
 
-   | | Session neuve (3 prises) | Aperçu vivant (2 prises) |
-   |---|---|---|
-   | cadrage | 2–6 ms | 38 425 / 71 622 ms |
-   | **3A** | 1 110 – 1 528 ms | **5 154 / 5 982 ms** |
-   | photo (appel → octets) | 1 164 – 1 461 ms | 5 207 / 6 038 ms |
-   | `media[6]` | 69 – 103 ms | 60 / 63 ms |
+   | | Session neuve | Bascule d'écran *(faussé)* | Aperçu, écran stable |
+   |---|---|---|---|
+   | cadrage | 2–6 ms | 38 s / 72 s | 16 s / 19 s / 21 s |
+   | **3A** | 1 110 – 1 528 ms | 5 154 / 5 982 ms | **189 / 205 / 526 ms** |
+   | photo (appel → octets) | 1 164 – 1 461 ms | 5 207 / 6 038 ms | **271 / 347 / 671 ms** |
+   | `media[6]` | 69 – 103 ms | 60 / 63 ms | 96 / 151 / 157 ms |
 
-   La prise passe de ~1,3 s à ~5,6 s. Le journal système donne la piste :
-   `Camera2-FrameProcessorBase: Error waiting for new frames: Connection timed
-   out (-110)`, répété. Sur une tablette d'entrée de gamme, faire tourner
-   `Preview` et `ImageCapture` ensemble sature vraisemblablement le pipeline —
-   et `CAPTURE_MODE_MAXIMIZE_QUALITY` impose en plus une séquence de
-   pré-capture complète.
+   **La colonne du milieu est un artefact de mesure, pas un résultat.** La
+   version 0.2.0 basculait sur l'écran de résultat après le déclenchement :
+   `setContentView` retirait la `PreviewView` de la fenêtre et détruisait la
+   surface d'aperçu *pendant* la capture. Les `Camera2-FrameProcessorBase:
+   Error waiting for new frames` venaient de là. La conclusion « l'aperçu
+   dégrade la prise », consignée puis retirée le jour même, était donc une
+   propriété de l'écran de démonstration, pas de l'acquisition.
 
-   **Trois précautions avant d'en tirer une règle** : un seul appareil, le pire
-   cas assumé, et deux prises contre trois. Ce n'est pas une loi, c'est un
-   signal — et il suffit à interdire de présenter l'aperçu comme un gain de
-   latence tant qu'il n'est pas mesuré ailleurs.
+   La leçon de méthode est la même qu'aux §7 et §8.7 de
+   `play-integrity-service-account.md` : un instrument qui perturbe la mesure
+   se prend pour la mesure. Ici c'est l'utilisateur qui l'a vu — « le flux
+   s'arrête quand je clique » — pas l'analyse.
 
-   **Le levier à essayer est `CAPTURE_MODE_MINIMIZE_LATENCY`**, non testé. Il
-   échange de la qualité contre du délai, ce qui touche ADR-0007 : à instruire,
-   pas à basculer en passant.
+   Ce qui tient sans réserve : **`media[6]` ne dépend pas de l'aperçu**. Il
+   monte un peu en prises rapprochées (96–157 ms, l'encodage passant de 82 à
+   145 ms), et reste à vingt fois sous le seuil.
 
-   Ce qui tient, en revanche : **`media[6]` ne bouge pas** (60–103 ms sur les
-   cinq prises, médiane 72). Il ne devait pas bouger, il n'a pas bougé. La
-   dispersion est désormais rendue par la démonstration elle-même.
+   **Play Integrity bride une série rapide.** Cinq campagnes en vingt secondes
+   ont suffi : `Standard Integrity API error (-8) — too many requests […]
+   throttled, or exceeded its daily request quota`, puis huit échecs d'affilée.
+   Le serveur, lui, répondait 200 à tout : rien de cassé côté format. C'est la
+   question de cadence que `acquisition-et-liaisons.md` §4 gardait ouverte
+   pour la série de captures, et elle cesse d'être théorique — **une série
+   Android ne peut pas demander un jeton par prise à cadence libre**. À
+   instruire avec le chaînage, dont elle est le cas d'usage.
 
    Le point de position est venu du fournisseur **`network`** (13 m, âge
    1 892 ms), pas du GNSS — campagne en intérieur. `position` sort tout de même
