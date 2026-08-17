@@ -400,10 +400,18 @@ def grade_time(
 
     # L'ordonnancement vérifié fait passer time en A. iOS l'obtient
     # gratuitement via le compteur d'assertion, Android par chaînage.
+    #
+    # **Deux conditions indépendantes, et non une alternative.** Un `elif`
+    # taisait le chaînage dès que le compteur était présent — donc toujours sur
+    # iOS. Or les deux faits ne se recouvrent pas : le compteur ne rejette
+    # qu'une régression, et un saut de 3 à 5 passe. **Le retrait d'une
+    # enveloppe est invisible au compteur seul**, et c'est précisément ce que la
+    # chaîne établit. Taire l'un parce que l'autre suffit à donner le grade
+    # revient à perdre une propriété dans le rapport.
     if counter_verified:
         r.grade = Grade.A
         r.evidence.append("assertion-counter-monotonic")
-    elif chain_verified:
+    if chain_verified:
         r.grade = Grade.A
         r.evidence.append("envelope-chain-verified")
 

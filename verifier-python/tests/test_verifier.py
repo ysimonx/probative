@@ -723,6 +723,57 @@ def test_compteur_signe_fait_foi_pour_lordonnancement(nonces, key):
     assert "assertion-counter-monotonic" in res.properties[Property.TIME].evidence
 
 
+def test_compteur_et_chaine_sont_rapportes_ensemble(nonces, key):
+    """Les deux faits coexistent, et taire l'un serait perdre une propriété.
+
+    Un `elif` ne rapportait que le compteur dès qu'il était présent — donc
+    toujours sur iOS, où la chaîne devenait invisible. Or les deux ne se
+    recouvrent pas : le compteur ne rejette qu'une **régression**, et un saut de
+    3 à 5 passe. Le **retrait** d'une enveloppe n'est donc vu que par la chaîne.
+
+    Constaté sur iPhone 16 le 2026-08-17 : deux enveloppes chaînées, chaîne
+    vérifiée côté serveur, et rien dans l'evidence ne le disait.
+    """
+    attestation = _CounterVerifier(4)
+    v = _ios_verifier(nonces, key, attestation, counter=3)
+    # La première enveloppe pose le maillon que la seconde chaînera.
+    premier = _issue(nonces, key)
+    env1 = sign_envelope(
+        key,
+        make_payload(nonce=premier, platform="ios", media_digest=MEDIA_DIGEST),
+        nonce=premier,
+        counter=4,
+        freshness_kind="app-attest",
+    )
+    v.verify(env1, media_bytes=MEDIA)
+
+    # Le compteur doit avancer, sans quoi la seconde enveloppe serait rejetée
+    # pour régression avant même d'atteindre le contrôle de chaîne.
+    attestation._counter = 5
+    second = _issue(nonces, key)
+    env2 = sign_envelope(
+        key,
+        make_payload(
+            nonce=second,
+            platform="ios",
+            media_digest=MEDIA_DIGEST,
+            prev_digest=hashlib.sha256(env1).digest(),
+        ),
+        nonce=second,
+        counter=5,
+        freshness_kind="app-attest",
+    )
+
+    res = v.verify(env2, media_bytes=MEDIA)
+
+    evidence = res.properties[Property.TIME].evidence
+    assert "assertion-counter-monotonic" in evidence
+    assert "envelope-chain-verified" in evidence, (
+        "la chaîne a été vérifiée mais rien ne le rapporte"
+    )
+    assert res.properties[Property.TIME].grade is Grade.A
+
+
 def test_s3_compteur_assertion_en_regression(nonces, key):
     devices = InMemoryDeviceStore()
     devices.enroll(

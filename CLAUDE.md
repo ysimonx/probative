@@ -108,7 +108,7 @@ C'est leur seule raison d'être — ne rien y loger qui appartienne au cœur.
 cd verifier-python
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest              # 216 tests doivent passer
+pytest              # 217 tests doivent passer
 ruff check .
 mypy src
 ```
@@ -225,7 +225,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 |---|---|
 | Modèle de menace, spec d'enveloppe, ADR | Rédigés |
 | Noyau et profils (ADR-0005) | **Fait de bout en bout** : spec §2.5, CDDL, vérificateur, vecteurs, et les deux cœurs natifs |
-| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 216 tests au vert |
+| Vérificateur Python, pipeline étapes 1–10 | Fonctionnel, 217 tests au vert |
 | `AppAttestVerifier` — **phase D faite** | Attestation d'enrôlement validée **jusqu'à la racine publiée par Apple**, assertion validée par enveloppe. Éprouvé contre le vecteur iPhone 16 réel, 26 tests |
 | `PlayIntegrityVerifier` — **phase B faite** | Jeton déchiffré par `decodeIntegrityToken`, `requestHash` recalculé et confronté, verdicts traduits. Chaîne d'attestation de clé ancrée à la racine Google (`key_attestation.py`). 35 tests |
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
