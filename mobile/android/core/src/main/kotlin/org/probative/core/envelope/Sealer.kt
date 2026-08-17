@@ -2,13 +2,17 @@ package org.probative.core.envelope
 
 import android.content.Context
 import android.os.SystemClock
+import org.probative.core.capture.CapturedImage
 import org.probative.core.cbor.Cbor
 import org.probative.core.cose.Cose
 import org.probative.core.freshness.FreshnessSource
 import org.probative.core.keys.KeystoreKeys
+import org.probative.core.payload.CapturePayload
+import org.probative.core.payload.Claim
 import org.probative.core.payload.CorePayload
 import org.probative.core.payload.DeviceState
 import org.probative.core.payload.Media
+import org.probative.core.payload.Position
 import java.security.MessageDigest
 
 /**
@@ -113,16 +117,90 @@ class Sealer(
             posture = posture,
             prevDigest = prevDigest,
         )
+        return finir(payload, CorePayload.PROFILE, nonce, mediaDigest, latencyMs)
+    }
+
+    /**
+     * Scelle une image **acquise par le cœur**, avec ses mesures — profil
+     * `capture`.
+     *
+     * Séparé de l'acquisition elle-même pour qu'une sonde puisse rapporter
+     * chaque étape sans réimplémenter l'assemblage. **Et non pour offrir un
+     * chemin où un appelant fournirait ses propres octets en profil
+     * `capture`** : ce chemin-là est [seal] avec un contenu remis, et il
+     * produit `core`. La distinction est tout le sujet d'ADR-0008 — le profil
+     * n'affirme que ce que le cœur a observé.
+     *
+     * [position] est obligatoire, le profil l'exige. [claims] peut être vide,
+     * mais une position sans corroboration se fait dégrader : le vérificateur
+     * n'a alors rien pour la confronter.
+     */
+    fun seal(
+        image: CapturedImage,
+        position: Position,
+        claims: List<Claim>,
+        nonce: ByteArray,
+        prevDigest: ByteArray? = null,
+    ): SealedEnvelope {
+        val mediaDigest = sha256(image.bytes)
+        val timing = DeviceState.timing(context)
+        val posture = DeviceState.posture(context, appVersion)
+
+        // **L'origine est l'obturateur, pas l'entrée dans cette méthode.**
+        // C'est là seulement que `media[6]` discrimine une injection, en
+        // mesurant le temps réellement passé entre capteur et charge utile.
+        // Compter depuis l'entrée ici mesurerait le scellement, qui ne prouve
+        // rien : il est rapide même quand les octets viennent d'ailleurs.
+        val latencyMs = SystemClock.elapsedRealtime() - image.shutterElapsedMs
+        require(latencyMs >= 0) { "obturateur postérieur au scellement" }
+
+        val payload = CapturePayload.build(
+            nonce = nonce,
+            media = Media(
+                digest = mediaDigest,
+                // Le type vient du format réellement encodé, jamais d'un
+                // littéral posé ici : deux sources se seraient contredites en
+                // silence, et l'enveloppe aurait porté un type faux mais signé
+                // (ADR-0007 point 3).
+                mimeType = image.format.mimeType,
+                sizeBytes = image.bytes.size.toLong(),
+                signLatencyMs = latencyMs,
+                pixelWidth = image.pixelWidth,
+                pixelHeight = image.pixelHeight,
+            ),
+            position = position,
+            timing = timing,
+            posture = posture,
+            claims = claims,
+            prevDigest = prevDigest,
+        )
+        return finir(payload, CapturePayload.PROFILE, nonce, mediaDigest, latencyMs)
+    }
+
+    /**
+     * Encodage, règle R1, jeton et signature — communs aux deux profils.
+     *
+     * **R1 ne vit qu'ici**, et c'est délibéré : deux copies du calcul du défi
+     * finiraient par diverger, et l'invariant 2 ne se rattrape pas d'un côté
+     * quand l'autre a glissé.
+     */
+    private fun finir(
+        payload: Map<Int, Any>,
+        profile: String,
+        nonce: ByteArray,
+        mediaDigest: ByteArray,
+        latencyMs: Long,
+    ): SealedEnvelope {
         val payloadBytes = Cbor.encode(payload)
 
         // Règle R1, non négociable : le défi vaut exactement
         // SHA-256(payload_bytes ‖ nonce), sur les octets encodés et jamais
-        // sur une réencodage de la structure.
+        // sur un réencodage de la structure.
         val challenge = sha256(payloadBytes + nonce)
         val token = freshness.token(challenge)
 
         val protectedBytes =
-            Cose.protectedHeader(KeystoreKeys.kid(keyAlias), deployment, CorePayload.PROFILE)
+            Cose.protectedHeader(KeystoreKeys.kid(keyAlias), deployment, profile)
         val signature =
             KeystoreKeys.signRaw(keyAlias, Cose.sigStructure(protectedBytes, payloadBytes))
 

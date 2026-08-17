@@ -61,19 +61,42 @@ class Media(
     val mimeType: String,
     val sizeBytes: Long,
     val signLatencyMs: Long,
+    /** Dimensions (label 5) — médium spatial. Absentes du noyau. */
+    val pixelWidth: Int? = null,
+    val pixelHeight: Int? = null,
+    /** Durée (label 7) — médium temporel. Absente du noyau. */
+    val durationMs: Long? = null,
 ) {
+    /**
+     * Le profil `capture` exige l'un **ou** l'autre, jamais les dimensions
+     * seules : un son a une durée, une image des dimensions, une vidéo les
+     * deux. C'est cette disjonction qui fait tenir l'audio dans ce profil sans
+     * lui ouvrir un profil à lui.
+     */
+    internal val describesMedium: Boolean
+        get() = (pixelWidth != null && pixelHeight != null) || durationMs != null
+
     internal fun toCbor(): Map<Int, Any> {
         require(digest.size == 32) { "empreinte SHA-256 de 32 octets attendue" }
         require(mimeType.isNotBlank()) { "type MIME vide" }
         require(sizeBytes >= 0) { "taille négative" }
         require(signLatencyMs >= 0) { "latence négative" }
-        return mapOf(
+        val media = mutableMapOf<Int, Any>(
             1 to "sha-256",
             2 to digest,
             3 to mimeType,
             4 to sizeBytes,
             6 to signLatencyMs,
         )
+        if (pixelWidth != null && pixelHeight != null) {
+            require(pixelWidth > 0 && pixelHeight > 0) { "dimensions nulles" }
+            media[5] = listOf(pixelWidth, pixelHeight)
+        }
+        if (durationMs != null) {
+            require(durationMs >= 0) { "durée négative" }
+            media[7] = durationMs
+        }
+        return media
     }
 }
 
