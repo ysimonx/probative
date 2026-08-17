@@ -921,8 +921,11 @@
         casser la chaîne. À noter, l'ordre impose que la latence inscrite dans la charge utile se
         referme à l'étape 11 — <em>avant</em> l'aller-retour d'attestation et avant la signature
         réelle. C'est bien la fenêtre utile à surveiller, celle où une caméra virtuelle
-        s'intercalerait, mais l'écart avec le nom du champ (« capture → signature ») est à trancher
-        pendant le spike natif.
+        s'intercalerait. <b>Le spike a tranché l'écart avec le nom du champ</b> : la latence court
+        de l'<em>obturateur</em> à la sérialisation, et rien de ce qui précède l'obturateur n'y
+        entre. Mesurée le 17 août 2026 sur tablette d'entrée de gamme : 97 ms, quand la prise de
+        vue complète en demandait 2 092 — dont 1 528 de convergence autofocus, entièrement en
+        amont. Confondre les deux se trompait d'un facteur 21.
       </figcaption>
     </figure>
 
@@ -1691,10 +1694,43 @@
             Apache-2.0. Les seules requêtes sortantes vont à Google ou Apple.
           </p>
           <div class="faq-note">
-            À ne pas confondre avec le serveur de développement fourni : stockages en mémoire,
-            enrôlement qui accepte la clé sans valider sa chaîne d'attestation, et substitut
-            d'attestation par défaut. Il donne aux appareils réels une cible HTTP pendant le
-            spike — il n'a jamais eu vocation à tourner en production.
+            À ne pas confondre avec le serveur de développement fourni : stockages en mémoire, et
+            substitut d'attestation quand rien n'est configuré. Il donne aux appareils réels une
+            cible HTTP pendant le spike — il n'a jamais eu vocation à tourner en production. Son
+            enrôlement valide en revanche bien la chaîne d'attestation jusqu'à la racine publiée
+            par Google, et il annonce au démarrage s'il tourne en attestation réelle ou sur
+            substitut : un serveur qui retomberait en silence sur le substitut ferait croire à des
+            campagnes qui ne prouvent rien.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Peut-on afficher un aperçu de la caméra avant de déclencher ?</div>
+        <div class="faq-a">
+          <p>
+            Oui, et l'application hôte garde la main sur tout ce qui se voit. La règle tient en une
+            phrase : <strong>le cœur possède la caméra, l'application possède l'écran.</strong>
+          </p>
+          <p>
+            Le cœur ouvre le capteur, le configure, déclenche et horodate l'obturateur. L'application
+            écrit la vue, sa taille, sa place, le cadrage, les superpositions et le bouton
+            déclencheur. Elle ne dessine pas <em>à travers</em> le cœur : elle branche sa propre vue
+            d'aperçu sur la session que le cœur détient.
+          </p>
+          <p>
+            La seule chose qu'elle ne fait pas, c'est <strong>ouvrir sa propre session caméra</strong>.
+            Deux sessions concurrentes se disputent le capteur, et c'est le mode de défaillance de
+            toute intégration naïve — utiliser une bibliothèque d'aperçu d'un côté et le cœur de
+            l'autre.
+          </p>
+          <div class="faq-note">
+            Pourquoi de ce côté-là : le profil <span class="m">capture</span> n'affirme qu'une
+            chose — le cœur a <em>observé</em> l'acquisition. Si l'application possédait la session,
+            elle choisirait la sortie et le format, et le cœur signerait des octets dont il n'a pas
+            vu la naissance. Qui veut vraiment posséder sa caméra passe par le scellement d'octets
+            remis et obtient le profil noyau : une preuve plus étroite, correctement nommée. Voir
+            ADR-0008.
           </div>
         </div>
       </div>
@@ -1813,16 +1849,26 @@
     </div>
 
     <div class="prose">
-      <h3>Prochaine étape : le spike d'attestation natif</h3>
+      <h3>Où en est le spike d'attestation natif</h3>
       <p>
-        Kotlin et Swift en parallèle, avec une cible précise et vérifiable : produire une
-        enveloppe que <span class="m">pytest</span> accepte.
+        Kotlin et Swift en parallèle, avec une cible précise et vérifiable : produire, depuis un
+        appareil réel, une enveloppe que <span class="m">pytest</span> accepte — avec la validation
+        d'attestation véritable, pas un substitut.
       </p>
-      <p>Deux inconnues devaient être levées, l'une comme l'autre susceptible de forcer une révision de la spécification. Elles ont été instruites sur matériel réel le 11 août 2026 :</p>
+      <p>
+        <b>Cible atteinte sur les deux plateformes</b> : iPhone 16 le 13 août 2026, tablette
+        Samsung d'entrée de gamme le 17. Les deux ont désormais une <strong>photo réelle sous le
+        sceau</strong>, jugée en profil <span class="m">capture</span>.
+      </p>
       <ul class="plain">
-        <li><strong>La contrainte de taille du <span class="m">requestHash</span> — levée.</strong> Encodé en base64url sans bourrage, le condensat de 32 octets donne 43 caractères pour un plafond documenté à 500. Il passe tel quel : aucun niveau d'indirection n'est nécessaire. Reste à confirmer que Play restitue la chaîne intacte, ce qui suppose de déchiffrer un jeton — donc le vérificateur serveur.</li>
-        <li><strong>La latence capture→signature — déplacée.</strong> La preuve de fraîcheur ne coûte presque rien : 36 à 39 ms sur une tablette d'entrée de gamme, 18 ms sur iPhone 16. Ce n'est donc pas l'attestation qui décidera de l'exploitabilité du champ, mais la capture photographique elle-même, encore à mesurer.</li>
+        <li><strong>Apple et Google ont signé, et on l'a vérifié.</strong> Les deux chaînes d'attestation remontent jusqu'à la racine que le constructeur publie — pas seulement jusqu'à une chaîne cohérente avec elle-même, qui se fabrique. Côté Google, un jeton Play Integrity réel a été déchiffré et le condensat qu'il rapporte vaut exactement celui recalculé côté serveur : la règle R1 tient de bout en bout.</li>
+        <li><strong>La latence n'est pas le problème qu'on croyait.</strong> La preuve de fraîcheur ne coûte presque rien — 36 à 39 ms sur la tablette, 18 sur l'iPhone. Et le champ noté ne mesure que la part <em>postérieure à l'obturateur</em> : 97 ms sur la tablette, contre un seuil à 3 000. La prise de vue complète en demande 2 092, mais l'essentiel est de la convergence autofocus, en amont, qui n'y entre pas. La marge est large ; elle avait longtemps été crue mince faute de mesurer la bonne grandeur.</li>
+        <li><strong>Le niveau plafonne, et pour des raisons connues.</strong> Sur les deux plateformes, la provenance ne dépasse pas B tant que la recapture analogique n'est pas détectée — photographier un écran reste indétectable en v0.1, c'est un angle mort assumé. Côté Android l'instant plafonne aussi, faute de chaînage entre enveloppes successives.</li>
       </ul>
+      <p>
+        Reste à clore : le chaînage, la calibration des seuils sur des mesures réelles plutôt que
+        devinées, et le gel de la spécification.
+      </p>
     </div>
   </section>
 
