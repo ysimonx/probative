@@ -402,6 +402,38 @@ survit pas au poste ne vaut rien.
    comme « le signal le plus rentable des deux plateformes », est simplement
    indisponible sur cet appareil. Toute calibration devra en tenir compte.
 
+   **L'aperçu dégrade la prise sur cet appareil — résultat inverse de
+   l'attendu, mesuré le 2026-08-17.** Le viseur de la 0.2.0 garde la session
+   ouverte ; le capteur est donc sous tension et convergé au déclenchement, et
+   l'on attendait une convergence 3A plus courte.
+
+   | | Session neuve (3 prises) | Aperçu vivant (2 prises) |
+   |---|---|---|
+   | cadrage | 2–6 ms | 38 425 / 71 622 ms |
+   | **3A** | 1 110 – 1 528 ms | **5 154 / 5 982 ms** |
+   | photo (appel → octets) | 1 164 – 1 461 ms | 5 207 / 6 038 ms |
+   | `media[6]` | 69 – 103 ms | 60 / 63 ms |
+
+   La prise passe de ~1,3 s à ~5,6 s. Le journal système donne la piste :
+   `Camera2-FrameProcessorBase: Error waiting for new frames: Connection timed
+   out (-110)`, répété. Sur une tablette d'entrée de gamme, faire tourner
+   `Preview` et `ImageCapture` ensemble sature vraisemblablement le pipeline —
+   et `CAPTURE_MODE_MAXIMIZE_QUALITY` impose en plus une séquence de
+   pré-capture complète.
+
+   **Trois précautions avant d'en tirer une règle** : un seul appareil, le pire
+   cas assumé, et deux prises contre trois. Ce n'est pas une loi, c'est un
+   signal — et il suffit à interdire de présenter l'aperçu comme un gain de
+   latence tant qu'il n'est pas mesuré ailleurs.
+
+   **Le levier à essayer est `CAPTURE_MODE_MINIMIZE_LATENCY`**, non testé. Il
+   échange de la qualité contre du délai, ce qui touche ADR-0007 : à instruire,
+   pas à basculer en passant.
+
+   Ce qui tient, en revanche : **`media[6]` ne bouge pas** (60–103 ms sur les
+   cinq prises, médiane 72). Il ne devait pas bouger, il n'a pas bougé. La
+   dispersion est désormais rendue par la démonstration elle-même.
+
    Le point de position est venu du fournisseur **`network`** (13 m, âge
    1 892 ms), pas du GNSS — campagne en intérieur. `position` sort tout de même
    en A : la précision est bien sous le seuil, et l'indicateur de position
