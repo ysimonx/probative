@@ -149,7 +149,9 @@ struct ProbeView: View {
             let entete = "autorisations    \(permissions.summary)"
             print("[probe] \(entete)")
 
-            let resultat = await SealProbe.run(mode, session: viseur.session)
+            let resultat = await SealProbe.run(
+                mode, session: viseur.session, capteurs: viseur.capteurs
+            )
             lines = [SealProbe.Line(text: entete, failed: false)] + resultat.lines
             if let prise = resultat.prise {
                 historique.ajouter(prise)

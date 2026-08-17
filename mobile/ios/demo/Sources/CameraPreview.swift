@@ -64,8 +64,18 @@ final class Viseur: ObservableObject {
     @Published private(set) var session: CaptureSession?
     @Published private(set) var echec: String?
 
+    /// Les capteurs, démarrés **avec le viseur** et non à chaque prise.
+    ///
+    /// Toutes les mesures par capture de `Sensors` attendent par construction :
+    /// la corroboration dort 500 ms, l'altimètre jusqu'à 2 s, le point jusqu'à
+    /// 15 s. Lancées au déclenchement, elles survivent à une capture devenue
+    /// rapide et leur excédent tombe dans `media[6]` — 568 ms mesurés le
+    /// 2026-08-17 pour un encodage de 445 ms.
+    private(set) var capteurs: SensorRun?
+
     func ouvrir() async {
         guard session == nil else { return }
+        if capteurs == nil { capteurs = SensorRun.begin() }
         do {
             session = try await CaptureSession.open()
         } catch let described as CustomStringConvertible {
@@ -80,5 +90,8 @@ final class Viseur: ObservableObject {
     func fermer() {
         session?.close()
         session = nil
+        // Une collecte oubliée garde le GPS actif et vide la batterie.
+        capteurs?.stop()
+        capteurs = nil
     }
 }

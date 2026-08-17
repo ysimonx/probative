@@ -153,7 +153,7 @@ public enum Sensors {
 
     /// Horodatage monotone d'une mesure, en millisecondes — l'échelle du
     /// label 3, commune à `timing[2]`.
-    private static var nowMs: Int {
+    internal static var nowMs: Int {
         Int((ProcessInfo.processInfo.systemUptime * 1000).rounded())
     }
 
@@ -431,6 +431,181 @@ private final class LocationDelegate: NSObject, CLLocationManagerDelegate,
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         // Un échec ne doit pas jeter ce qu'on avait déjà obtenu.
         box?.finish(freshest)
+    }
+}
+
+/// Collecte de **campagne** — démarrée avec le viseur, lue à chaque prise.
+///
+/// Les fonctions statiques de ``Sensors`` sont toutes des mesures *par
+/// capture* : chacune crée son gestionnaire, attend, puis s'arrête. Le coût
+/// s'en voit dans le champ noté, parce que la jointure se situe après
+/// l'obturateur — et deux d'entre elles attendent par construction.
+///
+/// **`motionClaim` dort 500 ms**, cinq fois cent millisecondes, quelle que
+/// soit la machine. Avec un aperçu vivant la capture prend 451 ms : la
+/// corroboration survit donc **toujours** à la photo, et son excédent tombe
+/// dans `media[6]`. Ce n'était pas un capteur lent, c'était une somme de
+/// sommeils. Les deux appels à l'altimètre attendent jusqu'à 2 s chacun, et le
+/// point de position jusqu'à 15 s.
+///
+/// Mesuré le 2026-08-17 sur iPhone 16 : 568 ms s'écoulaient entre la livraison
+/// des octets et la sérialisation, pour un encodage de 445 ms — plus de la
+/// moitié du champ noté n'était donc pas du chemin capteur→charge utile.
+///
+/// Ici, tout démarre une fois et continue. Une prise lit ce qui est déjà là.
+public final class SensorRun: @unchecked Sendable {
+
+    private let lock = NSLock()
+    private let location = ContinuousLocation()
+    private let motion = CMMotionManager()
+    private let altimeter = CMAltimeter()
+
+    /// Échantillons d'accélération, en **fenêtre glissante**.
+    ///
+    /// Un plafond sur les premiers échantillons décrirait le début de campagne
+    /// et non la photo — inoffensif sur une collecte d'une demi-seconde, faux
+    /// dès qu'elle vit.
+    private var samples: [(t: TimeInterval, x: Double, y: Double, z: Double)] = []
+    private var pressure: Double?
+    private var pressureAt: TimeInterval = 0
+    private var absoluteAltitude: Double?
+
+    /// Fenêtre de mouvement, alignée sur la convention de la spec §2.4.
+    public static let motionWindow: TimeInterval = 10
+
+    public static func begin() -> SensorRun {
+        let run = SensorRun()
+        run.start()
+        return run
+    }
+
+    private func start() {
+        location.start()
+
+        if motion.isAccelerometerAvailable {
+            motion.accelerometerUpdateInterval = 0.1
+            motion.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
+                guard let self, let data else { return }
+                self.lock.withLock {
+                    self.samples.append(
+                        (data.timestamp, data.acceleration.x, data.acceleration.y, data.acceleration.z)
+                    )
+                    let limite = data.timestamp - Self.motionWindow
+                    self.samples.removeAll { $0.t < limite }
+                    while self.samples.count > 64 { self.samples.removeFirst() }
+                }
+            }
+        }
+
+        altimeter.startRelativeAltitudeUpdates(to: .main) { [weak self] data, _ in
+            guard let self, let data else { return }
+            self.lock.withLock {
+                self.pressure = data.pressure.doubleValue
+                self.pressureAt = ProcessInfo.processInfo.systemUptime
+            }
+        }
+        if #available(iOS 15.0, *), CMAltimeter.isAbsoluteAltitudeAvailable() {
+            altimeter.startAbsoluteAltitudeUpdates(to: .main) { [weak self] data, _ in
+                guard let self, let data else { return }
+                self.lock.withLock { self.absoluteAltitude = data.altitude }
+            }
+        }
+    }
+
+    /// Le point courant, converti par rapport à l'obturateur. `nil` si aucun
+    /// n'est encore arrivé — une omission, jamais une position inventée.
+    public func position(shutterDate: Date) -> Position? {
+        guard let fix = location.freshest else { return nil }
+        return Sensors.position(from: fix, shutterDate: shutterDate)
+    }
+
+    /// Les réclamations, lues sans attendre.
+    ///
+    /// `baro-alt` est en **mètres absolus** et `baro` en hectopascals — les
+    /// unités que la spec §2.4 rend normatives. CoreMotion donne des
+    /// kilopascals, d'où la conversion ici, en un seul endroit.
+    public func claims() -> [Claim] {
+        let (echantillons, hpa, altitude) = lock.withLock {
+            (samples, pressure.map { $0 * 10 }, absoluteAltitude)
+        }
+        var claims: [Claim] = []
+        let now = Sensors.nowMs
+
+        if let altitude {
+            claims.append(Claim(type: "baro-alt", source: "barometer", uptimeMs: now, value: .double(altitude)))
+        }
+        if let hpa {
+            claims.append(Claim(type: "baro", source: "barometer", uptimeMs: now, value: .double(hpa)))
+        }
+        if let origine = echantillons.first?.t, echantillons.count > 1 {
+            claims.append(
+                Claim(
+                    type: "motion", source: "accelerometer", uptimeMs: now,
+                    value: .array(echantillons.map { e in
+                        .array([
+                            .int(Int64(((e.t - origine) * 1000).rounded())),
+                            .double(e.x), .double(e.y), .double(e.z),
+                        ])
+                    })
+                )
+            )
+        }
+        return claims
+    }
+
+    /// Une collecte oubliée garde le GPS actif et vide la batterie.
+    public func stop() {
+        location.stop()
+        motion.stopAccelerometerUpdates()
+        altimeter.stopRelativeAltitudeUpdates()
+        if #available(iOS 15.0, *) { altimeter.stopAbsoluteAltitudeUpdates() }
+    }
+}
+
+/// Position en continu — le pendant long de ``LocationDelegate``.
+///
+/// L'arbitrage est **déjà le bon** dans ce dépôt, et il vaut de le noter :
+/// on garde le point le plus **récent**, jamais le plus précis. Le cœur Android
+/// faisait l'inverse et a dû être corrigé le 2026-08-17 — un point très précis
+/// d'il y a dix minutes y battait un point frais, et l'enveloppe aurait attesté
+/// où l'utilisateur *était*. iOS n'a jamais eu ce défaut.
+private final class ContinuousLocation: NSObject, CLLocationManagerDelegate, @unchecked Sendable {
+
+    private var manager: CLLocationManager?
+    private let lock = NSLock()
+    private var _freshest: CLLocation?
+
+    var freshest: CLLocation? { lock.withLock { _freshest } }
+
+    func start() {
+        DispatchQueue.main.async { [self] in
+            // Créé sur la file principale — sans quoi CoreLocation ne délivre
+            // **jamais** ses rappels : aucune erreur, juste un délai qui
+            // expire. Constaté en C4.2, et c'est le genre de panne qu'on impute
+            // d'abord au GPS.
+            let manager = CLLocationManager()
+            self.manager = manager
+            manager.delegate = self
+            manager.desiredAccuracy = kCLLocationAccuracyBest
+            manager.requestWhenInUseAuthorization()
+            manager.startUpdatingLocation()
+        }
+    }
+
+    func stop() {
+        DispatchQueue.main.async { [self] in manager?.stopUpdatingLocation() }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else { return }
+        lock.withLock {
+            if let known = _freshest, known.timestamp > location.timestamp { return }
+            _freshest = location
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // Un échec ne jette pas ce qui a déjà été obtenu.
     }
 }
 

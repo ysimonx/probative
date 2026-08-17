@@ -124,7 +124,11 @@ enum SealProbe {
     /// - Parameter session: la session de l'aperçu, si l'écran en montre un.
     ///   Absente, l'acquisition ouvre et referme la sienne — le cas éphémère,
     ///   qui repaie la mise sous tension à chaque photo.
-    static func run(_ mode: Mode = .core, session: CaptureSession? = nil) async -> Resultat {
+    static func run(
+        _ mode: Mode = .core,
+        session: CaptureSession? = nil,
+        capteurs: SensorRun? = nil
+    ) async -> Resultat {
         var lines: [Line] = []
         var prise: Prise?
         func ok(_ s: String) {
@@ -214,7 +218,7 @@ enum SealProbe {
                 // rapporter chacune. Un intégrateur, lui, appelle `capture()`.
                 let (envelope, acquired, capturee) = try await acquire(
                     sealer: sealer, nonce: nonce, previousDigest: precedent,
-                    session: session, ok: ok
+                    session: session, capteurs: capteurs, ok: ok
                 )
                 image = capturee
                 sealed = envelope
@@ -387,6 +391,7 @@ enum SealProbe {
         nonce: Data,
         previousDigest: Data?,
         session: CaptureSession?,
+        capteurs: SensorRun?,
         ok: (String) -> Void
     ) async throws -> (SealedEnvelope, Data, CapturedImage) {
         // Position et corroboration courent PENDANT l'acquisition, comme le
@@ -394,9 +399,6 @@ enum SealProbe {
         // `media[6]` de 4,2 s et faisait tomber `origin` à C : mesuré, puis
         // corrigé.
         let start = DispatchTime.now().uptimeNanoseconds
-        async let fixTask = Sensors.location()
-        async let claimsTask = Sensors.claims()
-
         // Sur un aperçu vivant la session est déjà ouverte et convergée : on
         // la réutilise, ce qui retire la mise sous tension du chemin ressenti.
         // Sans aperçu, on retombe sur le cas éphémère.
@@ -417,17 +419,30 @@ enum SealProbe {
         ok("                 config \(t.configureMs) + session \(t.startupMs) + garde "
             + "\(t.settleMs) + 3A \(t.shutterLagMs) │obturateur│ encodage \(t.encodeMs) ms")
 
-        let claims = await claimsTask
-        ok("corroboration    \(since(start)) cumule — "
-            + (claims.isEmpty ? "aucune" : claims.map(\.type).joined(separator: ", ")))
-
-        guard let fix = await fixTask else {
-            throw CaptureError.noPosition
-        }
+        // **Lecture, plus attente.** La collecte court depuis l'ouverture du
+        // viseur : à ce point les mesures sont déjà là, et la moisson ne coûte
+        // rien. Sans collecte partagée on retombe sur les mesures par capture,
+        // qui attendent — et dont l'excédent tombe dans `media[6]`.
         let shutterDate = Date(
             timeIntervalSinceNow: image.shutterUptime - ProcessInfo.processInfo.systemUptime
         )
-        let position = Sensors.position(from: fix, shutterDate: shutterDate)
+        let claims: [Claim]
+        let position: Position
+        if let capteurs {
+            claims = capteurs.claims()
+            guard let releve = capteurs.position(shutterDate: shutterDate) else {
+                throw CaptureError.noPosition
+            }
+            position = releve
+        } else {
+            claims = await Sensors.claims()
+            guard let fix = await Sensors.location() else {
+                throw CaptureError.noPosition
+            }
+            position = Sensors.position(from: fix, shutterDate: shutterDate)
+        }
+        ok("corroboration    \(since(start)) cumule — "
+            + (claims.isEmpty ? "aucune" : claims.map(\.type).joined(separator: ", ")))
         ok("position         \(since(start)) cumule — \(position.provider.rawValue), "
             + String(format: "%.0f m, age %d ms", position.horizontalAccuracy, position.fixAgeMs))
         // Sur iOS, l'absence d'indicateur de position simulée est
