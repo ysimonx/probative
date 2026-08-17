@@ -1,6 +1,5 @@
 package org.probative.demo
 
-import android.app.Activity
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -16,13 +15,17 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.ComponentActivity
 import kotlin.concurrent.thread
 import org.json.JSONObject
+import org.probative.core.capture.Camera
 import org.probative.core.envelope.Sealer
 import org.probative.core.freshness.PlayIntegrity
 import org.probative.core.freshness.PlayIntegrityFreshness
 import org.probative.core.keys.KeystoreKeys
+import org.probative.core.payload.CapturePayload
 import org.probative.core.payload.CorePayload
+import org.probative.core.sensors.Sensors
 
 /**
  * Écran unique de la démonstration — sonde **A4.1** : la boucle complète
@@ -39,11 +42,24 @@ import org.probative.core.payload.CorePayload
  * démonstration doit rester assez pauvre pour qu'on ne soit jamais tenté d'y
  * loger de la logique qui appartient au cœur.
  */
-public class MainActivity : Activity() {
+public class MainActivity : ComponentActivity() {
+
+    /**
+     * Les deux sondes, et ce qui les sépare.
+     *
+     * [SEAL] scelle des octets remis : aucun capteur, profil `core`. [CAPTURE]
+     * acquiert une photo par le cœur : position et corroboration exigées,
+     * profil `capture`, et `origin` plafonné à B par la recapture analogique.
+     *
+     * Chacune son étiquette de journal, parce que les commandes documentées
+     * filtrent dessus et qu'un tampon mêlant les deux se lit mal.
+     */
+    private enum class Probe(val tag: String, val titre: String) {
+        CAPTURE("PROBATIVE_A42", "sonde A4.2 : acquisition photo, profil capture"),
+        SEAL("PROBATIVE_A41", "sonde A4.1 : enveloppe complete, profil core"),
+    }
 
     private companion object {
-        const val TAG = "PROBATIVE_A41"
-
         /** Identifiant de déploiement — celui des vecteurs, pour un dev server. */
         const val DEPLOYMENT = "test-deployment"
 
@@ -64,7 +80,11 @@ public class MainActivity : Activity() {
     private lateinit var permissions: Permissions
     private lateinit var permissionsView: TextView
     private lateinit var action: Button
+    private lateinit var header: TextView
     private val lines = StringBuilder()
+
+    /** La sonde en cours. Fixée au lancement, puis par les boutons. */
+    private var probe = Probe.CAPTURE
 
     /** La sonde ne part qu'une fois, quel que soit le chemin qui y mène. */
     private var started = false
@@ -81,7 +101,7 @@ public class MainActivity : Activity() {
         //
         // L'épinglage ne suffisait pas : la vraie cause de la disparition
         // observée était le bord à bord, traité plus bas.
-        val header = TextView(this).apply {
+        header = TextView(this).apply {
             setPadding(48, 96, 48, 24)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             text = identity()
@@ -103,11 +123,30 @@ public class MainActivity : Activity() {
         }
         action = Button(this).apply { setOnClickListener { onAction() } }
 
+        // Deux boutons plutôt qu'un sélecteur : la démonstration reste sans
+        // ressources, et relancer est le geste le plus fréquent d'une campagne.
+        val boutons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(
+                Button(this@MainActivity).apply {
+                    text = "A4.2 photo"
+                    setOnClickListener { relancer(Probe.CAPTURE) }
+                },
+            )
+            addView(
+                Button(this@MainActivity).apply {
+                    text = "A4.1 octets"
+                    setOnClickListener { relancer(Probe.SEAL) }
+                },
+            )
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(header, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(permissionsView, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(action, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            addView(boutons, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
             addView(
                 ScrollView(this@MainActivity).apply { addView(view) },
                 LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f),
@@ -156,9 +195,12 @@ public class MainActivity : Activity() {
         refreshPermissions()
     }
 
+    // `ComponentActivity` déclare ce rappel avec `Array<String>`, non
+    // `Array<out String>` comme `Activity` : la signature n'est pas au choix.
+    @Deprecated("remplacé par ActivityResultContracts, hors de portée de cette démonstration")
     override fun onRequestPermissionsResult(
         requestCode: Int,
-        permissionNames: Array<out String>,
+        permissionNames: Array<String>,
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissionNames, grantResults)
@@ -204,11 +246,33 @@ public class MainActivity : Activity() {
         }
     }
 
+    /**
+     * Choisit la sonde de lancement selon ce qui peut réellement aboutir.
+     *
+     * A4.2 sans caméra ni position produirait un échec qui n'apprend rien —
+     * c'est la case du plan de spike que le mécanisme existait sans que rien ne
+     * l'appelle. On retombe sur A4.1, qui ne dépend d'aucune autorisation, et
+     * on le dit plutôt que de le subir.
+     */
+    private fun relancer(choix: Probe) {
+        probe = choix
+        started = false
+        lines.setLength(0)
+        header.text = identity()
+        view.text = ""
+        startProbe()
+    }
+
     /** Play Integrity, Keystore et le réseau bloquent : jamais sur le fil principal. */
     private fun startProbe() {
         if (started) return
+        if (probe == Probe.CAPTURE && !permissions.readyForCapture()) {
+            probe = Probe.SEAL
+            header.text = identity()
+            report("A4.2 impossible : camera ou position manquante, repli sur A4.1")
+        }
         started = true
-        thread { probe() }
+        thread { executer() }
     }
 
     /**
@@ -220,7 +284,7 @@ public class MainActivity : Activity() {
      * de certificat — ce qui change le verdict `origin` du tout au tout.
      */
     private fun identity(): String = buildString {
-        appendLine("probative — sonde A4.1 : enveloppe complete, profil core")
+        appendLine("probative — ${probe.titre}")
         appendLine(
             "version ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE})" +
                 " — installee par ${installerName()}",
@@ -248,16 +312,16 @@ public class MainActivity : Activity() {
     }
 
     private fun report(text: String) {
-        Log.i(TAG, text)
+        Log.i(probe.tag, text)
         lines.appendLine(text)
         Handler(Looper.getMainLooper()).post { view.text = lines }
     }
 
-    private fun probe() {
+    private fun executer() {
         // L'identité du binaire est à l'écran en permanence (`identity`) ; ici
         // on ne la journalise qu'une fois, parce que logcat n'a pas d'en-tête
         // épinglé et qu'un extrait de journal sans version ne vaut rien.
-        Log.i(TAG, identity())
+        Log.i(probe.tag, identity())
 
         // Relu ici, jamais hérité du préambule : l'état a pu changer entre
         // l'affichage et le lancement — un retour des Réglages, une réponse
@@ -329,17 +393,19 @@ public class MainActivity : Activity() {
         report("               chaine attestee : ${enrolled.getBoolean("attested")}")
 
         // ── 3. Nonce, émis pour le profil ─────────────────────────────────
-        val issued = server.nonce(KeystoreKeys.kid(alias), CorePayload.PROFILE)
+        val attendu =
+            if (probe == Probe.CAPTURE) CapturePayload.PROFILE else CorePayload.PROFILE
+        val issued = server.nonce(KeystoreKeys.kid(alias), attendu)
         val nonce = Base64.decode(issued.getString("nonce_b64"), Base64.NO_WRAP)
         val profile = issued.getString("profile")
         report("")
         report("nonce          ${nonce.size} octets, profil $profile, ttl ${issued.getInt("ttl_ms")} ms")
-        // Le profil signé doit être celui du nonce. `Sealer` produit `core` :
-        // si le serveur en a demandé un autre, mieux vaut s'arrêter ici que
-        // faire signer une enveloppe qu'il rejettera pour cette raison.
-        check(profile == CorePayload.PROFILE) {
-            "le serveur a emis un nonce pour le profil $profile, ce sceau produit " +
-                "${CorePayload.PROFILE}"
+        // Le profil signé doit être celui du nonce : le serveur rejette une
+        // enveloppe dont le profil diffère, et il a raison de le faire — sans
+        // ce contrôle un client compromis déclarerait `core` pour une
+        // acquisition et échapperait au plafond de recapture.
+        check(profile == attendu) {
+            "le serveur a emis un nonce pour le profil $profile, ce sceau produit $attendu"
         }
 
         // ── 4. Scellement ─────────────────────────────────────────────────
@@ -350,31 +416,115 @@ public class MainActivity : Activity() {
             appVersion = BuildConfig.VERSION_NAME,
             freshness = PlayIntegrityFreshness(provider),
         )
+        val scelle =
+            if (probe == Probe.CAPTURE) scellerPhoto(sealer, nonce) else scellerOctets(sealer, nonce)
+        val sealed = scelle.first
+        val octets = scelle.second
+
+        report("defi R1        ${b64(sealed.challenge)}")
+        report("enveloppe      ${sealed.bytes.size} octets")
+
+        // ── 5. Verdict ────────────────────────────────────────────────────
         start = System.nanoTime()
+        val result = server.verify(sealed.bytes, octets)
+        report("verification   %.0f ms".format(ms(start)))
+        report("")
+        reportResult(result)
+    }
+
+    /**
+     * Scellement d'octets remis — profil `core`. Aucun capteur.
+     *
+     * Deux chiffres, et **ils ne mesurent pas la même chose**. Le premier est
+     * du temps mural, chronométré par la sonde autour de l'appel : il englobe
+     * le jeton de fraîcheur et la signature. Le second est celui que le cœur a
+     * scellé, et le seul que `max_sign_latency_ms` confronte. Les afficher côte
+     * à côte sans le dire a déjà fait conclure à une marge étroite là où elle
+     * n'était pas mesurée — l'erreur corrigée côté iOS le 2026-08-15.
+     */
+    private fun scellerOctets(
+        sealer: Sealer,
+        nonce: ByteArray,
+    ): Pair<org.probative.core.envelope.SealedEnvelope, ByteArray> {
+        val start = System.nanoTime()
         val sealed = sealer.seal(CONTENT, CONTENT_TYPE, nonce)
         report("")
-        // Deux chiffres, et **ils ne mesurent pas la même chose**. Le premier
-        // est du temps mural, chronométré par la sonde autour de l'appel :
-        // il englobe le jeton de fraîcheur et la signature. Le second est
-        // celui que le cœur a scellé, et le seul que `max_sign_latency_ms`
-        // confronte. Les afficher côte à côte sans le dire a déjà fait
-        // conclure à une marge étroite là où elle n'était pas mesurée —
-        // l'erreur corrigée côté iOS le 2026-08-15.
         report("scellement     %.0f ms de temps mural".format(ms(start)))
         report("charge utile   ${sealed.payloadBytes.size} octets")
         report(
             "media[6]       ${sealed.signLatencyMs} ms depuis la remise des octets" +
                 " — seul chiffre confronte au seuil",
         )
-        report("defi R1        ${b64(sealed.challenge)}")
-        report("enveloppe      ${sealed.bytes.size} octets")
+        return sealed to CONTENT
+    }
 
-        // ── 5. Verdict ────────────────────────────────────────────────────
-        start = System.nanoTime()
-        val result = server.verify(sealed.bytes, CONTENT)
-        report("verification   %.0f ms".format(ms(start)))
-        report("")
-        reportResult(result)
+    /**
+     * Acquisition et scellement — profil `capture`.
+     *
+     * **L'ordre des trois premières lignes est le fond de cette sonde.** La
+     * collecte démarre *avant* l'acquisition et n'est moissonnée qu'après :
+     * la jointure se situe en aval de l'obturateur, donc un capteur qui survit
+     * à la capture verse son excédent dans `media[6]`. Lancer la corroboration
+     * après la photo a coûté +4,2 s dans ce champ côté iOS, faisant accuser
+     * une latence anormale là où il n'y en avait aucune.
+     */
+    private fun scellerPhoto(
+        sealer: Sealer,
+        nonce: ByteArray,
+    ): Pair<org.probative.core.envelope.SealedEnvelope, ByteArray> {
+        val start = System.nanoTime()
+        val capteurs = Sensors.begin(this)
+        try {
+            val image = Camera.capture(this, this)
+            val t = image.timings
+            report("")
+            report(
+                "capture        %d ms — %d octets, %dx%d, %s".format(
+                    t.totalMs, image.bytes.size, image.pixelWidth, image.pixelHeight,
+                    image.format.mimeType,
+                ),
+            )
+            // La décomposition sépare ce qui est structurel (mise sous tension,
+            // et qui disparaîtrait avec un aperçu), ce qui est en dur (garde),
+            // ce qui dépend de la scène (3A), et le seul terme qui pèse dans
+            // `media[6]` (encodage). Une somme ne se pilote pas.
+            report(
+                "               config %d + session %d + garde %d + 3A %d │obturateur│ encodage %d ms".format(
+                    t.configureMs, t.startupMs, t.settleMs, t.shutterLagMs, t.encodeMs,
+                ),
+            )
+
+            val claims = capteurs.claims()
+            report(
+                "corroboration  %d ms cumule — %s".format(
+                    ms(start).toLong(),
+                    if (claims.isEmpty()) "aucune" else claims.joinToString(", ") { it.type },
+                ),
+            )
+
+            val position = capteurs.position(image.shutterElapsedMs)
+            checkNotNull(position) {
+                "aucun point de position exploitable : le profil capture l'exige"
+            }
+            report(
+                "position       %s, %.0f m, age %d ms%s".format(
+                    position.provider.label, position.horizontalAccuracy, position.fixAgeMs,
+                    position.satellites?.let { ", $it satellites" } ?: "",
+                ),
+            )
+
+            val sealStart = System.nanoTime()
+            val sealed = sealer.seal(image, position, claims, nonce)
+            report("scellement     %.0f ms de temps mural".format(ms(sealStart)))
+            report("charge utile   ${sealed.payloadBytes.size} octets")
+            report(
+                "media[6]       ${sealed.signLatencyMs} ms depuis l'obturateur" +
+                    " — seul chiffre confronte au seuil",
+            )
+            return sealed to image.bytes
+        } finally {
+            capteurs.stop()
+        }
     }
 
     /**

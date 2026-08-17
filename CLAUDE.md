@@ -123,8 +123,20 @@ python -m probative.devserver --port 8765
 adb reverse tcp:8765 tcp:8765
 ./gradlew :demo:installDebug -Pprobative.cloudProjectNumber=487335590129
 adb logcat -c && adb shell am start -n org.probative.demo/.MainActivity
-adb logcat -d -s PROBATIVE_A41
+
+# Deux sondes, deux étiquettes. A4.2 (acquisition photo, profil `capture`)
+# part au lancement dès que caméra et position sont accordées ; sinon la
+# démonstration se replie sur A4.1 et le dit. Les deux boutons rejouent l'une
+# ou l'autre.
+adb logcat -d -s PROBATIVE_A42   # acquisition
+adb logcat -d -s PROBATIVE_A41   # octets remis
 ```
+
+Depuis la 0.1.5 l'application est distribuée par **Play** (piste interne) :
+`installDebug` échoue alors sur `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, la clé de
+débogage n'étant pas celle du déploiement. Soit désinstaller d'abord — et perdre
+`PLAY_RECOGNIZED`, donc voir `origin` retomber — soit monter le `versionCode` et
+téléverser un `bundleRelease`.
 
 ### iOS — appareil réel et compte payant requis pour App Attest
 

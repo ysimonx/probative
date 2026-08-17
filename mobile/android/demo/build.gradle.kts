@@ -71,8 +71,8 @@ android {
         applicationId = "org.probative.demo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.1.6"
+        versionCode = 8
+        versionName = "0.1.7"
         buildConfigField("long", "CLOUD_PROJECT_NUMBER", "${cloudProjectNumber}L")
         buildConfigField("String", "DEVSERVER_URL", "\"$devserverUrl\"")
         buildConfigField("boolean", "REHEARSAL", "$rehearsal")
@@ -119,4 +119,14 @@ dependencies {
     // La démonstration ne consomme que l'AAR. Si cette liste s'allonge au-delà
     // du cœur, c'est que du chemin critique a fui hors du cœur.
     implementation(project(":core"))
+
+    // `ComponentActivity` pour son seul `LifecycleOwner`, qu'exige
+    // `CaptureSession.open`. C'est la contrepartie d'ADR-0008 côté hôte : le
+    // cœur décide *ce qui est lié*, l'application fournit la portée — et c'est
+    // elle, pas lui, qui dépend d'AndroidX pour cela.
+    //
+    // `camera-view` reste volontairement absent : la sonde A4.2 n'affiche
+    // aucun aperçu, exactement comme C4.2 sur iOS. Le jour où un aperçu
+    // s'affichera, c'est ici qu'il faudra l'ajouter — jamais dans `:core`.
+    implementation("androidx.activity:activity:1.9.3")
 }
