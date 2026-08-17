@@ -47,6 +47,18 @@ dependencies {
     // Android — assumé, et à ne pas laisser grossir.
     implementation("com.google.android.play:integrity:1.6.0")
 
+    // Acquisition photographique (A4.2). Trois modules, et l'absence du
+    // quatrième est la décision d'ADR-0008 : `camera-view` est de
+    // l'**affichage**, il appartient à l'application. Le cœur possède la
+    // session, jamais le dessin — sinon il importerait `android.view` et
+    // cesserait d'être l'artefact autonome qu'exige ADR-0003.
+    //
+    // L'application fournit son `PreviewView` et n'en passe au cœur que le
+    // `Preview.SurfaceProvider`, qui vit dans `camera-core`.
+    implementation("androidx.camera:camera-core:1.4.2")
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.google.code.gson:gson:2.11.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
