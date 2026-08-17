@@ -31,6 +31,7 @@ import org.probative.core.freshness.PlayIntegrityFreshness
 import org.probative.core.keys.KeystoreKeys
 import org.probative.core.payload.CapturePayload
 import org.probative.core.payload.CorePayload
+import org.probative.core.sensors.SensorRun
 import org.probative.core.sensors.Sensors
 
 /**
@@ -169,6 +170,21 @@ public class MainActivity : ComponentActivity() {
      */
     private var horsLigne = false
     private lateinit var boutonHorsLigne: Button
+
+    /**
+     * Les capteurs, démarrés **avec le viseur** et non à chaque capture.
+     *
+     * Lancés au déclenchement, ils n'ont pas le temps d'acquérir un point : la
+     * moisson attend alors, et cette attente tombe en aval de l'obturateur donc
+     * dans `media[6]`. Mesuré le 2026-08-17 : 6,3 s d'attente, `media[6]` à
+     * 6 485 ms, **au-dessus du seuil de 3 000**, sur une capture parfaitement
+     * honnête.
+     *
+     * Troisième occurrence du même défaut, après l'enrôlement et la session de
+     * capture : **ce qui est coûteux et réutilisable n'a rien à faire dans le
+     * chemin par capture.**
+     */
+    private var capteurs: SensorRun? = null
     private var prisesDansSerie = 0
     private var debutSerieMs = 0L
 
@@ -355,6 +371,10 @@ public class MainActivity : ComponentActivity() {
         if (session != null || enCours || !permissions.readyForCapture()) return
         thread {
             try {
+                if (capteurs == null) {
+                    capteurs = Sensors.begin(this)
+                    report("capteurs       demarres avec le viseur — un point sera pret au declenchement")
+                }
                 sessionOuverte()
             } catch (e: Exception) {
                 report("ECHEC ouverture du viseur : ${e.message}")
@@ -814,8 +834,10 @@ public class MainActivity : ComponentActivity() {
      */
     private fun scellerPhoto(sealer: Sealer, nonce: ByteArray, prev: ByteArray?): Scelle {
         val start = System.nanoTime()
-        val capteurs = Sensors.begin(this)
-        try {
+        // Partagée avec le viseur : à ce point un point de position est
+        // normalement déjà là, et la moisson ne coûte rien.
+        val capteurs = this.capteurs ?: Sensors.begin(this).also { this.capteurs = it }
+        run {
             val image = sessionOuverte().capture()
             val t = image.timings
             report("")
@@ -879,9 +901,9 @@ public class MainActivity : ComponentActivity() {
                     t.configureMs, t.startupMs, t.settleMs, t.idleMs, t.shutterLagMs, t.encodeMs,
                 ),
             )
-        } finally {
-            capteurs.stop()
         }
+        // Plus de `capteurs.stop()` ici : la collecte survit à la capture et
+        // sert la suivante. Elle est fermée avec l'écran (`onDestroy`).
     }
 
     /**
@@ -940,6 +962,9 @@ public class MainActivity : ComponentActivity() {
         // batterie ; elle ne se referme pas toute seule.
         session?.close()
         session = null
+        // Un écouteur de position oublié vide la batterie et survit à l'écran.
+        capteurs?.stop()
+        capteurs = null
         alias?.let { if (KeystoreKeys.exists(it)) KeystoreKeys.delete(it) }
         alias = null
     }

@@ -32,6 +32,17 @@ import java.util.concurrent.TimeUnit
  * collecte lancée après la photo a coûté **+4,2 s** dans ce champ côté iOS,
  * faisant accuser une latence anormale là où il n'y en avait aucune.
  *
+ * **Et démarrer à la capture ne suffit pas.** Mesuré le 2026-08-17 sur
+ * SM-X200 : une collecte lancée au déclenchement n'a pas le temps d'acquérir un
+ * point, donc [SensorRun.position] attend — 6,3 s une fois, ce qui a porté
+ * `media[6]` à 6 485 ms et **franchi le seuil de 3 000**. La collecte doit
+ * courir depuis l'ouverture du viseur, de sorte qu'un point soit déjà là quand
+ * l'obturateur claque.
+ *
+ * Ce régime long a un prix, et il est de **justesse** plutôt que de coût : voir
+ * `arbitrer` et la fenêtre glissante de mouvement. Un cache qui convenait à une
+ * demi-seconde ment au bout de dix minutes.
+ *
  * **Rien n'est simulé.** Un capteur absent, une autorisation refusée ou une
  * mesure qui n'arrive pas produisent une réclamation **omise**, jamais une
  * valeur par défaut. Émettre zéro ou `false` affirmerait « j'ai regardé, il n'y
@@ -105,16 +116,15 @@ class SensorRun internal constructor(
 
     /** Échantillons d'accélération : (uptime ms, x, y, z) en m/s². */
     private val mouvement = ArrayList<DoubleArray>()
+
+    /** Plafond de taille, après le filtre de fenêtre : un capteur bavard
+     *  gonflerait la charge utile sans rien ajouter. */
+    private val MAX_ECHANTILLONS = 64
     private val verrouMouvement = Any()
 
     private val ecouteurPosition = object : LocationListener {
         override fun onLocationChanged(location: Location) {
-            // On garde le plus précis, pas le plus récent : un point réseau
-            // arrive vite et grossier, le point GNSS suit et vaut mieux.
-            val courant = meilleurPoint
-            if (courant == null || location.accuracy <= courant.accuracy) {
-                meilleurPoint = location
-            }
+            meilleurPoint = arbitrer(meilleurPoint, location)
             premierPoint.countDown()
         }
 
@@ -141,19 +151,24 @@ class SensorRun internal constructor(
                     pressionUptimeMs = maintenant
                 }
                 Sensor.TYPE_ACCELEROMETER -> synchronized(verrouMouvement) {
-                    // Borné : une fenêtre de 10 s à la cadence normale tient en
-                    // quelques dizaines d'échantillons, mais un capteur bavard
-                    // gonflerait la charge utile sans rien ajouter.
-                    if (mouvement.size < 64) {
-                        mouvement.add(
-                            doubleArrayOf(
-                                maintenant.toDouble(),
-                                event.values[0].toDouble(),
-                                event.values[1].toDouble(),
-                                event.values[2].toDouble(),
-                            ),
-                        )
-                    }
+                    mouvement.add(
+                        doubleArrayOf(
+                            maintenant.toDouble(),
+                            event.values[0].toDouble(),
+                            event.values[1].toDouble(),
+                            event.values[2].toDouble(),
+                        ),
+                    )
+                    // **Fenêtre glissante, et non plafond sur les premiers
+                    // échantillons.** Un plafond gardait les 64 premiers et
+                    // n'en prenait plus jamais : sur une collecte qui dure la
+                    // campagne, la réclamation `motion` aurait décrit le
+                    // *début de campagne* et non la photo. Inoffensif tant que
+                    // la collecte durait une demi-seconde, faux dès qu'elle
+                    // vit.
+                    val limite = maintenant - Sensors.MOTION_WINDOW_MS
+                    mouvement.removeAll { it[0] < limite }
+                    while (mouvement.size > MAX_ECHANTILLONS) mouvement.removeAt(0)
                 }
             }
         }
@@ -170,7 +185,8 @@ class SensorRun internal constructor(
         val manager = locationManager ?: return
         if (!Sensors.hasLocationPermission(context)) return
         // Deux fournisseurs plutôt qu'un : le réseau donne un point tout de
-        // suite, le GNSS donne le bon. `meilleurPoint` arbitre à la précision.
+        // suite, le GNSS donne le bon. Voir `arbitrer` pour le départage —
+        // fraîcheur d'abord, précision ensuite.
         val fournisseurs = buildList {
             if (manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 add(LocationManager.GPS_PROVIDER)
@@ -299,6 +315,30 @@ class SensorRun internal constructor(
         }
         sensorManager?.unregisterListener(ecouteurCapteurs)
         thread.quitSafely()
+    }
+
+    /**
+     * Départage deux points — **la fraîcheur prime, la précision départage**.
+     *
+     * L'ordre inverse a été écrit d'abord, et il était juste tant que la
+     * collecte durait le temps d'une capture : un point réseau arrive vite et
+     * grossier, le point GNSS suit et vaut mieux.
+     *
+     * Il devient **faux** dès que la collecte vit toute une campagne. Un point
+     * très précis relevé dix minutes plus tôt battrait un point frais un peu
+     * moins précis, et l'enveloppe attesterait où l'utilisateur *était*, pas où
+     * il *est*. Une preuve de position fausse, signée et opposable, est le pire
+     * défaut que ce dépôt puisse produire — bien pire qu'une note dégradée.
+     *
+     * D'où la règle : au-delà de [Sensors.MAX_FIX_AGE_MS], l'ancien point est
+     * périmé et le nouveau l'emporte quoi qu'il arrive. En deçà, l'utilisateur
+     * n'a pas pu aller bien loin, et c'est la précision qui départage.
+     */
+    private fun arbitrer(courant: Location?, nouveau: Location): Location {
+        if (courant == null) return nouveau
+        val ecartMs = (nouveau.elapsedRealtimeNanos - courant.elapsedRealtimeNanos) / 1_000_000
+        if (ecartMs > Sensors.MAX_FIX_AGE_MS) return nouveau
+        return if (nouveau.accuracy <= courant.accuracy) nouveau else courant
     }
 
     private fun fournisseur(point: Location): Position.Provider = when (point.provider) {
