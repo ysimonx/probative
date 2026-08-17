@@ -105,6 +105,25 @@ c'est celle-ci : le hors ligne.
    latence ressentie par l'utilisateur et sur rien d'autre. C'est une question de confort,
    pas de verdict, et elle ne peut pas invalider cette decision.
 
+   **Mesures 1 et 2 faites le 2026-08-17 sur SM-X200 froide (2 min d'uptime), quatre
+   captures en profil `capture`.**
+
+   | | Play Integrity | attestation de cle |
+   |---|---|---|
+   | enveloppe | 1 605 – 1 763 o | **4 065 – 4 315 o** |
+   | scellement, temps mural | 81 – 101 ms | **80 – 187 ms** |
+   | `media[6]` nominal | 60 – 157 ms | **134 – 166 ms** |
+
+   **Le cout en octets est un facteur 2,5, non 6,4.** Le chiffre de la specification §9 se
+   rapportait a une enveloppe d'or de 629 octets, synthetique ; une enveloppe `capture`
+   reelle en fait 1 700. La chaine ajoute environ 2 400 octets.
+
+   **Le cout en temps mural est nul a l'echelle mesurable.** 80 a 187 ms contre 81 a 101 ms
+   avec Play Integrity : engendrer une cle materielle coute a peu pres ce que coute un
+   aller-retour reseau vers Google. La voie ne se paie donc pas en latence.
+
+   **Et `media[6]` ne bouge pas**, ce qui verifie empiriquement la correction ci-dessus.
+
    **La troisieme est faite, le 2026-08-17, et elle est concluante.** Decodee sur le
    vecteur `keystore-a3-sm-x200.json` deja versionne, sans appareil : le tag 709 de
    `softwareEnforced` porte le nom de paquet, sa version, et l'empreinte de signature.

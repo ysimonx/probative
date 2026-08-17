@@ -626,7 +626,37 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    réglementaire. Si les cas d'usage visés sont ceux du constat de terrain, cela mérite
    d'être instruit **avant** A4/C4 ; sinon, après. Cela ne déplace jamais la phase B,
    qui reste ce qui rend le reste opposable.
-5. **Empreinte de bruit de capteur (PRNU)** — ouverte, cadrée par ADR-0007. Seule piste
+5. **L'attente du point de position peut faire dépasser `max_sign_latency_ms`** —
+   ouverte le 2026-08-17, et c'est la trouvaille la plus sérieuse de la campagne
+   hors ligne, qui ne la cherchait pas.
+
+   Quatre captures sur SM-X200 : `media[6]` vaut 134 et 166 ms sur deux d'entre
+   elles, **1 786 ms et 6 485 ms** sur les deux autres. Le journal donne la
+   cause — l'obturateur à 21:03:37,7, le point de position à 21:03:44,0 : **6,3 s
+   d'attente**, entièrement en aval de l'obturateur, donc entièrement dans le
+   champ noté.
+
+   **6 485 ms dépasse le seuil de 3 000.** Une capture parfaitement honnête
+   serait rejetée pour latence anormale, parce que le fournisseur `network` a
+   mis six secondes à rendre un point.
+
+   Ce n'est pas nouveau en nature — l'inconnue n° 2 dit déjà que *tout capteur
+   qui survit à la capture verse son excédent dans `media[6]`*. Ce qui est
+   nouveau, c'est l'ampleur, et qu'elle franchisse le seuil. Deux facteurs s'y
+   conjuguent : l'aperçu a rendu la capture rapide (452 ms), et le point réseau
+   en intérieur est lent.
+
+   Trois pistes, non instruites : attendre le point **avant** l'obturateur au
+   lieu de le joindre après ; borner l'attente et omettre la position plutôt que
+   de la payer dans `media[6]` — mais le profil `capture` l'exige, donc ce
+   serait un rejet déplacé ; ou noter la latence sur ce qui est réellement
+   imputable au chemin capteur→charge utile, ce qui suppose de distinguer
+   l'attente de capteur de l'encodage.
+
+   **À instruire avant toute calibration** : c'est ce terme, et non l'encodage
+   ni la fraîcheur, qui décide aujourd'hui si `media[6]` tient sous le seuil.
+
+6. **Empreinte de bruit de capteur (PRNU)** — ouverte, cadrée par ADR-0007. Seule piste
    connue contre l'**injection de trames**, la faiblesse que la spec §2.5 reconnaît en
    écrivant que l'acquisition par le cœur « ne prouve pas l'origine capteur ». Elle se
    calculerait **côté serveur** à partir du payload, ce qui colle à l'invariant 1 sans
@@ -644,7 +674,7 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    **avant** l'encodeur, et le résidu pourrait déjà être perdu, auquel cas seul le bayer
    RAW aurait un sens ; si la SM-X200 sait produire du DNG via Camera2 ; le coût en
    `media[6]` et en bande passante. Piste v0.3 : ne déplace ni A4.2, ni la phase B.
-6. **Largeur d'encadrement du nonce contre drapeau `offline`** — ouverte le 2026-08-15,
+7. **Largeur d'encadrement du nonce contre drapeau `offline`** — ouverte le 2026-08-15,
    cadrée en spec §9, **moitié close le jour même**. Ce que le nonce établit est un
    encadrement bilatéral dont la largeur fait toute la valeur ; or `grade_time` ne
    consultait que `offline: bool`, et l'émission traite `ttl_ms` et `offline` comme deux
