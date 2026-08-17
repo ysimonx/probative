@@ -205,12 +205,15 @@ appareil.
       `CorePayload.build`, celui qu'appelle `Sealer`, reproduit `core.payload.cbor`
       octet à octet. Distinct de `GoldenVectorsTest`, qui bâtit sa charge utile à la
       main et n'éprouve donc que l'encodeur.
-- [ ] Séquence sur appareil : nonce depuis `/nonce` → charge utile CBOR →
+- [x] Séquence sur appareil : nonce depuis `/nonce` → charge utile CBOR →
       R1 = `SHA-256(payload ‖ nonce)` → jeton Play Integrity sur ce R1 →
       `COSE_Sign1` signé par la clé Keystore enrôlée → `POST /verify`.
-      **Exercée de bout en bout sur émulateur le 2026-08-13**, verdict rendu ;
-      reste à la lancer sur SM-X200, seul appareil qui puisse cocher le critère
-      de sortie — un émulateur n'a ni clé matérielle ni verdict d'appareil.
+      Exercée sur émulateur le 2026-08-13, puis **sur SM-X200 le 2026-08-17** —
+      trois fois, verdict `STANDARD` invariant, attestation réelle et non
+      substitut. **Le critère de sortie est atteint sur les deux plateformes.**
+      Le plafond est `time`, faute de chaînage : ni le matériel ni l'échelon
+      d'intégrité n'y changent quoi que ce soit, `integrity` étant déjà en A
+      sans StrongBox.
 
 **Deux champs de `posture` sont omis, et l'omission est le comportement correct.**
 L'indicateur de position simulée (label 7) ne se lit que sur un point de
@@ -340,11 +343,19 @@ autorisation au moment où son capteur sert affiche la boîte de dialogue
 n'accuse jamais la bonne cause — on soupçonne le GPS, le baromètre ou le
 serveur, jamais la permission.
 
-- [ ] Toutes les autorisations demandées **avant** la première mesure, avec
+- [x] Toutes les autorisations demandées **avant** la première mesure, avec
       leur état affiché à l'écran **et journalisé** : un extrait de logcat doit
       permettre de distinguer un capteur muet d'une autorisation manquante.
+      **Fait le 2026-08-17** (`demo/Permissions.kt`), vérifié sur SM-X200 :
+      `autorisations  camera ✓ position ✓ mouvement — reseau —` ouvre le
+      journal. Deux lignes « non requise » disent l'écart avec iOS plutôt que
+      de le gommer — sur Android le baromètre n'est protégé par rien, et le
+      réseau local n'existe pas comme autorisation.
 - [ ] La sonde ne démarre que si elle peut aboutir — partir sans caméra ni
-      position produit un échec qui n'apprend rien.
+      position produit un échec qui n'apprend rien. **Mécanisme en place**
+      (`Permissions.readyForCapture()`), **mais rien ne l'appelle** : A4.1 ne
+      dépend d'aucune de ces autorisations et part quoi qu'il arrive. La case
+      se cochera avec A4.2, qui en dépend.
 - [ ] **Éprouvé à froid** : désinstaller puis réinstaller, ce qui remet les
       autorisations à zéro, et vérifier que la campagne passe **du premier
       coup**. C'est le seul test qui compte, et le seul qui ait trouvé quelque
