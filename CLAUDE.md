@@ -210,7 +210,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 | `PlayIntegrityVerifier` — **phase B faite** | Jeton déchiffré par `decodeIntegrityToken`, `requestHash` recalculé et confronté, verdicts traduits. Chaîne d'attestation de clé ancrée à la racine Google (`key_attestation.py`). 35 tests |
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
 | Vecteurs d'appareil | Android (chaîne à 4 certificats, SM-X200) et iOS (App Attest, iPhone 16) versionnés dans `tests/device-vectors/` |
-| Cœur natif Android | A1–A3, **A5 et A4.1 faites, validées sur SM-X200** (2026-08-17). `seal(bytes)`, profil `core` : le cœur assemble et signe une enveloppe complète, épinglée au vecteur d'or par un test d'hôte, et **acceptée par le vérificateur depuis l'appareil** — `STANDARD`, plafonné par `time` faute de chaînage. **Critère de sortie du spike atteint.** Reste A4.2, capture CameraX |
+| Cœur natif Android | A1–A3, **A5, A4.1 et A4.2 faites, validées sur SM-X200** (2026-08-17). `seal(bytes)` en `core` et `seal(image)` en `capture`, tous deux épinglés aux vecteurs d'or par des tests d'hôte et **acceptés par le vérificateur depuis l'appareil**. Session de capture possédée par le cœur (ADR-0008), collecte lancée avant l'obturateur. **Critère de sortie du spike atteint, et une vraie photo sous le sceau** |
 | Cœur natif iOS | C1–C3, **C4.1 et C4.2 faites** (iPhone 16, iOS 26.6, 2026-08-13). **Critère de sortie du spike atteint** en `core` (`STRONG`), puis **une photo réelle scellée** en `capture` : `STANDARD`, `integrity`/`position`/`time` au grade A, `origin` à B par le seul plafond de recapture — le maximum de la v0.1. Reste : chemin de production, chaînage |
 | Liaisons Flutter / React Native | Non commencées, **mais débloquées** : ADR-0008 fixe la forme du pont — le cœur possède la session, la vue de plateforme n'en est que consommatrice. Couture et commandes de prise de vue instruites dans `docs/acquisition-et-liaisons.md` |
 | Banc de triche | Non commencé |
@@ -366,10 +366,47 @@ survit pas au poste ne vaut rien.
    d'un état accumulé. `media[6]` y vaut 5 ms — le chiffre noté varie lui aussi
    (2 à 5 ms), sans jamais approcher le seuil.
 
-   **Attention à ne pas surétendre ce chiffre** : il vaut pour le profil
-   `core`, où `media[6]` court depuis la remise des octets. En `capture` il
-   partira de l'obturateur et englobera l'encodage — c'est A4.2, et cette
-   grandeur-là reste non mesurée sur Android.
+   ~~**Attention à ne pas surétendre ce chiffre** : il vaut pour le profil
+   `core`.~~ La mise en garde tenait ; **A4.2 a mesuré l'autre grandeur le
+   même jour** (voir ci-dessous). Les deux coexistent et ne se comparent pas.
+
+3. **A4.2 — l'acquisition, faite le 2026-08-17, du premier coup.** Version
+   0.1.7 (code 8). Une photo réelle de 2,7 Mo, 3264×2448, sous le sceau en
+   profil `capture` : **`STANDARD`**, `integrity` et `position` en **A**,
+   `origin` et `time` en **B**. Motif : le plafond de recapture, exactement
+   comme prévu et à raison.
+
+   **`media[6]` vaut 97 ms** — première mesure du champ noté en `capture` sur
+   Android, contre un seuil à 3 000 ms. Marge d'un facteur 31.
+
+   La décomposition dit où passe le reste, et c'est le résultat le plus
+   instructif de la journée :
+
+   | Borne | ms | Dans `media[6]` ? |
+   |---|---|---|
+   | config | 92 | non |
+   | session | 0 | non — CameraX ne rend pas la main sur « le capteur diffuse » |
+   | garde | 400 | non — témoin, conforme à sa consigne |
+   | **3A** | **1 528** | **non** |
+   | *obturateur* | | |
+   | encodage | 71 | oui |
+
+   **La convergence 3A pèse 73 % du temps mural et n'entre pas dans le champ
+   noté.** C'est la confirmation empirique, sur une seconde plateforme, de la
+   correction du 2026-08-15 : lire les 2 092 ms comme la marge sous le seuil
+   aurait été faux d'un facteur 21.
+
+   **La SM-X200 n'a pas de baromètre.** Seule la réclamation `motion` est
+   remontée ; `baro` et `baro-alt` sont **omises, pas simulées** — la règle a
+   fonctionné. Conséquence à retenir : la corroboration barométrique, décrite
+   comme « le signal le plus rentable des deux plateformes », est simplement
+   indisponible sur cet appareil. Toute calibration devra en tenir compte.
+
+   Le point de position est venu du fournisseur **`network`** (13 m, âge
+   1 892 ms), pas du GNSS — campagne en intérieur. `position` sort tout de même
+   en A : la précision est bien sous le seuil, et l'indicateur de position
+   simulée d'Android tient lieu du contrepoids que la corroboration inertielle
+   fournit sur iOS.
 
    La préparation varie de 493 à 965 ms, presque du simple au double, et le
    scellement de 38 à 52 ms. **La variabilité entre exécutions identiques est
