@@ -22,6 +22,29 @@ C'est la source de confusion la plus coûteuse, et elle mène à optimiser le ma
 | **demande de jeton** | l'appareil → Google | par enveloppe attestée | 36 – 39 ms | large |
 | **`decodeIntegrityToken`** | **votre serveur** → Google | par enveloppe vérifiée | 340 – 930 ms | serveur |
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Application
+    participant G as Google Play
+    participant S as Votre serveur
+
+    Note over A,G: une fois par lancement — quota strict
+    A->>G: prepare
+    G-->>A: un fournisseur, aucune preuve
+
+    Note over A,S: par enveloppe attestée
+    A->>S: demande un nonce
+    S-->>A: nonce + profil attendu
+    A->>A: charge utile, puis R1 = SHA-256(payload ‖ nonce)
+    A->>G: jeton pour requestHash = R1
+    G-->>A: jeton chiffré — 36 à 39 ms
+    A->>S: enveloppe COSE_Sign1
+    S->>G: decodeIntegrityToken
+    G-->>S: verdicts en clair
+    S-->>A: verdict par propriété
+```
+
 Trois choses en découlent :
 
 - **`prepare` ne produit aucune preuve.** Il rend un *fournisseur*, pas un jeton. Le
@@ -78,13 +101,19 @@ prises indépendantes n'établit pas :
 
 La forme retenue (ADR-0009) :
 
+```mermaid
+flowchart LR
+    T1["TÊTE<br/>jeton complet<br/>R1 sur sa charge utile"]
+    M2["maillon<br/>payload 7 = empreinte"]
+    M3["maillon<br/>payload 7 = empreinte"]
+    T4["QUEUE<br/>jeton complet<br/>R1 sur sa charge utile"]
+    T1 --> M2 --> M3 --> T4
 ```
-prise 1   preuve de fraîcheur complète, R1 sur sa propre charge utile   ← tête attestée
-prise 2   payload[7] = SHA-256(enveloppe 1)
-prise 3   payload[7] = SHA-256(enveloppe 2)
-…
-prise N   preuve de fraîcheur complète                                  ← queue attestée
-```
+
+Chaque flèche est une empreinte : le maillon porte le `SHA-256` de l'enveloppe qui le
+précède, et le serveur confronte à ce qu'il a retenu de son côté
+(`DeviceRecord.last_envelope_digest`). C'est leur accord qui vaut vérification — rien
+n'est déclaré.
 
 **Deux jetons par série, quelle que soit sa longueur.** C'est ce qui met la cadence hors
 de portée du quota.
@@ -115,6 +144,17 @@ puisque l'ordre est exactement ce que la chaîne établit.
 | Minuterie — 2 minutes | la série qui traîne | clôt **en retard**, d'au plus un intervalle |
 | Passage en arrière-plan | l'utilisateur qui s'en va | rien si l'application est tuée net |
 | Bouton explicite | tout, **exactement** | suppose que l'utilisateur y pense |
+
+```mermaid
+stateDiagram-v2
+    [*] --> Ouverte: première prise — tête attestée
+    Ouverte --> Ouverte: prise suivante — maillon chaîné
+    Ouverte --> Close: 5 prises
+    Ouverte --> Close: 2 minutes
+    Ouverte --> Close: passage en arrière-plan
+    Ouverte --> Close: bouton « j'ai fini »
+    Close --> Ouverte: prise suivante — nouvelle tête
+```
 
 Le bouton reste donc utile mais **facultatif** : les trois premiers le rendent optionnel
 plutôt qu'obligatoire, ce qui est une bien meilleure position produit.
@@ -180,6 +220,19 @@ résidu qu'on n'oserait plus retirer le jour où la limite disparaît.
 
 Le dépôt a une règle pour cela : *ce qui change le format se tranche, ce qui change
 l'exploitation se configure.*
+
+---
+
+## Note sur les figures
+
+Elles sont en **Mermaid**, et non produites par `tools/gen_sequences.py`. Cet outil écrit
+du SVG *à l'intérieur* de `architecture.html`, entre marqueurs, et son rendu dépend des
+classes CSS définies dans le `<style>` de cette page : un SVG extrait s'afficherait sans
+mise en forme. Mermaid reste du texte, donc lisible en diff, et GitHub le rend
+nativement.
+
+Corollaire : ces figures **se modifient à la main**, contrairement à celles
+d'`architecture.html` qu'il ne faut jamais éditer directement.
 
 ---
 
