@@ -71,8 +71,8 @@ android {
         applicationId = "org.probative.demo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.1.7"
+        versionCode = 9
+        versionName = "0.1.8"
         buildConfigField("long", "CLOUD_PROJECT_NUMBER", "${cloudProjectNumber}L")
         buildConfigField("String", "DEVSERVER_URL", "\"$devserverUrl\"")
         buildConfigField("boolean", "REHEARSAL", "$rehearsal")
@@ -125,8 +125,12 @@ dependencies {
     // cœur décide *ce qui est lié*, l'application fournit la portée — et c'est
     // elle, pas lui, qui dépend d'AndroidX pour cela.
     //
-    // `camera-view` reste volontairement absent : la sonde A4.2 n'affiche
-    // aucun aperçu, exactement comme C4.2 sur iOS. Le jour où un aperçu
-    // s'affichera, c'est ici qu'il faudra l'ajouter — jamais dans `:core`.
     implementation("androidx.activity:activity:1.9.3")
+
+    // `camera-view` pour le viseur — **ici et jamais dans `:core`**. C'est la
+    // frontiere d'ADR-0008 rendue visible par une ligne de build : le coeur
+    // possede la camera, l'application possede l'ecran. Un `PreviewView` dans
+    // l'AAR ferait entrer `android.view` dans un artefact qui doit rester
+    // autonome.
+    implementation("androidx.camera:camera-view:1.4.2")
 }

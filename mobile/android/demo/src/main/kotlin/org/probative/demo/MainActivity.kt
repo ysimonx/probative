@@ -16,9 +16,11 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.camera.view.PreviewView
+import java.util.concurrent.CountDownLatch
 import kotlin.concurrent.thread
 import org.json.JSONObject
-import org.probative.core.capture.Camera
+import org.probative.core.capture.CaptureSession
 import org.probative.core.envelope.Sealer
 import org.probative.core.freshness.PlayIntegrity
 import org.probative.core.freshness.PlayIntegrityFreshness
@@ -86,6 +88,17 @@ public class MainActivity : ComponentActivity() {
     /** La sonde en cours. Fixée au lancement, puis par les boutons. */
     private var probe = Probe.CAPTURE
 
+    /**
+     * Le viseur, et la session qui l'alimente.
+     *
+     * La session est **gardée ouverte** entre deux prises : c'est tout l'objet
+     * de l'aperçu. Une session par photo repaierait à chaque fois la mise sous
+     * tension du capteur et le délai de garde — les termes que la
+     * décomposition montre comme structurels.
+     */
+    private lateinit var viseur: PreviewView
+    private var session: CaptureSession? = null
+
     /** La sonde ne part qu'une fois, quel que soit le chemin qui y mène. */
     private var started = false
 
@@ -141,12 +154,17 @@ public class MainActivity : ComponentActivity() {
             )
         }
 
+        viseur = PreviewView(this)
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(header, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(permissionsView, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(action, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
             addView(boutons, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            // Le viseur occupe une bande fixe : le journal reste lisible en
+            // dessous, et c'est lui qu'on relit pendant une campagne.
+            addView(viseur, LinearLayout.LayoutParams(MATCH_PARENT, 700))
             addView(
                 ScrollView(this@MainActivity).apply { addView(view) },
                 LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f),
@@ -475,12 +493,12 @@ public class MainActivity : ComponentActivity() {
         val start = System.nanoTime()
         val capteurs = Sensors.begin(this)
         try {
-            val image = Camera.capture(this, this)
+            val image = sessionOuverte().capture()
             val t = image.timings
             report("")
             report(
                 "capture        %d ms — %d octets, %dx%d, %s".format(
-                    t.totalMs, image.bytes.size, image.pixelWidth, image.pixelHeight,
+                    t.photoMs, image.bytes.size, image.pixelWidth, image.pixelHeight,
                     image.format.mimeType,
                 ),
             )
@@ -488,9 +506,18 @@ public class MainActivity : ComponentActivity() {
             // et qui disparaîtrait avec un aperçu), ce qui est en dur (garde),
             // ce qui dépend de la scène (3A), et le seul terme qui pèse dans
             // `media[6]` (encodage). Une somme ne se pilote pas.
+            // `capture` ne compte que la photo ; l'ouverture de session et le
+            // cadrage sont rapportés à part. Les additionner ferait mesurer une
+            // séance là où on veut mesurer une prise de vue.
             report(
-                "               config %d + session %d + garde %d + 3A %d │obturateur│ encodage %d ms".format(
-                    t.configureMs, t.startupMs, t.settleMs, t.shutterLagMs, t.encodeMs,
+                "               ouverture: config %d + session %d + garde %d ms%s".format(
+                    t.configureMs, t.startupMs, t.settleMs,
+                    if (t.idleMs > 0) " — puis %d ms de cadrage".format(t.idleMs) else "",
+                ),
+            )
+            report(
+                "               photo: 3A %d │obturateur│ encodage %d ms".format(
+                    t.shutterLagMs, t.encodeMs,
                 ),
             )
 
@@ -545,6 +572,44 @@ public class MainActivity : ComponentActivity() {
         val flags = result.getJSONArray("flags")
         report("drapeaux       ${if (flags.length() == 0) "aucun" else flags.join(", ")}")
         report("politique      ${result.get("policy")}")
+    }
+
+    /**
+     * La session, ouverte à la demande puis **gardée**.
+     *
+     * C'est ce qui distingue un viseur d'une prise isolée. La première photo
+     * paie encore la mise sous tension et le délai de garde ; les suivantes
+     * non, et `idle` dira combien de temps la session a attendu — c'est-à-dire
+     * combien de temps l'utilisateur a eu pour cadrer.
+     *
+     * `attachPreview` ne donne au cœur qu'une surface. L'application garde la
+     * vue, sa taille et sa place : le cœur possède la caméra, pas l'écran
+     * (ADR-0008).
+     */
+    private fun sessionOuverte(): CaptureSession {
+        session?.let { return it }
+        val ouverte = CaptureSession.open(this, this)
+        // `PreviewView.surfaceProvider` se lit sur le fil principal, et cette
+        // méthode tourne en arrière-plan — la sonde n'a pas le droit de bloquer
+        // l'interface. On fait donc l'aller-retour explicitement plutôt que de
+        // s'en remettre au hasard d'un accès concurrent qui « marche souvent ».
+        val pose = CountDownLatch(1)
+        runOnUiThread {
+            ouverte.attachPreview(viseur.surfaceProvider)
+            pose.countDown()
+        }
+        pose.await()
+        session = ouverte
+        report("viseur         session ouverte et apercu rattache")
+        return ouverte
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Une session qui survit à l'écran garde la caméra et vide la
+        // batterie ; elle ne se referme pas toute seule.
+        session?.close()
+        session = null
     }
 
     private fun ms(startNanos: Long): Double = (System.nanoTime() - startNanos) / 1_000_000.0

@@ -85,6 +85,19 @@ class CaptureTimings(
     val runningNanos: Long,
     /** Fin du délai de garde tenu par le cœur. */
     val armedNanos: Long,
+    /**
+     * Appel de la prise de vue — **la borne qu'un aperçu rend nécessaire**.
+     *
+     * Sans elle, une session gardée ouverte pendant qu'on cadre ferait compter
+     * l'attente de l'utilisateur dans la convergence 3A, et le total mesurerait
+     * la durée de la session au lieu de celle de la photo. Les deux nombres
+     * seraient absurdes sans qu'aucun ne le paraisse.
+     *
+     * En session éphémère elle suit immédiatement [armedNanos] et n'ajoute
+     * rien ; c'est le prix, très faible, d'une décomposition qui reste juste
+     * dans les deux régimes.
+     */
+    val requestedNanos: Long,
     /** Obturateur. **L'origine de `media[6]`** : rien de ce qui précède n'y entre. */
     val shutterNanos: Long,
     /** Octets encodés disponibles. */
@@ -109,15 +122,40 @@ class CaptureTimings(
     val settleMs: Long get() = ms(runningNanos, armedNanos)
 
     /**
+     * Temps pendant lequel la session est restée ouverte sans servir — nul en
+     * régime éphémère, égal au temps de cadrage avec un aperçu vivant.
+     *
+     * Ce n'est pas un coût : c'est ce qui **retire** les termes structurels du
+     * chemin ressenti par l'utilisateur, la session étant déjà sous tension et
+     * convergée quand il appuie.
+     */
+    val idleMs: Long get() = ms(armedNanos, requestedNanos)
+
+    /**
      * Convergence 3A avant déclenchement, à la main de CameraX. Le terme qui
      * dépend de la scène : lumière faible, autofocus qui cherche.
+     *
+     * Compté depuis l'**appel** et non depuis l'armement de la session : c'est
+     * ce qui rend le chiffre comparable entre une prise isolée et une prise
+     * faite sur un aperçu déjà convergé. C'est aussi le seul terme d'avant
+     * l'obturateur qu'un aperçu peut réellement faire fondre.
      */
-    val shutterLagMs: Long get() = ms(armedNanos, shutterNanos)
+    val shutterLagMs: Long get() = ms(requestedNanos, shutterNanos)
 
     /** Traitement et encodage. **Le seul terme qui pèse dans `media[6]`.** */
     val encodeMs: Long get() = ms(shutterNanos, deliveredNanos)
 
-    /** Le total — ce qu'une sonde rapporterait seule sans cette décomposition. */
+    /**
+     * Ce que coûte **cette photo-là**, de l'appel aux octets. La grandeur à
+     * comparer d'un régime à l'autre : [totalMs] engloberait le cadrage.
+     */
+    val photoMs: Long get() = ms(requestedNanos, deliveredNanos)
+
+    /**
+     * De l'ouverture de session aux octets. Égal à [photoMs] en régime
+     * éphémère ; avec un aperçu il inclut le cadrage et ne mesure plus une
+     * photo mais une séance.
+     */
     val totalMs: Long get() = ms(startNanos, deliveredNanos)
 
     /**
@@ -239,6 +277,7 @@ class CaptureSession private constructor(
     fun capture(): CapturedImage {
         requireNotMainThread()
         val boite = ArrayBlockingQueue<Result<CapturedImage>>(1)
+        val requested = SystemClock.elapsedRealtimeNanos()
 
         onMain {
             imageCapture.takePicture(
@@ -252,7 +291,7 @@ class CaptureSession private constructor(
                     }
 
                     override fun onCaptureSuccess(image: ImageProxy) {
-                        boite.put(runCatching { image.use { lire(it, shutter) } })
+                        boite.put(runCatching { image.use { lire(it, requested, shutter) } })
                     }
 
                     override fun onError(exception: ImageCaptureException) {
@@ -280,7 +319,7 @@ class CaptureSession private constructor(
      * déclarant `image/jpeg` produirait une enveloppe signée qui ment sur son
      * contenu, et rien en aval ne pourrait le voir.
      */
-    private fun lire(image: ImageProxy, shutterNanos: Long): CapturedImage {
+    private fun lire(image: ImageProxy, requestedNanos: Long, shutterNanos: Long): CapturedImage {
         val format = CaptureFormat.fromImageFormat(image.format)
             ?: throw CameraException(
                 "format d'image inattendu (${image.format}) : le type MIME déclaré " +
@@ -303,6 +342,7 @@ class CaptureSession private constructor(
                 configuredNanos = stamps.configured,
                 runningNanos = stamps.running,
                 armedNanos = stamps.armed,
+                requestedNanos = requestedNanos,
                 shutterNanos = shutterNanos,
                 deliveredNanos = SystemClock.elapsedRealtimeNanos(),
             ),
