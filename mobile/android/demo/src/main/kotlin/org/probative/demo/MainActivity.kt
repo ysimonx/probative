@@ -104,6 +104,7 @@ public class MainActivity : ComponentActivity() {
 
     /** Le tableau des prises, reconstruit après chaque campagne. */
     private lateinit var tableau: LinearLayout
+    private lateinit var statut: TextView
     private lateinit var ecranTableau: LinearLayout
     private lateinit var ecranResultat: LinearLayout
 
@@ -165,6 +166,11 @@ public class MainActivity : ComponentActivity() {
             setPadding(48, 8, 48, 8)
         }
         viseur = PreviewView(this)
+        statut = TextView(this).apply {
+            setPadding(48, 4, 48, 4)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            text = "pret"
+        }
         view = TextView(this).apply {
             setTextIsSelectable(true)
             setPadding(48, 0, 48, 48)
@@ -192,9 +198,18 @@ public class MainActivity : ComponentActivity() {
                 },
                 LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT),
             )
+            addView(statut, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(
                 ScrollView(this@MainActivity).apply { addView(tableau) },
                 LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f),
+            )
+            addView(
+                Button(this@MainActivity).apply {
+                    text = "journal de la derniere campagne"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setOnClickListener { afficher(ecranResultat) }
+                },
+                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT),
             )
             // La sonde sans caméra reste accessible, discrètement : elle sert à
             // isoler ce qui ne dépend pas de l'acquisition.
@@ -280,32 +295,53 @@ public class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun montrerResultat() = afficher(ecranResultat)
-
-    /** Lance une campagne et bascule sur le résultat quand elle est finie. */
+    /**
+     * Lance une campagne **sans quitter le tableau**.
+     *
+     * Basculer d'écran retirait la `PreviewView` de la fenêtre, donc détruisait
+     * la surface d'aperçu *pendant* la capture. Outre l'aperçu qui s'éteignait
+     * sous les yeux, cela fausse la mesure : la campagne du 2026-08-17 qui
+     * attribuait à l'aperçu une convergence 3A de 5 à 6 secondes se faisait
+     * précisément pendant cette destruction de surface. On ne bouge donc plus
+     * rien tant que la caméra travaille.
+     *
+     * Le résultat s'annonce sur une ligne d'état ; le détail se consulte en
+     * touchant la ligne du tableau, quand on le veut.
+     */
     private fun lancer(choix: Probe) {
         if (enCours) {
             report("campagne deja en cours : appui ignore")
             return
         }
         if (choix == Probe.CAPTURE && !permissions.readyForCapture()) {
-            report("camera ou position manquante : acquisition impossible")
-            montrerResultat()
+            statut.text = "camera ou position manquante : acquisition impossible"
             return
         }
         probe = choix
         header.text = identity()
         lines.setLength(0)
         view.text = ""
-        montrerResultat()
+        statut.text = "campagne en cours…"
         enCours = true
         thread {
             try {
                 executer()
             } finally {
                 enCours = false
+                Handler(Looper.getMainLooper()).post {
+                    statut.text = resume()
+                    rafraichirTableau()
+                }
             }
         }
+    }
+
+    /** Ce que la dernière campagne a donné, en une ligne. */
+    private fun resume(): String {
+        val derniere = Historique.toutes().lastOrNull() ?: return "aucune prise — voir le journal"
+        return "prise n°%d : %s — %s, media[6] %d ms".format(
+            derniere.index, derniere.profil, derniere.niveau, derniere.mediaSixMs,
+        )
     }
 
     /** Retour des Réglages : l'état a pu changer sans passer par la demande. */
