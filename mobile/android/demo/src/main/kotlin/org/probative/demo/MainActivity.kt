@@ -25,6 +25,7 @@ import org.json.JSONObject
 import org.probative.core.capture.CapturedImage
 import org.probative.core.capture.CaptureSession
 import org.probative.core.envelope.Sealer
+import org.probative.core.freshness.KeyAttestationFreshness
 import org.probative.core.freshness.PlayIntegrity
 import org.probative.core.freshness.PlayIntegrityFreshness
 import org.probative.core.keys.KeystoreKeys
@@ -157,6 +158,17 @@ public class MainActivity : ComponentActivity() {
 
     /** Série courante. Clore incrémente : la suivante repart d'une tête. */
     private var serie = 1
+
+    /**
+     * Mode hors ligne — la fraîcheur vient de la puce, pas de Google.
+     *
+     * Sert à **mesurer** ce que coûte l'attestation de clé par capture : temps
+     * mural du scellement et taille d'enveloppe. Le serveur rejettera ces
+     * enveloppes, le type `key-attestation` lui étant inconnu — c'est attendu,
+     * et l'échec doit se lire dans le journal plutôt que d'être masqué.
+     */
+    private var horsLigne = false
+    private lateinit var boutonHorsLigne: Button
     private var prisesDansSerie = 0
     private var debutSerieMs = 0L
 
@@ -254,6 +266,18 @@ public class MainActivity : ComponentActivity() {
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                     setOnClickListener { clore() }
                 },
+                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT),
+            )
+            boutonHorsLigne = Button(this@MainActivity).apply {
+                text = libelleHorsLigne()
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setOnClickListener {
+                    horsLigne = !horsLigne
+                    text = libelleHorsLigne()
+                }
+            }
+            addView(
+                boutonHorsLigne,
                 LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT),
             )
             addView(
@@ -508,6 +532,9 @@ public class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun libelleHorsLigne(): String =
+        if (horsLigne) "fraicheur : attestation de cle (hors ligne)" else "fraicheur : Play Integrity"
+
     private fun onAction() {
         if (permissions.needsRequest()) {
             permissions.request(REQUEST_PERMISSIONS)
@@ -570,6 +597,7 @@ public class MainActivity : ComponentActivity() {
         // un extrait de logcat rapatrié sans l'écran doit permettre de
         // distinguer un capteur muet d'une autorisation manquante.
         report("autorisations  ${permissions.summary()}")
+        report("fraicheur      ${if (horsLigne) "key-attestation — hors ligne" else "play-integrity"}")
 
         val cloudProjectNumber = BuildConfig.CLOUD_PROJECT_NUMBER
         if (cloudProjectNumber <= 0L) {
@@ -666,7 +694,13 @@ public class MainActivity : ComponentActivity() {
             deployment = DEPLOYMENT,
             keyAlias = alias,
             appVersion = BuildConfig.VERSION_NAME,
-            freshness = PlayIntegrityFreshness(provider),
+            // La seule ligne qui change entre les deux régimes : le reste du
+            // chemin — R1, en-tête, signature — ignore d'où vient la fraîcheur.
+            freshness = if (horsLigne) {
+                KeyAttestationFreshness()
+            } else {
+                PlayIntegrityFreshness(provider)
+            },
         )
         // Le maillon précédent, s'il existe. Première prise d'une série : rien
         // à chaîner, et le serveur le signale par `CHAIN_FIRST_LINK_UNKNOWN`.

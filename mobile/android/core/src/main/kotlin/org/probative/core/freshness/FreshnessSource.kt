@@ -14,7 +14,10 @@ package org.probative.core.freshness
  */
 interface FreshnessSource {
 
-    /** Valeur du label 1 de `freshness` — `"play-integrity"` ou `"app-attest"`. */
+    /**
+     * Valeur du label 1 de `freshness` — `"play-integrity"`, `"app-attest"`,
+     * ou `"key-attestation"` pour une capture hors ligne (ADR-0010).
+     */
     val kind: String
 
     /**
