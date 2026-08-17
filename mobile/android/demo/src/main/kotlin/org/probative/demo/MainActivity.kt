@@ -104,7 +104,8 @@ public class MainActivity : ComponentActivity() {
 
     /** Le tableau des prises, reconstruit après chaque campagne. */
     private lateinit var tableau: LinearLayout
-    private lateinit var racine: LinearLayout
+    private lateinit var ecranTableau: LinearLayout
+    private lateinit var ecranResultat: LinearLayout
 
     /**
      * Ce qu'un scellement rend à l'appelant — au-delà de l'enveloppe.
@@ -120,90 +121,101 @@ public class MainActivity : ComponentActivity() {
         val decomposition: String?,
     )
 
-    /** La sonde ne part qu'une fois, quel que soit le chemin qui y mène. */
-    private var started = false
-
     /** Une campagne occupe la caméra : une seule à la fois. */
     @Volatile private var enCours = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // L'identité du binaire est **épinglée hors du défilement**, et ce
-        // n'est pas de la mise en page : au fil du journal, elle finissait
-        // poussée hors champ par le verdict qui s'affiche après elle. Un
-        // lecteur voyait alors le résultat sans savoir quelle version l'avait
-        // produit — le piège qu'A5 avait identifié sur une campagne à
-        // plusieurs versions.
-        //
-        // L'épinglage ne suffisait pas : la vraie cause de la disparition
-        // observée était le bord à bord, traité plus bas.
+        permissions = Permissions(this)
+        construireEcrans()
+
+        montrerTableau()
+        if (permissions.needsRequest()) {
+            // Demandées avant toute mesure, jamais pendant : une boîte de
+            // dialogue affichée au milieu d'une acquisition fausse les latences,
+            // et ce sont elles qu'on mesure. Leçon de C4.2.
+            permissions.request(REQUEST_PERMISSIONS)
+        }
+    }
+
+    /**
+     * Trois écrans, et un seul chemin entre eux.
+     *
+     * Le tableau est la page d'accueil et il peut être vide — c'est même son
+     * état initial. « + » conduit au viseur, le déclencheur lance la campagne,
+     * le résultat s'affiche, et le refermer ramène au tableau **augmenté d'une
+     * ligne**. Chaque écran ne montre qu'une chose : l'empilement précédent
+     * mêlait préambule, viseur, journal et tableau sur une seule page, où le
+     * déclencheur se perdait au milieu.
+     */
+    private fun construireEcrans() {
         header = TextView(this).apply {
-            setPadding(48, 96, 48, 24)
+            setPadding(48, 96, 48, 16)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             text = identity()
         }
-        view = TextView(this).apply {
-            setTextIsSelectable(true)
-            setPadding(48, 0, 48, 48)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-        }
-        // Le préambule d'autorisations est **épinglé**, comme l'identité du
-        // binaire et pour la même raison : c'est une condition de la campagne,
-        // pas un événement du journal. Poussé hors champ par le verdict, il
-        // laisserait lire un résultat sans savoir sous quelles autorisations
-        // il a été obtenu.
-        permissions = Permissions(this)
         permissionsView = TextView(this).apply {
             setPadding(48, 0, 48, 8)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         }
         action = Button(this).apply { setOnClickListener { onAction() } }
-
-        // Deux boutons plutôt qu'un sélecteur : la démonstration reste sans
-        // ressources, et relancer est le geste le plus fréquent d'une campagne.
-        val boutons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(
-                Button(this@MainActivity).apply {
-                    text = "A4.2 photo"
-                    setOnClickListener { relancer(Probe.CAPTURE) }
-                },
-            )
-            addView(
-                Button(this@MainActivity).apply {
-                    text = "A4.1 octets"
-                    setOnClickListener { relancer(Probe.SEAL) }
-                },
-            )
-        }
-
-        viseur = PreviewView(this)
-        // Le tableau des prises vit sous le journal, et chaque ligne se touche.
         tableau = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 8, 48, 8)
         }
+        viseur = PreviewView(this)
+        view = TextView(this).apply {
+            setTextIsSelectable(true)
+            setPadding(48, 0, 48, 48)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        }
 
-        val root = LinearLayout(this).apply {
+        // ── Écran 1 : le viseur et le tableau ────────────────────────────
+        //
+        // Le flux reste visible **pendant** qu'on consulte le tableau, et « + »
+        // est le déclencheur. Un écran viseur séparé obligerait à promener la
+        // `PreviewView` d'un parent à l'autre, ce qui détruit et recrée la
+        // surface à chaque aller-retour — coût inutile, et une occasion de
+        // perdre l'aperçu au mauvais moment.
+        ecranTableau = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(header, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(permissionsView, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(action, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
-            addView(boutons, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
-            // Le viseur occupe une bande fixe : le journal reste lisible en
-            // dessous, et c'est lui qu'on relit pendant une campagne.
-            addView(viseur, LinearLayout.LayoutParams(MATCH_PARENT, 700))
-            // Le déclencheur va **sous** le viseur, et il est le seul bouton
-            // large de l'écran. Les deux boutons de sonde, au-dessus et nommés
-            // d'après des étapes du plan, ne se lisaient pas comme un
-            // déclencheur — personne ne cherche « A4.2 photo » pour prendre
-            // une photo.
+            addView(viseur, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1.4f))
             addView(
                 Button(this@MainActivity).apply {
-                    text = "DECLENCHER"
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-                    setOnClickListener { relancer(Probe.CAPTURE) }
+                    text = "+   prendre une photo"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+                    setOnClickListener { lancer(Probe.CAPTURE) }
+                },
+                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT),
+            )
+            addView(
+                ScrollView(this@MainActivity).apply { addView(tableau) },
+                LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f),
+            )
+            // La sonde sans caméra reste accessible, discrètement : elle sert à
+            // isoler ce qui ne dépend pas de l'acquisition.
+            addView(
+                Button(this@MainActivity).apply {
+                    text = "sceller des octets remis (profil core)"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setOnClickListener { lancer(Probe.SEAL) }
+                },
+                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT),
+            )
+        }
+
+        // ── Écran 3 : le résultat ─────────────────────────────────────────
+        ecranResultat = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(
+                Button(this@MainActivity).apply {
+                    text = "fermer  →  retour au tableau"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                    setOnClickListener { montrerTableau() }
                 },
                 LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT),
             )
@@ -211,16 +223,18 @@ public class MainActivity : ComponentActivity() {
                 ScrollView(this@MainActivity).apply { addView(view) },
                 LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f),
             )
-            addView(tableau, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
         }
-        racine = root
+    }
 
-        // Depuis `targetSdk 35`, l'affichage bord à bord est imposé : la fenêtre
-        // occupe l'écran entier et le contenu se dessine **sous** la barre d'état
-        // et la barre de navigation. Sans ce recul, les premières lignes — donc
-        // l'identité du binaire — sont masquées par la barre système, ce qui
-        // ressemble à s'y méprendre à un défilement.
-        root.setOnApplyWindowInsetsListener { v, insets ->
+    /**
+     * Affiche un écran en lui rendant les marges système.
+     *
+     * Depuis `targetSdk 35` l'affichage bord à bord est imposé : sans ce recul,
+     * les premières lignes passent sous la barre d'état, ce qui ressemble à s'y
+     * méprendre à un défilement.
+     */
+    private fun afficher(ecran: View) {
+        ecran.setOnApplyWindowInsetsListener { v, insets ->
             val bars = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val i = insets.getInsets(WindowInsets.Type.systemBars())
                 intArrayOf(i.left, i.top, i.right, i.bottom)
@@ -236,19 +250,61 @@ public class MainActivity : ComponentActivity() {
             v.setPadding(bars[0], bars[1], bars[2], bars[3])
             insets
         }
-        setContentView(root)
+        setContentView(ecran)
+        ecran.requestApplyInsets()
+    }
 
+    private fun montrerTableau() {
         refreshPermissions()
         rafraichirTableau()
-        if (permissions.needsRequest()) {
-            // La sonde **attend**. A4.1 n'a besoin d'aucune de ces
-            // autorisations — elle scelle des octets remis — mais une boîte de
-            // dialogue affichée pendant la mesure fausse les latences, et
-            // `media[6]` comme `prepare` sont précisément ce qu'on mesure. La
-            // leçon de C4.2 vaut donc aussi pour le profil `core`.
-            permissions.request(REQUEST_PERMISSIONS)
-        } else {
-            startProbe()
+        afficher(ecranTableau)
+        ouvrirViseurSiPossible()
+    }
+
+    /**
+     * Allume l'aperçu dès que le tableau s'affiche.
+     *
+     * La session s'ouvre **avant** qu'on appuie, et c'est tout l'objet d'un
+     * aperçu : le capteur est déjà sous tension et convergé au déclenchement.
+     * `CaptureTimings.idleMs` mesurera ce temps de cadrage, et
+     * `shutterLagMs` dira ce que la convergence coûte encore.
+     */
+    private fun ouvrirViseurSiPossible() {
+        if (session != null || enCours || !permissions.readyForCapture()) return
+        thread {
+            try {
+                sessionOuverte()
+            } catch (e: Exception) {
+                report("ECHEC ouverture du viseur : ${e.message}")
+            }
+        }
+    }
+
+    private fun montrerResultat() = afficher(ecranResultat)
+
+    /** Lance une campagne et bascule sur le résultat quand elle est finie. */
+    private fun lancer(choix: Probe) {
+        if (enCours) {
+            report("campagne deja en cours : appui ignore")
+            return
+        }
+        if (choix == Probe.CAPTURE && !permissions.readyForCapture()) {
+            report("camera ou position manquante : acquisition impossible")
+            montrerResultat()
+            return
+        }
+        probe = choix
+        header.text = identity()
+        lines.setLength(0)
+        view.text = ""
+        montrerResultat()
+        enCours = true
+        thread {
+            try {
+                executer()
+            } finally {
+                enCours = false
+            }
         }
     }
 
@@ -269,10 +325,10 @@ public class MainActivity : ComponentActivity() {
         super.onRequestPermissionsResult(requestCode, permissionNames, grantResults)
         if (requestCode != REQUEST_PERMISSIONS) return
         refreshPermissions()
-        // Accordées ou refusées, la sonde part : A4.1 n'en dépend pas, et
-        // s'arrêter sur un refus priverait d'un résultat que le refus ne
-        // dégrade même pas.
-        startProbe()
+        // Rien ne part tout seul : c'est « + » qui déclenche. On se contente
+        // d'allumer l'aperçu si les autorisations viennent d'arriver.
+        rafraichirTableau()
+        ouvrirViseurSiPossible()
     }
 
     /**
@@ -306,51 +362,6 @@ public class MainActivity : ComponentActivity() {
             permissions.request(REQUEST_PERMISSIONS)
         } else {
             permissions.openSettings()
-        }
-    }
-
-    /**
-     * Choisit la sonde de lancement selon ce qui peut réellement aboutir.
-     *
-     * A4.2 sans caméra ni position produirait un échec qui n'apprend rien —
-     * c'est la case du plan de spike que le mécanisme existait sans que rien ne
-     * l'appelle. On retombe sur A4.1, qui ne dépend d'aucune autorisation, et
-     * on le dit plutôt que de le subir.
-     */
-    private fun relancer(choix: Probe) {
-        // **Refuser plutôt que d'empiler.** Deux campagnes concurrentes
-        // partagent la caméra, et `CaptureSession.open` commence par
-        // `unbindAll` : la seconde tue la session de la première, qui échoue
-        // sur « Camera is closed ». Trouvé en campagne le 2026-08-17, sur deux
-        // appuis rapprochés — et le symptôme n'accusait pas la cause.
-        if (enCours) {
-            report("campagne deja en cours : appui ignore")
-            return
-        }
-        probe = choix
-        started = false
-        lines.setLength(0)
-        header.text = identity()
-        view.text = ""
-        startProbe()
-    }
-
-    /** Play Integrity, Keystore et le réseau bloquent : jamais sur le fil principal. */
-    private fun startProbe() {
-        if (started) return
-        if (probe == Probe.CAPTURE && !permissions.readyForCapture()) {
-            probe = Probe.SEAL
-            header.text = identity()
-            report("A4.2 impossible : camera ou position manquante, repli sur A4.1")
-        }
-        started = true
-        enCours = true
-        thread {
-            try {
-                executer()
-            } finally {
-                enCours = false
-            }
         }
     }
 
@@ -759,7 +770,7 @@ public class MainActivity : ComponentActivity() {
         contenu.addView(
             Button(this).apply {
                 text = "← retour au tableau"
-                setOnClickListener { setContentView(racine) }
+                setOnClickListener { montrerTableau() }
             },
         )
         prise.photo?.let { octets ->
