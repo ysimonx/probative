@@ -223,6 +223,16 @@ private struct FicheView: View {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: 900,
+            // **Sans cette ligne la vignette sort tournée de 90°.** Le pipeline
+            // photo n'oriente pas les pixels : il pose une balise EXIF, et
+            // ImageIO ne l'applique que si on le demande.
+            //
+            // Le correctif appartient à l'afficheur, et à lui seul. Réécrire le
+            // fichier pour « redresser » l'image romprait la liaison au
+            // contenu — la spec §2.3 nomme la normalisation d'orientation parmi
+            // ce qui détruit sans rattrapage. Les octets sont justes ; c'est la
+            // vue qui les lisait mal.
+            kCGImageSourceCreateThumbnailWithTransform: true,
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
         else { return nil }
