@@ -356,10 +356,27 @@ serveur, jamais la permission.
       (`Permissions.readyForCapture()`), **mais rien ne l'appelle** : A4.1 ne
       dépend d'aucune de ces autorisations et part quoi qu'il arrive. La case
       se cochera avec A4.2, qui en dépend.
-- [ ] **Éprouvé à froid** : désinstaller puis réinstaller, ce qui remet les
+- [x] **Éprouvé à froid** : désinstaller puis réinstaller, ce qui remet les
       autorisations à zéro, et vérifier que la campagne passe **du premier
       coup**. C'est le seul test qui compte, et le seul qui ait trouvé quelque
       chose côté iOS.
+
+      **Fait le 2026-08-17 sur SM-X200**, état froid vérifié avant lancement :
+      les trois autorisations à `granted=false` et surtout **sans drapeau
+      `USER_SET`**, qui seul distingue « jamais soumise » de « refusée ».
+      Campagne passée du premier coup, enrôlement reparti de zéro, verdict
+      `STANDARD` inchangé.
+
+      **Deux dialogues pour trois autorisations**, et c'est correct :
+      `ACCESS_FINE_LOCATION` et `ACCESS_COARSE_LOCATION` sont du même groupe,
+      Android n'en affiche qu'une boîte — celle qui propose « précise » ou
+      « approximative ». Les demander ensemble est ce qui fait apparaître ce
+      choix.
+
+      **Reste non exercé** : la branche `COARSE_ONLY`. Le testeur a répondu
+      « précise ». L'état existe dans le code et n'a jamais été vu — c'est
+      pourtant lui qui ferait sortir `position` en C sans qu'aucun refus
+      n'apparaisse.
 
 **Quatre asymétries avec iOS, à ne pas transposer mécaniquement.**
 

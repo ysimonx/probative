@@ -348,6 +348,12 @@ survit pas au poste ne vaut rien.
    (36–39 ms, 2026-08-11). Ce qui sort de `media[6]` est bien le jeton et la
    signature, comme l'affirmait le commentaire de `Sealer`.
 
+   **Quatrième campagne, à froid** — désinstallation puis réinstallation
+   depuis Play, autorisations remises à zéro. Passée **du premier coup**,
+   enrôlement reparti de zéro, verdict `STANDARD` inchangé : rien ne dépendait
+   d'un état accumulé. `media[6]` y vaut 5 ms — le chiffre noté varie lui aussi
+   (2 à 5 ms), sans jamais approcher le seuil.
+
    **Attention à ne pas surétendre ce chiffre** : il vaut pour le profil
    `core`, où `media[6]` court depuis la remise des octets. En `capture` il
    partira de l'obturateur et englobera l'encodage — c'est A4.2, et cette
