@@ -1,14 +1,26 @@
-# Acquisition et liaisons — discussion ouverte
+# Acquisition et liaisons — instruction, et ce qu'elle a produit
 
-**Ouvert le 2026-08-15. Rien n'est décidé ici.** Ce document existe pour qu'une
-discussion tenue à l'oral survive au poste et se reprenne ailleurs. Il porte des
-constats, des pièges identifiés et **deux décisions à prendre** — la propriété de la
-session de capture (§ 2), et le niveau que doit viser une série hors ligne (§ 4) ; il ne
-fait autorité sur rien. Le jour où l'un de ces sujets se tranche, cela devient un ADR et
-cette section disparaît d'ici.
+**Ouvert le 2026-08-15 comme discussion sans autorité.** Ce document existe pour qu'une
+discussion tenue à l'oral survive au poste et se reprenne ailleurs.
 
-La première décision commande : l'aperçu et la série de captures sont le **même**
-remaniement, et le trancher deux fois donnerait deux réponses.
+**Ses deux décisions structurantes sont tranchées, le 2026-08-17 :**
+
+- **§ 2, la propriété de la session de capture — ADR-0008.** Le cœur possède la caméra,
+  l'application possède l'écran.
+- **§ 4, la structure d'une série — ADR-0009.** Tête attestée, maillons chaînés, queue
+  attestée. Elle a fermé du même coup l'inconnue n° 3 et la ligne « chaînage Android »
+  de la spec § 9.
+
+Les sections correspondantes gardent leur raisonnement d'origine, sous un renvoi à l'ADR
+qui fait autorité. **Le reste du document n'en fait toujours aucune** : ce sont des
+constats et des pièges, dont plusieurs restent ouverts — le zoom numérique, l'identité de
+l'objectif, et le **niveau que doit viser une série hors ligne**, qui n'est pas tranché
+par ADR-0009. Celui-là est une exigence produit, pas une question technique, et il touche
+un desserrage — donc son propre ADR.
+
+Le constat qui a permis d'y voir clair tient encore : l'aperçu et la série étaient le
+**même** remaniement, et les trancher séparément aurait donné deux réponses. Ils l'ont
+été le même jour, et le second ADR s'appuie sur le premier.
 
 ## Pourquoi maintenant
 
@@ -249,16 +261,16 @@ promettre une cadence**. Enfin l'échauffement, sur une session qui dure des min
 | Le pont ne reçoit que l'enveloppe signée | **Acquis** — ADR-0003 |
 | Un seul appel pour le chemin `capture` | Proposé, non écrit |
 | Les octets traversent une fois, après scellement, par chemin de fichier | Proposé, non écrit |
-| Propriété de la session avec aperçu | **Ouvert — à trancher en premier** |
+| Propriété de la session avec aperçu | **Tranché — ADR-0008** |
 | Ne jamais sceller une trame d'aperçu | Constat, à rendre normatif |
 | Réglages en type valeur plutôt qu'en méthodes mutantes | Proposé, non écrit |
 | Traitement du zoom numérique | **Ouvert** — `claim`, ou angle mort nommé |
 | Identité de l'objectif si le zoom optique s'ouvre | Ouvert, lié à l'inconnue n° 5 |
-| Série de captures : même remaniement que l'aperçu | Constat, dépend de la même décision |
+| Série de captures : structure et rattachement | **Tranché — ADR-0009**, non implémenté |
 | Un nonce d'avance plutôt qu'un lot | Proposé — sans changement de spec |
 | Lot de session noté à la largeur, non au drapeau | **Ouvert en spec § 9** — desserrage, donc ADR |
-| Niveau visé par une série hors ligne | **Ouvert** — exigence, pas technique |
-| Le chaînage prend son sens dans une série | Constat, instruirait l'inconnue n° 3 |
+| Niveau visé par une série hors ligne | **Ouvert** — exigence, pas technique. Non tranché par ADR-0009 |
+| Le chaînage prend son sens dans une série | **Inconnue n° 3 fermée** — ADR-0009 |
 
 ## Renvois
 
