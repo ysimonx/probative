@@ -8,9 +8,11 @@ import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import android.util.TypedValue
+import android.view.View
 import android.view.WindowInsets
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -53,10 +55,19 @@ public class MainActivity : Activity() {
         val CONTENT = "probative — octets remis au scellement, sonde A4.1\n"
             .toByteArray(Charsets.UTF_8)
         const val CONTENT_TYPE = "text/plain"
+
+        /** Un seul code : toutes les autorisations partent d'un même appel. */
+        const val REQUEST_PERMISSIONS = 1
     }
 
     private lateinit var view: TextView
+    private lateinit var permissions: Permissions
+    private lateinit var permissionsView: TextView
+    private lateinit var action: Button
     private val lines = StringBuilder()
+
+    /** La sonde ne part qu'une fois, quel que soit le chemin qui y mène. */
+    private var started = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,9 +91,23 @@ public class MainActivity : Activity() {
             setPadding(48, 0, 48, 48)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         }
+        // Le préambule d'autorisations est **épinglé**, comme l'identité du
+        // binaire et pour la même raison : c'est une condition de la campagne,
+        // pas un événement du journal. Poussé hors champ par le verdict, il
+        // laisserait lire un résultat sans savoir sous quelles autorisations
+        // il a été obtenu.
+        permissions = Permissions(this)
+        permissionsView = TextView(this).apply {
+            setPadding(48, 0, 48, 8)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        }
+        action = Button(this).apply { setOnClickListener { onAction() } }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(header, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            addView(permissionsView, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            addView(action, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
             addView(
                 ScrollView(this@MainActivity).apply { addView(view) },
                 LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f),
@@ -112,8 +137,77 @@ public class MainActivity : Activity() {
         }
         setContentView(root)
 
-        // Play Integrity, Keystore et le réseau bloquent : jamais sur le fil
-        // principal.
+        refreshPermissions()
+        if (permissions.needsRequest()) {
+            // La sonde **attend**. A4.1 n'a besoin d'aucune de ces
+            // autorisations — elle scelle des octets remis — mais une boîte de
+            // dialogue affichée pendant la mesure fausse les latences, et
+            // `media[6]` comme `prepare` sont précisément ce qu'on mesure. La
+            // leçon de C4.2 vaut donc aussi pour le profil `core`.
+            permissions.request(REQUEST_PERMISSIONS)
+        } else {
+            startProbe()
+        }
+    }
+
+    /** Retour des Réglages : l'état a pu changer sans passer par la demande. */
+    override fun onResume() {
+        super.onResume()
+        refreshPermissions()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissionNames: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissionNames, grantResults)
+        if (requestCode != REQUEST_PERMISSIONS) return
+        refreshPermissions()
+        // Accordées ou refusées, la sonde part : A4.1 n'en dépend pas, et
+        // s'arrêter sur un refus priverait d'un résultat que le refus ne
+        // dégrade même pas.
+        startProbe()
+    }
+
+    /**
+     * Le préambule tel qu'il s'affiche — une ligne par autorisation.
+     *
+     * Le bouton porte l'action possible et *seulement* elle : demander tant
+     * qu'une autorisation n'a jamais été soumise, conduire aux Réglages
+     * lorsqu'un refus est définitif, disparaître quand il n'y a plus rien à
+     * faire. Un bouton qui n'afficherait plus aucune boîte de dialogue est
+     * pire que pas de bouton du tout.
+     */
+    private fun refreshPermissions() {
+        permissionsView.text = permissions.entries().joinToString("\n") {
+            "%s %-10s %-22s %s".format(it.state.symbol, it.label, it.state.label, it.note)
+        }
+        when {
+            permissions.needsRequest() -> {
+                action.text = "Tout autoriser"
+                action.visibility = View.VISIBLE
+            }
+            permissions.blocked() -> {
+                action.text = "Ouvrir les reglages"
+                action.visibility = View.VISIBLE
+            }
+            else -> action.visibility = View.GONE
+        }
+    }
+
+    private fun onAction() {
+        if (permissions.needsRequest()) {
+            permissions.request(REQUEST_PERMISSIONS)
+        } else {
+            permissions.openSettings()
+        }
+    }
+
+    /** Play Integrity, Keystore et le réseau bloquent : jamais sur le fil principal. */
+    private fun startProbe() {
+        if (started) return
+        started = true
         thread { probe() }
     }
 
@@ -164,6 +258,13 @@ public class MainActivity : Activity() {
         // on ne la journalise qu'une fois, parce que logcat n'a pas d'en-tête
         // épinglé et qu'un extrait de journal sans version ne vaut rien.
         Log.i(TAG, identity())
+
+        // Relu ici, jamais hérité du préambule : l'état a pu changer entre
+        // l'affichage et le lancement — un retour des Réglages, une réponse
+        // arrivée entre-temps. Et il est **imprimé**, pas seulement affiché :
+        // un extrait de logcat rapatrié sans l'écran doit permettre de
+        // distinguer un capteur muet d'une autorisation manquante.
+        report("autorisations  ${permissions.summary()}")
 
         val cloudProjectNumber = BuildConfig.CLOUD_PROJECT_NUMBER
         if (cloudProjectNumber <= 0L) {

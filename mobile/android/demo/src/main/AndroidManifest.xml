@@ -2,10 +2,29 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Play Integrity interroge les serveurs de Google, et la sonde A4.1
-         parle au serveur de développement. Aucune autre permission : sceller
-         des octets remis n'en demande pas, et c'est un trait du profil `core`
-         plus qu'une économie. L'acquisition (A4.2) en demandera. -->
+         parle au serveur de développement. Accordée à l'installation : c'est
+         pourquoi le préambule d'autorisations affiche « réseau — non requise »
+         là où iOS doit demander l'accès au réseau local. -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Acquisition (A4.2). Déclarées avant d'être exercées, à dessein : le
+         préambule d'autorisations doit pouvoir les demander **avant** la
+         première mesure, faute de quoi la boîte de dialogue s'affiche pendant
+         que le relevé court — la leçon de C4.2 sur iPhone.
+
+         Rien d'autre : le baromètre et l'accéléromètre, dont `position` tire
+         sa corroboration, ne sont protégés par aucune autorisation sur
+         Android. `ACTIVITY_RECOGNITION` viendra avec le podomètre, si le
+         podomètre vient. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- `required="false"` : sans cela, Play exclurait du catalogue tout
+         appareil sans caméra ni GPS. La démonstration doit rester installable
+         là où seul le profil `core` a un sens. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <!-- `usesCleartextTraffic` : le serveur de développement est en HTTP sur la
          boucle locale via `adb reverse`. Un attribut plutôt qu'un fichier de
