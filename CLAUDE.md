@@ -198,7 +198,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 | `PlayIntegrityVerifier` — **phase B faite** | Jeton déchiffré par `decodeIntegrityToken`, `requestHash` recalculé et confronté, verdicts traduits. Chaîne d'attestation de clé ancrée à la racine Google (`key_attestation.py`). 35 tests |
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
 | Vecteurs d'appareil | Android (chaîne à 4 certificats, SM-X200) et iOS (App Attest, iPhone 16) versionnés dans `tests/device-vectors/` |
-| Cœur natif Android | A1–A3 et **A5 faites, validées sur SM-X200**. **A4.1 écrite** — `seal(bytes)`, profil `core` : le cœur assemble et signe une enveloppe complète, épinglée au vecteur d'or par un test d'hôte. **Jamais exécutée sur appareil** : c'est la seule case qui reste pour le critère de sortie du spike. Puis A4.2, capture CameraX |
+| Cœur natif Android | A1–A3, **A5 et A4.1 faites, validées sur SM-X200** (2026-08-17). `seal(bytes)`, profil `core` : le cœur assemble et signe une enveloppe complète, épinglée au vecteur d'or par un test d'hôte, et **acceptée par le vérificateur depuis l'appareil** — `STANDARD`, plafonné par `time` faute de chaînage. **Critère de sortie du spike atteint.** Reste A4.2, capture CameraX |
 | Cœur natif iOS | C1–C3, **C4.1 et C4.2 faites** (iPhone 16, iOS 26.6, 2026-08-13). **Critère de sortie du spike atteint** en `core` (`STRONG`), puis **une photo réelle scellée** en `capture` : `STANDARD`, `integrity`/`position`/`time` au grade A, `origin` à B par le seul plafond de recapture — le maximum de la v0.1. Reste : chemin de production, chaînage |
 | Liaisons Flutter / React Native | Non commencées. Couture, prévisualisation et commandes de prise de vue instruites dans `docs/acquisition-et-liaisons.md` — une décision y attend avant toute ligne de code |
 | Banc de triche | Non commencé |
@@ -295,10 +295,50 @@ survit pas au poste ne vaut rien.
    `media[6]`** (encodage). La prochaine campagne rendra donc l'écart
    attribuable au lieu de le constater. Voir l'inconnue n° 2 et
    `docs/acquisition-et-liaisons.md` §2.
-2. **Lancer A4.1 sur SM-X200.** Jamais exécutée sur matériel Android : la
-   répétition du 2026-08-13 était sur émulateur, qui n'a ni clé matérielle ni
-   verdict d'appareil. C'est ce qui manque pour établir le critère de sortie du
-   spike côté Android — il l'est déjà côté iOS.
+2. ~~**Lancer A4.1 sur SM-X200.**~~ **Fait le 2026-08-17.** Version 0.1.4
+   (code 5) publiée sur la piste interne et installée par `com.android.vending`.
+   Résultat : **`STANDARD`**, motif `time au grade B`, profil `core`, aucune
+   note de rejet. `integrity` et `origin` en **A**, `time` en **B**.
+
+   **Le critère de sortie du spike est désormais coché sur les deux
+   plateformes.** Trois choses valent d'être retenues :
+
+   - **La phase B a tourné sur matériel pour la première fois.** Chaîne à
+     4 certificats, `chaine attestee : true` — ancrage à la racine Google
+     exercé en vrai, et non plus contre un vecteur figé. Le `RootOfTrust` de
+     la tablette a été lu et noté : `boot-verified-at-enrollment`.
+   - **`STANDARD` est le maximum atteignable sur Android aujourd'hui**, et
+     l'écart avec le `STRONG` de l'iPhone tient à **une seule propriété**.
+     `grade_time` ne monte en A que par `assertion-counter-monotonic`
+     (propre à iOS) ou `envelope-chain-verified`. Drapeau `CHAIN_ABSENT`.
+     C'est l'inconnue n° 3 qui plafonne la plateforme, rien d'autre.
+   - **Aucun achat de matériel ne lèverait ce plafond.** La clé est sortie en
+     `TRUSTED_ENVIRONMENT`, la SM-X200 n'ayant pas de StrongBox — mais
+     `integrity` est déjà en A, et StrongBox ne l'y ferait pas monter plus
+     haut. Un Pixel donnerait le même `STANDARD`. Ce qui manque s'écrit, ne
+     s'achète pas.
+
+   **Rejouée le même jour en 0.1.5** (code 6), qui ajoute le préambule
+   d'autorisations. Verdict **identique** — `STANDARD`, `time` en B, mêmes
+   grades, même drapeau. C'était l'attendu : aucune de ces autorisations
+   n'entre dans le profil `core`, et un niveau qui aurait bougé aurait signalé
+   que le préambule touche ce qu'il ne devait pas.
+
+   Latences des deux exécutions, même appareil, même code de sonde :
+
+   | | 0.1.4 (11:57) | 0.1.5 (12:29) |
+   |---|---|---|
+   | préparation | 671 ms | 493 ms |
+   | clé matérielle | 43 ms | 39 ms |
+   | scellement | **39 ms** | **52 ms** |
+   | vérification | 422 ms | 339 ms |
+
+   Le scellement varie de +33 % d'une exécution à l'autre, et la préparation
+   de −27 %. **La variabilité entre deux exécutions identiques est
+   elle-même l'information** — même constat que sur iPhone entre les
+   2 494 ms et 1 904 ms du 2026-08-15. Un seuil calibré sur une seule mesure
+   ne vaudrait rien. À noter aussi : le scellement de l'entrée de gamme
+   (39–52 ms) est du même ordre que celui de l'iPhone 16 (49 ms).
 
 **Trois contraintes de poste, apprises à l'usage.** L'iPhone se reverrouille
 entre deux campagnes et `devicectl` refuse alors de lancer (« Locked ») :
