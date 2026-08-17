@@ -79,6 +79,17 @@ public class MainActivity : ComponentActivity() {
 
         /** Un seul code : toutes les autorisations partent d'un même appel. */
         const val REQUEST_PERMISSIONS = 1
+
+        /**
+         * Bornes d'une série, au premier des deux atteint.
+         *
+         * Assez lâches pour ne pas rappeler le quota Play Integrity, assez
+         * serrées pour que la fenêtre pendant laquelle l'appareil a pu être
+         * compromis reste courte. Ce sont des points de départ, à recalibrer
+         * comme les seuils du vérificateur : ils n'ont rien d'une vérité.
+         */
+        const val MAX_PRISES_PAR_SERIE = 5
+        const val DUREE_MAX_SERIE_MS = 120_000L
     }
 
     private lateinit var view: TextView
@@ -146,6 +157,8 @@ public class MainActivity : ComponentActivity() {
 
     /** Série courante. Clore incrémente : la suivante repart d'une tête. */
     private var serie = 1
+    private var prisesDansSerie = 0
+    private var debutSerieMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -237,7 +250,7 @@ public class MainActivity : ComponentActivity() {
             // isoler ce qui ne dépend pas de l'acquisition.
             addView(
                 Button(this@MainActivity).apply {
-                    text = "j'ai fini mes prises de vues"
+                    text = "j'ai fini mes prises de vues (facultatif)"
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                     setOnClickListener { clore() }
                 },
@@ -359,6 +372,7 @@ public class MainActivity : ComponentActivity() {
             } finally {
                 enCours = false
                 Handler(Looper.getMainLooper()).post {
+                    clotureAutomatique()
                     statut.text = resume()
                     rafraichirTableau()
                 }
@@ -375,6 +389,55 @@ public class MainActivity : ComponentActivity() {
      * est resté sain. Une application réelle devra donc offrir ce geste, pas
      * seulement un bouton « photo suivante ».
      */
+    /**
+     * Clôt la série d'elle-même — au bout de [MAX_PRISES_PAR_SERIE] prises ou
+     * de [DUREE_MAX_SERIE_MS], au premier des deux.
+     *
+     * **Ce que cela apporte aujourd'hui, et ce que non.** Tant que `freshness`
+     * est obligatoire au format, *toutes* les enveloppes portent un jeton :
+     * la série est donc attestée en chacun de ses points, et la segmenter ne
+     * change rien à ce qui est prouvé. Ce mécanisme est la **politique**, pas
+     * encore son effet — il décidera où se placent les points attestés le jour
+     * où les maillons cesseront d'en porter (ADR-0009 point 2). Le dire
+     * maintenant évite de croire la fenêtre bornée par une borne qui n'agit
+     * pas encore.
+     *
+     * Ce qu'il apporte déjà : l'utilisateur n'a plus rien à presser, et le
+     * tableau montre des séries plutôt qu'une liste plate.
+     */
+    private fun clotureAutomatique() {
+        val trop = prisesDansSerie >= MAX_PRISES_PAR_SERIE
+        val vieille = debutSerieMs != 0L &&
+            System.currentTimeMillis() - debutSerieMs >= DUREE_MAX_SERIE_MS
+        if (!trop && !vieille) return
+        val motif = if (trop) "$MAX_PRISES_PAR_SERIE prises" else "${DUREE_MAX_SERIE_MS / 1000} s"
+        report("serie $serie close automatiquement ($motif)")
+        reinitialiserSerie()
+    }
+
+    private fun reinitialiserSerie() {
+        dernierDigest = null
+        prisesDansSerie = 0
+        debutSerieMs = 0L
+        serie += 1
+    }
+
+    /**
+     * Passage en arrière-plan : la série se clôt.
+     *
+     * C'est le geste implicite « j'ai fini », et il rattrape le cas que la
+     * minuterie manque — l'utilisateur qui pose l'appareil ou quitte
+     * l'application juste après sa dernière photo, sans qu'aucun tic ne vienne
+     * jamais.
+     */
+    override fun onStop() {
+        super.onStop()
+        if (dernierDigest != null) {
+            report("serie $serie close : passage en arriere-plan")
+            reinitialiserSerie()
+        }
+    }
+
     private fun clore() {
         if (enCours) {
             statut.text = "campagne en cours : clôture refusée"
@@ -384,8 +447,7 @@ public class MainActivity : ComponentActivity() {
             statut.text = "aucune série ouverte"
             return
         }
-        dernierDigest = null
-        serie += 1
+        reinitialiserSerie()
         statut.text = "série close — la prochaine prise ouvrira la série $serie"
     }
 
@@ -674,8 +736,11 @@ public class MainActivity : ComponentActivity() {
             kid = kid,
             decomposition = scelle.decomposition,
         )
+        prisesDansSerie += 1
+        if (debutSerieMs == 0L) debutSerieMs = System.currentTimeMillis()
         report("")
         report("prise n°${prise.index} consignee — ${Historique.compte()} au tableau")
+        report("serie $serie : $prisesDansSerie prise(s)")
         report(Historique.dispersion(prise.profil))
         Handler(Looper.getMainLooper()).post { rafraichirTableau() }
     }
