@@ -40,8 +40,27 @@ Projet personnel indépendant, destiné à être réutilisé sur plusieurs proje
    R2 établit déjà quel appareil l'a produite, au niveau du message. Une sécurité de
    canal — mTLS, certificat client, jeton de session — relève du déploiement et ne doit
    jamais entrer dans le jugement, sous peine de rendre la preuve invérifiable une fois
-   la session close. Voir spec §6. *Placé en fin de liste à dessein : insérer un
-   invariant au milieu décale la numérotation et fait mentir les renvois des ADR.*
+   la session close. Voir spec §6.
+8. **On note une grandeur mesurée, jamais un mode déclaré.** Dès qu'un fait est mesurable
+   par le serveur, c'est la mesure qui est notée — pas le drapeau que le client pose
+   dessus. Un champ déclaratif ne peut servir qu'à **abaisser** un grade, et seulement
+   lorsque rien de mesurable ne couvre le même fait : un client hostile ne déclare pas
+   qu'il triche, mais il peut omettre de déclarer qu'il est honnête.
+
+   **Deux occurrences, et c'est ce qui en fait une règle plutôt qu'une anecdote.**
+   `grade_time` notait `offline: bool`, un mode déclaré, quand la largeur d'encadrement
+   du nonce était mesurable — corrigé le 2026-08-15 par `max_nonce_window_ms`, et le
+   drapeau punissait un lot consommé aussitôt, dont l'encadrement était pourtant serré.
+   ADR-0009 allait noter « série close ou non », un second drapeau déclaré, quand chaque
+   maillon porte son propre nonce et que la distance depuis la dernière attestation est
+   donc mesurable — amendé le 2026-08-17.
+
+   C'est un corollaire de l'invariant 1, et il ne s'en déduit pas tout seul : *le client
+   collecte, le serveur juge* dit qui décide, pas **sur quoi**. Un serveur peut juger
+   souverainement sur une donnée que le client lui a dictée.
+
+*Un invariant s'ajoute **en fin de liste**, jamais au milieu : renuméroter ferait mentir
+les renvois des ADR.*
 
 ## Documents de référence — à lire avant toute modification de fond
 
