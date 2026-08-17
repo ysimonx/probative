@@ -1,0 +1,196 @@
+# Sessions Play Integrity et prises de vues multiples
+
+**Ce document est opérationnel.** Il rassemble ce qu'il faut savoir pour faire fonctionner
+plusieurs captures à la suite sans se faire brider, et ce que cela change à la preuve.
+
+La **décision** vit ailleurs : `decisions/ADR-0009-serie-de-captures-et-chainage.md`. Le
+**raisonnement** qui y a mené aussi : `acquisition-et-liaisons.md` §4. Ici, ce sont les
+mécanismes, les chiffres mesurés et les pièges.
+
+Ne pas confondre avec `play-integrity-service-account.md`, qui couvre la mise en place —
+compte de service, projet Cloud, publication. Celui-ci couvre l'**exécution**.
+
+---
+
+## 1. Trois appels qu'on appelle tous « Play Integrity »
+
+C'est la source de confusion la plus coûteuse, et elle mène à optimiser le mauvais.
+
+| | Qui appelle | Quand | Coût mesuré | Quota |
+|---|---|---|---|---|
+| **`prepare`** | l'appareil → Google | mise en route du fournisseur | 332 – 1 313 ms | **strict** |
+| **demande de jeton** | l'appareil → Google | par enveloppe attestée | 36 – 39 ms | large |
+| **`decodeIntegrityToken`** | **votre serveur** → Google | par enveloppe vérifiée | 340 – 930 ms | serveur |
+
+Trois choses en découlent :
+
+- **`prepare` ne produit aucune preuve.** Il rend un *fournisseur*, pas un jeton. Le
+  refaire n'atteste rien et ne clôt aucune série.
+- **La demande de jeton est bon marché** — deux ordres de grandeur sous `prepare`. Ce
+  n'est jamais elle qui domine une latence de capture.
+- **Le déchiffrement est côté serveur**, donc soumis à *votre* quota Google Cloud et non à
+  celui de l'appareil. Un déploiement doit le dimensionner : c'est une requête par
+  enveloppe reçue.
+
+---
+
+## 2. Ce qui a été mesuré le 2026-08-17, sur SM-X200
+
+**Le bridage est réel et rapide à atteindre.** Cinq campagnes en vingt secondes ont
+suffi :
+
+```
+Standard Integrity API error (-8): The calling app has made too many requests
+to the API and has been throttled, or your app has exceeded its daily request quota.
+```
+
+Puis huit échecs consécutifs, sur environ douze secondes. Le serveur, lui, répondait `200`
+à toutes les requêtes : **rien n'était cassé côté format**.
+
+Le message mêle deux limites qu'il ne distingue pas — une cadence instantanée et un quota
+journalier. Sur ce banc c'est la cadence qui a mordu, la journée entière n'ayant pas
+dépassé quelques dizaines d'appels. Un déploiement réel devra surveiller les deux.
+
+### L'hypothèse du `prepare` répété
+
+Jusqu'à la version 0.3.0, la sonde appelait `prepare` **au début de chaque campagne** —
+donc cinq fois en vingt secondes. Or `prepare` porte le quota strict, la demande de jeton
+le quota large.
+
+**Il est donc possible que le bridage vienne des `prepare` et non des jetons.** Ce n'est
+pas établi. La version 0.3.0 prépare une seule fois par lancement, ce qui teste
+l'hypothèse sans rien réimplémenter : si une rafale passe désormais sans brider, la cause
+était là.
+
+Cette distinction n'est pas académique. Si c'est `prepare`, le remède est de le préparer
+une fois et de le réutiliser — et la contrainte sur la cadence des captures tombe presque
+entièrement.
+
+---
+
+## 3. Ce qu'une série prouve, et ce qu'elle coûte
+
+Une **série** — plusieurs captures d'un même constat — établit deux choses qu'une suite de
+prises indépendantes n'établit pas :
+
+- l'**ordre** des prises ;
+- l'**absence de retrait** : personne n'a enlevé la photo gênante.
+
+La forme retenue (ADR-0009) :
+
+```
+prise 1   preuve de fraîcheur complète, R1 sur sa propre charge utile   ← tête attestée
+prise 2   payload[7] = SHA-256(enveloppe 1)
+prise 3   payload[7] = SHA-256(enveloppe 2)
+…
+prise N   preuve de fraîcheur complète                                  ← queue attestée
+```
+
+**Deux jetons par série, quelle que soit sa longueur.** C'est ce qui met la cadence hors
+de portée du quota.
+
+### Ce qu'un maillon perd, et qu'il faut dire
+
+La chaîne prouve l'**ordre**, jamais la **santé continue** de l'appareil. Quelqu'un qui
+obtient une tête attestée puis compromet le téléphone peut prolonger la chaîne : le
+vérificateur n'y verra rien.
+
+D'où deux règles qui ne se négocient pas :
+
+- `integrity` est **plafonné** sur un maillon, sous le grade d'une enveloppe fraîchement
+  attestée, avec un motif qui le dit ;
+- une série **sans queue attestée** est signalée : elle reste ouverte par le bas, et rien
+  ne borne la fenêtre de compromission.
+
+`time`, en revanche, garde tout le bénéfice : `envelope-chain-verified` le promeut en A,
+puisque l'ordre est exactement ce que la chaîne établit.
+
+---
+
+## 4. Clore une série : quatre mécanismes, aucun suffisant seul
+
+| Mécanisme | Ce qu'il attrape | Sa limite |
+|---|---|---|
+| Compteur — 5 prises | la rafale | ne borne pas le temps |
+| Minuterie — 2 minutes | la série qui traîne | clôt **en retard**, d'au plus un intervalle |
+| Passage en arrière-plan | l'utilisateur qui s'en va | rien si l'application est tuée net |
+| Bouton explicite | tout, **exactement** | suppose que l'utilisateur y pense |
+
+Le bouton reste donc utile mais **facultatif** : les trois premiers le rendent optionnel
+plutôt qu'obligatoire, ce qui est une bien meilleure position produit.
+
+**Une minuterie ne remplace pas une clôture exacte.** Une attestation obtenue 60 s après
+la dernière photo borne la fenêtre à 60 s, pas à la photo. C'est acceptable — infiniment
+mieux qu'une série ouverte — mais c'est un affaiblissement mesurable, et le résultat doit
+pouvoir le refléter.
+
+Les valeurs 5 prises / 2 minutes sont des **points de départ**, au même titre que les
+seuils de `grading.py` : assez lâches pour ne pas rappeler le quota, assez serrées pour
+que la fenêtre reste courte. À recalibrer sur données réelles.
+
+---
+
+## 5. Où en est l'implémentation
+
+| | État |
+|---|---|
+| Chaînage `payload[7]` côté cœur Android | **Fait** — 0.3.0 |
+| Validation de chaîne côté vérificateur | **Faite depuis longtemps** — `CHAIN_BROKEN`, `CHAIN_FIRST_LINK_UNKNOWN`, `envelope-chain-verified` |
+| Enrôlement stable, `prepare` unique | **Fait** — 0.3.0 |
+| Politique de clôture | **Faite** — 0.3.1 |
+| `freshness` optionnel (spec + CDDL) | **Non fait** |
+| Notation d'un maillon sans jeton | **Non faite** |
+| Signalement d'une série sans queue | **Non fait** |
+
+**Conséquence à ne pas perdre de vue.** Tant que `freshness` est obligatoire, *toutes* les
+enveloppes portent un jeton : la série est attestée en chacun de ses points, et la
+segmenter ne change rien à ce qui est prouvé. La politique de clôture existe donc **avant**
+son effet. Elle décidera où se placent les points attestés le jour où les maillons
+cesseront d'en porter.
+
+C'est aussi pourquoi le bridage n'a pas encore disparu : deux jetons par série ne
+s'obtiennent qu'une fois `freshness` rendu optionnel.
+
+---
+
+## 6. Trois pièges, tous rencontrés
+
+### L'enrôlement par capture rend le chaînage impossible
+
+Jusqu'à la 0.3.0, la démonstration générait une clé neuve à chaque campagne. Une clé neuve
+donne un `kid` neuf, donc **un appareil neuf pour le serveur**, donc jamais de maillon
+précédent. Le chaînage était impossible par construction, et `CHAIN_FIRST_LINK_UNKNOWN`
+apparaissait à chaque prise sans que la cause saute aux yeux.
+
+En production l'enrôlement est un événement d'**installation**, pas de capture. Toute
+démonstration qui s'en écarte se prive du chaînage sans le savoir.
+
+### Confondre `prepare` avec une attestation
+
+Voir §1. Refaire `prepare` périodiquement est une bonne pratique de **quota** ; cela ne
+clôt aucune série et n'atteste rien.
+
+### Prendre le quota pour la justification de la série
+
+C'est le piège de raisonnement, et le plus coûteux à long terme. Un quota relève de
+l'exploitation : il change sans préavis, diffère d'un compte à l'autre, et peut être
+relevé demain. **La série se justifie par ce qu'elle prouve** — qu'aucune prise ne manque.
+Si elle avait été conçue pour contourner une limite commerciale, elle deviendrait un
+résidu qu'on n'oserait plus retirer le jour où la limite disparaît.
+
+Le dépôt a une règle pour cela : *ce qui change le format se tranche, ce qui change
+l'exploitation se configure.*
+
+---
+
+## Renvois
+
+- `decisions/ADR-0009-serie-de-captures-et-chainage.md` — la décision et ses sept points
+- `decisions/ADR-0008-propriete-de-la-session-de-capture.md` — qui possède la caméra
+  pendant une séance
+- `decisions/ADR-0006-authentification-google-injectable.md` — pourquoi l'appel à Google
+  par enveloppe est subi et non choisi
+- `play-integrity-service-account.md` — la mise en place, en amont de ce document
+- `acquisition-et-liaisons.md` §4 — le raisonnement d'origine sur la série
+- `envelope-spec.md` §9 — les décisions ouvertes restantes, dont le niveau visé par une
+  série hors ligne
