@@ -93,12 +93,34 @@ c'est celle-ci : le hors ligne.
      TEE. Il ne vaut que ce que vaut le demarrage verifie -- ce que `RootOfTrust`, lui
      **hardware-enforced**, etablit precisement. La dependance est propre : une assertion
      logicielle adossee a une preuve materielle de l'integrite du systeme qui l'emet ;
-   - **hors ligne, `origin` ne peut pas atteindre `app-recognized`.** Ce verdict signifie
-     « ce binaire est celui que Play distribue », et aucune attestation locale ne peut le
-     dire. Ce que le champ 709 etablit -- ce paquet, signe par cette cle -- correspond
-     exactement au cas que `GradingPolicy.deployment_signed_app_grade` note deja, **C par
-     defaut**. Une capture hors ligne sortira donc en `DEGRADED` a politique inchangee,
-     et c'est coherent : elle prouve moins.
+   - **hors ligne et sur Android, `origin` ne peut pas atteindre `app-recognized`.** Ce
+     verdict signifie « ce binaire est celui que Play distribue », et aucune attestation
+     locale ne peut le dire. Ce que le champ 709 etablit -- ce paquet, signe par cette
+     cle -- correspond exactement au cas que `GradingPolicy.deployment_signed_app_grade`
+     note deja, **C par defaut**. Une capture Android hors ligne sortira donc en
+     `DEGRADED` a politique inchangee, et c'est coherent : elle prouve moins.
+
+9. **Le hors ligne est asymetrique entre les plateformes, et il faut le dire.** Une
+   premiere redaction de cet ADR generalisait la conclusion ci-dessus a « une capture hors
+   ligne » ; c'est faux pour iOS.
+
+   | | iOS hors ligne | Android hors ligne |
+   |---|---|---|
+   | identite de l'application | **`app-recognized`** | `deployment-signed` -> C |
+   | integrite | `STRONG`, verifiee hors ligne | `RootOfTrust` frais, sans verdict Google |
+   | ordonnancement | compteur d'assertion -> A | chainage -> A |
+   | **niveau atteignable** | **`STANDARD`**, voire `STRONG` en `core` | **`DEGRADED`** |
+
+   App Attest lie son assertion a `teamID.bundleID` par le `rpIdHash`, et ce controle ne
+   demande aucun reseau : `app_attest.py` pose donc `app_recognized=True` hors ligne comme
+   en ligne. Rien chez Google n'a d'equivalent -- « ce binaire est celui du magasin » n'est
+   etablissable que par un appel a Play.
+
+   **L'invariant 4 pose que les deux plateformes atteignent le meme niveau par des chemins
+   differents. Hors ligne, elles ne l'atteignent pas.** Ce n'est pas un defaut du format --
+   aucun champ obligatoire propre a une plateforme n'est introduit -- mais c'est un ecart
+   de capacite, structurel, et le taire ferait promettre au produit ce qu'il ne tient pas
+   sur la moitie du parc.
 
 ## Justification
 
