@@ -152,7 +152,19 @@ l'objectif devra être enrôlée et inscrite dans l'enveloppe.
 
 ---
 
-## 4. La série de captures — une session, plusieurs prises
+## 4. La série de captures — **décidée, ADR-0009**
+
+> **Tranchée le 2026-08-17 : tête attestée, maillons chaînés, queue attestée.** Voir
+> `decisions/ADR-0009-serie-de-captures-et-chainage.md`. La section ci-dessous garde le
+> raisonnement qui a servi à instruire le choix.
+>
+> Deux points n'y figurent pas et sont venus de la mesure. **Play Integrity bride une
+> série rapide** — cinq campagnes en vingt secondes suffisent (erreur `-8`) — mais ce
+> fait est un symptôme, jamais la justification : un quota relève de l'exploitation. Et
+> **le rattachement d'une enveloppe à sa série ne se déclare pas** : c'est `payload[7]`,
+> signé, là où un identifiant de session serait falsifiable comme `posture`.
+
+## 4 bis. Le raisonnement d'origine — une session, plusieurs prises
 
 **La proposition, telle que posée le 2026-08-15 :** démarrer la session une fois, enchaîner
 plusieurs prises, la couper à la fin. La forme naturelle d'un relevé de terrain, où

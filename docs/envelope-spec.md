@@ -481,7 +481,7 @@ Un vérificateur accepte les versions mineures qu'il ne connaît pas et signale 
 
 | Sujet | Options | À trancher |
 |---|---|---|
-| Chaînage Android | Chaîne de hachage locale, ou compteur monotone stocké dans le Keystore | Après le spike |
+| ~~Chaînage Android~~ | ~~Chaîne de hachage locale, ou compteur monotone stocké dans le Keystore~~ | **Tranché le 2026-08-17 — ADR-0009.** Chaîne de hachage : le compteur n'aurait rien dit de l'absence de retrait, seulement de l'ordre. Une série est une tête attestée, des maillons chaînés, une queue attestée. **Décidé, non implémenté** : `freshness` doit passer optionnel ici et au CDDL |
 | Fenêtre inertielle | Aucune durée normative aujourd'hui — le vérificateur ne note que la *présence* de `motion` —, ou en fixer une | Après mesure de l'impact sur la taille d'enveloppe. ~~10 s~~ retiré du §2.4 le 2026-08-13 : la contrainte n'était appliquée nulle part et les deux cœurs comme le vecteur d'or la violaient déjà |
 | Corroboration barométrique | Rester **déclarée** — le client envoie `baro-alt`, le serveur compare —, ou passer à **vérifiée** : le client n'envoie que la pression brute et le serveur va chercher la référence au niveau de la mer pour le lieu et l'instant déclarés | Avec A4.2. Voir ci-dessous : ce n'est pas un raffinement, c'est ce qui décide si la parade vaut contre autre chose qu'une application de simulation |
 | Horodatage par un tiers (RFC 3161) | Ne rien faire, ou conserver un jeton d'horodatage **à côté** de l'enveloppe, ou l'admettre comme champ optionnel du noyau | Sans urgence technique — à trancher sur le besoin d'opposabilité, pas sur la sécurité |

@@ -507,9 +507,34 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    la capture verse son excédent dans le champ noté** : c'est là qu'est la marge
    à surveiller, pas dans la durée de la photo. Reste à mesurer sur un appareil
    d'entrée de gamme, la SM-X200 étant la cible du pire cas.
-3. **Chaînage Android** (spec §9) : inchangée, non instruite. La **série de captures**
-   (`docs/acquisition-et-liaisons.md` §4) est le cas d'usage qui l'instruirait : une prise
-   isolée n'a rien à chaîner, une série établit l'ordre et l'absence de retrait.
+3. ~~**Chaînage Android** (spec §9) : inchangée, non instruite.~~ **Tranchée le
+   2026-08-17 par ADR-0009 — décidée, non implémentée.** Une série est une **tête
+   attestée, des maillons chaînés, une queue attestée** : l'encadrement bilatéral du
+   nonce, appliqué à une suite de prises. Le compteur monotone est écarté — il n'aurait
+   dit que l'ordre, jamais l'absence de retrait.
+
+   Trois points à ne pas reperdre :
+
+   - **`freshness` passe optionnel**, et son absence n'est admissible que si `payload[7]`
+     est présent et la chaîne vérifiée. Un maillon ne transporte **pas** un jeton qui ne
+     le lie pas : un jeton dont le `requestHash` ne couvre pas cette charge utile
+     ressemble à une attestation sans en être une, et R1 ne se négocie pas.
+   - **Aucun identifiant de session.** Le rattachement est `payload[7]`, signé. Un
+     identifiant déclaré serait de la famille de `posture`, et l'en-tête de fraîcheur
+     n'est pas couvert par la signature — une déclaration qui change la notation ne peut
+     pas y vivre.
+   - **`integrity` est plafonné sur un maillon**, sous le grade d'une enveloppe
+     fraîchement attestée. La chaîne prouve l'ordre, jamais la santé continue : qui
+     obtient une tête attestée puis compromet l'appareil peut prolonger la chaîne. La
+     queue attestée borne cette fenêtre, et une série sans queue est signalée.
+
+   **Le bridage Play Integrity n'est pas la justification**, et le distinguo est le cœur
+   de l'ADR : un quota est de l'exploitation, il change sans préavis. La série se
+   justifie par ce qu'elle prouve — qu'aucune prise ne manque. Si Google relevait ses
+   quotas demain, la série resterait justifiée.
+
+   Implémenter fera tomber le plafond de `time` sur Android : `envelope-chain-verified`
+   existe déjà dans `grade_time` et promeut en A.
 4. **Horodatage par un tiers, RFC 3161** (spec §9) : ouverte. **Ne relève pas de la
    sécurité** — le nonce encadre déjà la capture des deux côtés, et un jeton
    d'horodatage ne resserre aucune borne. Relève de l'**opposabilité** : l'encadrement
