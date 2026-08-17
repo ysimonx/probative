@@ -125,6 +125,28 @@ public class MainActivity : ComponentActivity() {
     /** Une campagne occupe la caméra : une seule à la fois. */
     @Volatile private var enCours = false
 
+    /**
+     * L'appareil, enrôlé **une fois par lancement** et non par capture.
+     *
+     * Ce n'était pas qu'un gaspillage : une clé neuve à chaque campagne donne
+     * un `kid` neuf, donc un appareil neuf pour le serveur, donc jamais de
+     * maillon précédent. **Le chaînage était impossible par construction**, et
+     * le drapeau `CHAIN_FIRST_LINK_UNKNOWN` en était le symptôme.
+     *
+     * `prepare` est ici pour la même raison, plus une seconde : Google applique
+     * à la mise en route du fournisseur un quota plus strict qu'aux demandes de
+     * jeton. La répéter à chaque prise est une piste sérieuse pour le bridage
+     * observé le 2026-08-17.
+     */
+    private var alias: String? = null
+    private var provider: PlayIntegrity.Provider? = null
+
+    /** Empreinte de l'enveloppe précédente — le maillon à chaîner. */
+    private var dernierDigest: ByteArray? = null
+
+    /** Série courante. Clore incrémente : la suivante repart d'une tête. */
+    private var serie = 1
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -213,6 +235,14 @@ public class MainActivity : ComponentActivity() {
             )
             // La sonde sans caméra reste accessible, discrètement : elle sert à
             // isoler ce qui ne dépend pas de l'acquisition.
+            addView(
+                Button(this@MainActivity).apply {
+                    text = "j'ai fini mes prises de vues"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setOnClickListener { clore() }
+                },
+                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT),
+            )
             addView(
                 Button(this@MainActivity).apply {
                     text = "sceller des octets remis (profil core)"
@@ -334,6 +364,29 @@ public class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Clôt la série : la prochaine prise repartira d'une tête.
+     *
+     * Le geste est nécessaire, et pas seulement confortable. ADR-0009 fait
+     * d'une série un objet borné aux deux bouts ; une série qu'on abandonne
+     * reste **ouverte par le bas**, et rien ne dit alors jusqu'où l'appareil
+     * est resté sain. Une application réelle devra donc offrir ce geste, pas
+     * seulement un bouton « photo suivante ».
+     */
+    private fun clore() {
+        if (enCours) {
+            statut.text = "campagne en cours : clôture refusée"
+            return
+        }
+        if (dernierDigest == null) {
+            statut.text = "aucune série ouverte"
+            return
+        }
+        dernierDigest = null
+        serie += 1
+        statut.text = "série close — la prochaine prise ouvrira la série $serie"
     }
 
     /** Ce que la dernière campagne a donné, en une ligne. */
@@ -465,58 +518,69 @@ public class MainActivity : ComponentActivity() {
             return
         }
 
-        val alias = "probative-a41-${System.currentTimeMillis()}"
         try {
-            sequence(alias, cloudProjectNumber)
+            sequence(cloudProjectNumber)
         } catch (e: DevServer.Refused) {
             report("ECHEC serveur  HTTP ${e.status}")
             report("  ${e.detail}")
         } catch (e: Exception) {
             report("ECHEC          ${e.javaClass.simpleName}")
             report("  ${e.cause?.message ?: e.message}")
-        } finally {
-            if (KeystoreKeys.exists(alias)) KeystoreKeys.delete(alias)
         }
+        // La clé n'est plus détruite ici : elle vit le temps du lancement,
+        // comme en production elle vit le temps de l'installation. C'est ce
+        // qui donne un `kid` stable, donc un chaînage possible.
     }
 
     /** Les cinq temps de la boucle, dans l'ordre où le format les impose. */
-    private fun sequence(alias: String, cloudProjectNumber: Long) {
-        val server = DevServer(BuildConfig.DEVSERVER_URL)
+    /**
+     * Met en route le fournisseur et enrôle l'appareil — **une seule fois**.
+     *
+     * En production, l'enrôlement est un événement d'installation, pas de
+     * capture : la clé matérielle vit dans le Keystore et le serveur la connaît
+     * par son `kid`. La démonstration s'en écartait, et cet écart interdisait
+     * le chaînage.
+     */
+    private fun preparerAppareil(cloudProjectNumber: Long): Pair<String, PlayIntegrity.Provider> {
+        alias?.let { a -> provider?.let { p -> return a to p } }
 
-        // ── 1. Fournisseur Play Integrity ─────────────────────────────────
-        //
-        // Au démarrage, jamais sur le chemin du scellement : `prepare` coûte
-        // deux ordres de grandeur de plus qu'une demande de jeton (1 313 ms
-        // contre 36–39 ms, SM-X200, 2026-08-11).
         report("projet cloud   $cloudProjectNumber")
         var start = System.nanoTime()
-        val provider = PlayIntegrity.prepare(this, cloudProjectNumber)
-        report("prepare        %.0f ms".format(ms(start)))
+        val p = PlayIntegrity.prepare(this, cloudProjectNumber)
+        report("prepare        %.0f ms — une fois par lancement".format(ms(start)))
 
-        // ── 2. Clé matérielle et enrôlement ───────────────────────────────
-        //
         // Le défi d'enrôlement doit survivre à la génération : le serveur le
         // confronte à celui que le TEE a inscrit dans l'extension
         // d'attestation. Le perdre rendrait la chaîne invérifiable.
+        val a = "probative-session-${System.currentTimeMillis()}"
         val enrollChallenge = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
         start = System.nanoTime()
-        KeystoreKeys.generate(alias, enrollChallenge)
-        report("cle materielle ${KeystoreKeys.securityLevel(alias)} en %.0f ms".format(ms(start)))
+        KeystoreKeys.generate(a, enrollChallenge)
+        report("cle materielle ${KeystoreKeys.securityLevel(a)} en %.0f ms".format(ms(start)))
 
-        val chain = KeystoreKeys.certificateChain(alias)
+        val chain = KeystoreKeys.certificateChain(a)
         // En répétition, la chaîne n'est pas transmise : celle d'un émulateur
         // est cohérente mais ne s'ancre à aucune racine Google, et le serveur
         // la refuse — à raison. On enrôle alors sur parole pour exercer la
-        // suite, et la bannière ci-dessus dit ce que le résultat ne vaut pas.
-        val enrolled = server.enroll(
-            KeystoreKeys.publicKeyX962(alias),
+        // suite, et la bannière l'annonce.
+        val enrolled = DevServer(BuildConfig.DEVSERVER_URL).enroll(
+            KeystoreKeys.publicKeyX962(a),
             if (BuildConfig.REHEARSAL) null else chain,
             enrollChallenge,
         )
         report("enrolement     ${chain.size} certificats, kid ${enrolled.getString("kid_hex")}")
-        // `attested: false` signifie que la clé a été acceptée sur parole — le
-        // mode dégradé du serveur de dev, qui ne prouve rien.
         report("               chaine attestee : ${enrolled.getBoolean("attested")}")
+        report("               enrole une fois : c'est ce qui rend le chainage possible")
+
+        alias = a
+        provider = p
+        return a to p
+    }
+
+    private fun sequence(cloudProjectNumber: Long) {
+        val server = DevServer(BuildConfig.DEVSERVER_URL)
+        val (alias, provider) = preparerAppareil(cloudProjectNumber)
+        var start: Long
 
         // ── 3. Nonce, émis pour le profil ─────────────────────────────────
         val attendu =
@@ -542,8 +606,14 @@ public class MainActivity : ComponentActivity() {
             appVersion = BuildConfig.VERSION_NAME,
             freshness = PlayIntegrityFreshness(provider),
         )
-        val scelle =
-            if (probe == Probe.CAPTURE) scellerPhoto(sealer, nonce) else scellerOctets(sealer, nonce)
+        // Le maillon précédent, s'il existe. Première prise d'une série : rien
+        // à chaîner, et le serveur le signale par `CHAIN_FIRST_LINK_UNKNOWN`.
+        val precedent = dernierDigest
+        val scelle = if (probe == Probe.CAPTURE) {
+            scellerPhoto(sealer, nonce, precedent)
+        } else {
+            scellerOctets(sealer, nonce, precedent)
+        }
         val sealed = scelle.sealed
         val octets = scelle.octets
 
@@ -556,7 +626,12 @@ public class MainActivity : ComponentActivity() {
         report("verification   %.0f ms".format(ms(start)))
         report("")
         reportResult(result)
-        consigner(result, scelle, enrolled.getString("kid_hex"))
+        // Le maillon suivant chaînera sur celle-ci. Le serveur retient la même
+        // empreinte de son côté (`DeviceRecord.last_envelope_digest`) : c'est
+        // leur accord qui vaut vérification.
+        dernierDigest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(scelle.sealed.bytes)
+        consigner(result, scelle, KeystoreKeys.kid(alias).joinToString("") { "%02x".format(it) })
     }
 
     /**
@@ -569,6 +644,7 @@ public class MainActivity : ComponentActivity() {
     private fun consigner(result: JSONObject, scelle: Scelle, kid: String) {
         val proprietes = result.getJSONObject("properties")
         val prise = Historique.ajouter(
+            serie = serie,
             profil = result.getString("profile"),
             niveau = result.getString("level"),
             motif = result.getString("level_reason"),
@@ -614,9 +690,9 @@ public class MainActivity : ComponentActivity() {
      * à côte sans le dire a déjà fait conclure à une marge étroite là où elle
      * n'était pas mesurée — l'erreur corrigée côté iOS le 2026-08-15.
      */
-    private fun scellerOctets(sealer: Sealer, nonce: ByteArray): Scelle {
+    private fun scellerOctets(sealer: Sealer, nonce: ByteArray, prev: ByteArray?): Scelle {
         val start = System.nanoTime()
-        val sealed = sealer.seal(CONTENT, CONTENT_TYPE, nonce)
+        val sealed = sealer.seal(CONTENT, CONTENT_TYPE, nonce, prevDigest = prev)
         report("")
         report("scellement     %.0f ms de temps mural".format(ms(start)))
         report("charge utile   ${sealed.payloadBytes.size} octets")
@@ -637,7 +713,7 @@ public class MainActivity : ComponentActivity() {
      * après la photo a coûté +4,2 s dans ce champ côté iOS, faisant accuser
      * une latence anormale là où il n'y en avait aucune.
      */
-    private fun scellerPhoto(sealer: Sealer, nonce: ByteArray): Scelle {
+    private fun scellerPhoto(sealer: Sealer, nonce: ByteArray, prev: ByteArray?): Scelle {
         val start = System.nanoTime()
         val capteurs = Sensors.begin(this)
         try {
@@ -689,7 +765,7 @@ public class MainActivity : ComponentActivity() {
             )
 
             val sealStart = System.nanoTime()
-            val sealed = sealer.seal(image, position, claims, nonce)
+            val sealed = sealer.seal(image, position, claims, nonce, prevDigest = prev)
             report("scellement     %.0f ms de temps mural".format(ms(sealStart)))
             report("charge utile   ${sealed.payloadBytes.size} octets")
             report(
@@ -765,6 +841,8 @@ public class MainActivity : ComponentActivity() {
         // batterie ; elle ne se referme pas toute seule.
         session?.close()
         session = null
+        alias?.let { if (KeystoreKeys.exists(it)) KeystoreKeys.delete(it) }
+        alias = null
     }
 
     /**
