@@ -301,6 +301,29 @@ Les exécutions dues sur matériel réel sont notées ici et non dans un carnet
 extérieur : ce dépôt est destiné à être repris, et un état de campagne qui ne
 survit pas au poste ne vaut rien.
 
+0. **DÛ EN PREMIER — éprouver la 0.3.3 sur SM-X200.** Construite et poussée le
+   2026-08-17, **jamais exécutée**. Elle porte trois changements dont deux sont
+   des correctifs de justesse, pas de confort :
+
+   - la **collecte de capteurs court depuis l'ouverture du viseur** au lieu de
+     démarrer à chaque capture. C'est ce qui doit faire disparaître les pics de
+     `media[6]` à 1 786 et 6 485 ms (inconnue n° 5) ;
+   - l'**arbitrage du point de position** garde désormais le plus **récent** au
+     delà de 10 s, non le plus précis à jamais. Sans ce correctif, une collecte
+     longue faisait attester *où l'utilisateur était*, pas où il est — une
+     preuve de position fausse, signée, que rien n'aurait signalée ;
+   - la **fenêtre de mouvement devient glissante** : elle gardait les 64
+     premiers échantillons et aurait décrit le début de campagne.
+
+   **Protocole** : téléverser la 0.3.3, laisser le viseur ouvert **une dizaine
+   de secondes** avant la première photo — le temps qu'un point arrive —, puis
+   quatre ou cinq prises **en se déplaçant entre certaines**.
+
+   Attendu : `media[6]` entre 100 et 200 ms sur toutes, sans pic ; et la
+   position qui suit le déplacement. Les deux correctifs ne se vérifient que
+   sur plusieurs minutes de collecte — **aucun test d'hôte ne les couvre**, et
+   c'est ce qui les rend fragiles.
+
 1. ~~**Rejouer C4.2 sur iPhone 16.**~~ **Fait le 2026-08-15.** Les correctifs de
    concurrence du 2026-08-13 — course de données dans `LocationDelegate`, délai
    de garde sur `Camera.capture` — ont tourné sur l'appareil. Résultat conforme
@@ -751,6 +774,28 @@ Deux points restés hors périmètre, volontairement : le **reçu** App Attest e
 conservé mais non validé (cela exige un appel à Apple), et le certificat feuille ne
 vaut que **trois jours** — d'où l'horloge injectable de `verify_attestation` et de
 `DevService`, sans laquelle tout test de chaîne devient une bombe à retardement.
+
+## Une leçon transverse, à trois occurrences
+
+**Ce qui est coûteux et réutilisable n'a rien à faire dans le chemin par
+capture.** La règle s'est payée trois fois en une journée, et chaque fois le
+symptôme désignait autre chose :
+
+| Ce qui était par capture | Symptôme | Ce que c'était vraiment |
+|---|---|---|
+| l'**enrôlement** | `CHAIN_FIRST_LINK_UNKNOWN` à chaque prise | `kid` neuf à chaque fois : chaînage impossible par construction |
+| la **session caméra** | 3A à 1 100–1 500 ms | capteur remis sous tension à chaque photo |
+| la **collecte de capteurs** | `media[6]` à 6 485 ms, au-dessus du seuil | aucun point acquis : `position()` attendait après l'obturateur |
+
+Aucun des trois n'était un défaut de performance : le premier rendait une
+propriété inatteignable, le troisième faisait **franchir un seuil de rejet à
+une capture honnête**. Et le régime long, une fois adopté, a révélé deux caches
+qui mentaient — le point le plus précis plutôt que le plus récent, la fenêtre
+de mouvement figée sur ses premiers échantillons.
+
+Ce n'est pas un invariant : les invariants portent sur ce que le format prouve,
+pas sur la façon de l'implémenter. Mais c'est la première chose à vérifier
+devant une latence qui surprend.
 
 ## Angle mort assumé
 
