@@ -49,7 +49,18 @@ qu'une couche d'abstraction fait oublier.
 
 ---
 
-## 2. La prévisualisation — la décision à prendre
+## 2. La prévisualisation — **décidée, ADR-0008**
+
+> **Tranchée le 2026-08-17 : le cœur possède la session, la vue s'y rattache en
+> consommateur.** Voir `decisions/ADR-0008-propriete-de-la-session-de-capture.md`, qui
+> porte la décision, ses six points et ce qui la ferait rouvrir. La section ci-dessous
+> reste telle qu'elle a servi à instruire le choix — elle en garde le raisonnement, y
+> compris le piège de la trame d'aperçu, devenu normatif.
+>
+> Deux arguments ont emporté la décision, et le second n'apparaît pas ci-dessous : une
+> session possédée par la vue ferait signer au cœur des octets dont il n'a pas vu la
+> naissance, ce qui vide le profil `capture` de son sens ; et elle mettrait une part du
+> chemin critique dans la liaison, ce qu'ADR-0003 interdit.
 
 Le cœur n'en a pas, délibérément : la session vit le temps d'une photo
 (`startRunning()`, capture, `defer { stopRunning() }`).
