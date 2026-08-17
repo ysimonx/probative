@@ -44,8 +44,15 @@ c'est celle-ci : le hors ligne.
 
 2. **`freshness[2]` reste opaque et son interpretation depend du type**, comme
    aujourd'hui -- un jeton Play Integrity est une chaine JWT, une assertion App Attest est
-   du CBOR. Pour `key-attestation`, c'est un tableau CBOR de certificats DER, de la
-   feuille a la racine. Aucun autre changement de CDDL que l'enumeration.
+   du CBOR. Pour `key-attestation`, c'est un `bstr` **contenant** un tableau CBOR de
+   certificats DER, de la feuille a la racine. Aucun autre changement de CDDL que
+   l'enumeration.
+
+   *Precision du 2026-08-17, la premiere redaction etant ambigue.* Un tableau CBOR **nu**
+   en `freshness[2]` serait refuse : `model.py` le decode par `_as_blob`, qui n'accepte que
+   des octets. Un `bstr` portant du CBOR encode ne demande donc **aucun** changement du
+   decodeur, la ou un tableau nu en aurait exige un et aurait elargi le CDDL. La forme
+   choisie est la moins couteuse des deux, et elle etait deja celle des deux autres types.
 
 3. **R1 est inchangee, et c'est tout l'interet.** Le defi soumis a
    `setAttestationChallenge` vaut exactement `SHA-256(payload_bytes ‖ nonce)` -- le meme
@@ -77,9 +84,26 @@ c'est celle-ci : le hors ligne.
    **Invariant 8.**
 
 8. **Trois mesures conditionnent l'implementation**, dans cet ordre : le cout reel en
-   octets sur une enveloppe `capture` complete ; la latence de generation de cle **apres
-   l'obturateur**, donc dans `media[6]`, sur appareil froid ; et la verification que
+   octets sur une enveloppe `capture` complete ; ~~la latence de generation de cle **apres
+   l'obturateur**, donc dans `media[6]`, sur appareil froid~~ **le cout en temps mural du
+   scellement** (voir la correction ci-dessous) ; et la verification que
    `attestationApplicationId` identifie bien l'application de maniere exploitable.
+
+   **Correction du 2026-08-17 : la generation de cle ne peut pas entrer dans `media[6]`,
+   et la redaction d'origine se trompait de champ.** Dans `Sealer.kt`, `latencyMs` -- la
+   valeur de `media[6]` -- est fige **avant** la construction de la charge utile, tandis
+   que `freshness.token(challenge)` est appele dans `finir()`, apres l'encodage. Le
+   commentaire du fichier le disait deja : « le champ est *dans* ce qui est encode, donc il
+   ne peut pas mesurer ce qui vient apres lui ».
+
+   **Et l'ordre est impose par R1 elle-meme.** Le defi vaut `SHA-256(payload_bytes ‖
+   nonce)` : il n'existe pas avant l'encodage de la charge utile. Il n'y a donc aucun
+   arbitrage a rendre -- la cle **ne peut etre engendree qu'apres**, faute de defi a lui
+   soumettre.
+
+   Ce qui reste a mesurer est donc le **temps mural du scellement**, qui pese sur la
+   latence ressentie par l'utilisateur et sur rien d'autre. C'est une question de confort,
+   pas de verdict, et elle ne peut pas invalider cette decision.
 
    **La troisieme est faite, le 2026-08-17, et elle est concluante.** Decodee sur le
    vecteur `keystore-a3-sm-x200.json` deja versionne, sans appareil : le tag 709 de
@@ -187,6 +211,14 @@ c'est celle-ci : le hors ligne.
   cet ADR est le chainage -- deja implemente et valide -- et l'interdiction d'un
   identifiant de session declare.
 
+- **L'aiguillage du verificateur devra changer, et l'ADR ne l'avait pas vu.** Le choix du
+  `AttestationVerifier` se fait aujourd'hui sur `claims.posture.platform` seul
+  (`verifier.py`, `PerPlatformVerifier` dans `devserver.py`) ; `Freshness.kind` est decode
+  mais **jamais lu** dans `src/`. Or une enveloppe Android portera desormais **soit** Play
+  Integrity **soit** `key-attestation`, selon qu'elle a ete produite en ligne ou non.
+  L'aiguillage doit donc devenir fonction du couple plateforme + type. Constat du
+  2026-08-17, a traiter a l'implementation.
+
 - **Le verificateur gagne un troisieme `AttestationVerifier`**, qui n'appelle personne :
   `verify_key_attestation` existe deja et fait l'essentiel -- ancrage aux racines Google,
   recalcul du defi, lecture du `RootOfTrust`. Il faut l'habiller en `AttestationOutcome`
@@ -208,10 +240,13 @@ transport inacceptable pour le terrain vise -- une enveloppe de 5 Ko la ou le li
 passe qu'un kilo-octet --, la voie resterait valable mais deviendrait un profil de
 deploiement plutot qu'un mode general.
 
-Si la latence de generation de cle apres l'obturateur s'averait du meme ordre que le seuil
-`max_sign_latency_ms`, il faudrait engendrer la cle **avant** l'obturateur, ce qui
-detacherait l'attestation de la charge utile et ferait perdre R1. La voie serait alors a
-abandonner, non a amenager : R1 ne se negocie pas.
+~~Si la latence de generation de cle apres l'obturateur s'averait du meme ordre que le
+seuil `max_sign_latency_ms`, il faudrait engendrer la cle **avant** l'obturateur, ce qui
+detacherait l'attestation de la charge utile et ferait perdre R1.~~ **Clause retiree le
+2026-08-17 : le scenario est impossible, pas seulement indesirable.** Le defi d'attestation
+*est* R1, et R1 n'existe qu'une fois la charge utile encodee -- donc une fois `media[6]`
+deja fige. Engendrer la cle « avant » n'aurait aucun defi a recevoir. Cette voie n'a jamais
+pu etre tuee par cette mesure, et la croire menacee a coute une inquietude inutile.
 
 Si Apple ou Google fermait l'attestation de cle hors ligne -- provisionnement distant
 exigeant un aller-retour --, le hors ligne Android redeviendrait sans solution, et il
