@@ -1,5 +1,6 @@
 package org.probative.demo
 
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -12,6 +13,7 @@ import android.view.WindowInsets
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -20,6 +22,7 @@ import androidx.camera.view.PreviewView
 import java.util.concurrent.CountDownLatch
 import kotlin.concurrent.thread
 import org.json.JSONObject
+import org.probative.core.capture.CapturedImage
 import org.probative.core.capture.CaptureSession
 import org.probative.core.envelope.Sealer
 import org.probative.core.freshness.PlayIntegrity
@@ -99,8 +102,29 @@ public class MainActivity : ComponentActivity() {
     private lateinit var viseur: PreviewView
     private var session: CaptureSession? = null
 
+    /** Le tableau des prises, reconstruit après chaque campagne. */
+    private lateinit var tableau: LinearLayout
+    private lateinit var racine: LinearLayout
+
+    /**
+     * Ce qu'un scellement rend à l'appelant — au-delà de l'enveloppe.
+     *
+     * [image] est nulle hors acquisition : c'est ce qui distingue les deux
+     * profils, et la garder nullable évite d'inventer des dimensions pour des
+     * octets remis qui n'en ont pas.
+     */
+    private class Scelle(
+        val sealed: org.probative.core.envelope.SealedEnvelope,
+        val octets: ByteArray,
+        val image: CapturedImage?,
+        val decomposition: String?,
+    )
+
     /** La sonde ne part qu'une fois, quel que soit le chemin qui y mène. */
     private var started = false
+
+    /** Une campagne occupe la caméra : une seule à la fois. */
+    @Volatile private var enCours = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -155,6 +179,11 @@ public class MainActivity : ComponentActivity() {
         }
 
         viseur = PreviewView(this)
+        // Le tableau des prises vit sous le journal, et chaque ligne se touche.
+        tableau = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 8, 48, 8)
+        }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -165,11 +194,26 @@ public class MainActivity : ComponentActivity() {
             // Le viseur occupe une bande fixe : le journal reste lisible en
             // dessous, et c'est lui qu'on relit pendant une campagne.
             addView(viseur, LinearLayout.LayoutParams(MATCH_PARENT, 700))
+            // Le déclencheur va **sous** le viseur, et il est le seul bouton
+            // large de l'écran. Les deux boutons de sonde, au-dessus et nommés
+            // d'après des étapes du plan, ne se lisaient pas comme un
+            // déclencheur — personne ne cherche « A4.2 photo » pour prendre
+            // une photo.
+            addView(
+                Button(this@MainActivity).apply {
+                    text = "DECLENCHER"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                    setOnClickListener { relancer(Probe.CAPTURE) }
+                },
+                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT),
+            )
             addView(
                 ScrollView(this@MainActivity).apply { addView(view) },
                 LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f),
             )
+            addView(tableau, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
         }
+        racine = root
 
         // Depuis `targetSdk 35`, l'affichage bord à bord est imposé : la fenêtre
         // occupe l'écran entier et le contenu se dessine **sous** la barre d'état
@@ -195,6 +239,7 @@ public class MainActivity : ComponentActivity() {
         setContentView(root)
 
         refreshPermissions()
+        rafraichirTableau()
         if (permissions.needsRequest()) {
             // La sonde **attend**. A4.1 n'a besoin d'aucune de ces
             // autorisations — elle scelle des octets remis — mais une boîte de
@@ -273,6 +318,15 @@ public class MainActivity : ComponentActivity() {
      * on le dit plutôt que de le subir.
      */
     private fun relancer(choix: Probe) {
+        // **Refuser plutôt que d'empiler.** Deux campagnes concurrentes
+        // partagent la caméra, et `CaptureSession.open` commence par
+        // `unbindAll` : la seconde tue la session de la première, qui échoue
+        // sur « Camera is closed ». Trouvé en campagne le 2026-08-17, sur deux
+        // appuis rapprochés — et le symptôme n'accusait pas la cause.
+        if (enCours) {
+            report("campagne deja en cours : appui ignore")
+            return
+        }
         probe = choix
         started = false
         lines.setLength(0)
@@ -290,7 +344,14 @@ public class MainActivity : ComponentActivity() {
             report("A4.2 impossible : camera ou position manquante, repli sur A4.1")
         }
         started = true
-        thread { executer() }
+        enCours = true
+        thread {
+            try {
+                executer()
+            } finally {
+                enCours = false
+            }
+        }
     }
 
     /**
@@ -436,8 +497,8 @@ public class MainActivity : ComponentActivity() {
         )
         val scelle =
             if (probe == Probe.CAPTURE) scellerPhoto(sealer, nonce) else scellerOctets(sealer, nonce)
-        val sealed = scelle.first
-        val octets = scelle.second
+        val sealed = scelle.sealed
+        val octets = scelle.octets
 
         report("defi R1        ${b64(sealed.challenge)}")
         report("enveloppe      ${sealed.bytes.size} octets")
@@ -448,6 +509,42 @@ public class MainActivity : ComponentActivity() {
         report("verification   %.0f ms".format(ms(start)))
         report("")
         reportResult(result)
+        consigner(result, scelle, enrolled.getString("kid_hex"))
+    }
+
+    /**
+     * Ajoute la prise au tableau et le réaffiche.
+     *
+     * On conserve **les octets**, pas seulement leurs empreintes : sans eux le
+     * verdict sur le contenu ne vaut rien, et aucune recompression ne les
+     * rattrape (ADR-0007 point 5).
+     */
+    private fun consigner(result: JSONObject, scelle: Scelle, kid: String) {
+        val proprietes = result.getJSONObject("properties")
+        val prise = Historique.ajouter(
+            profil = result.getString("profile"),
+            niveau = result.getString("level"),
+            motif = result.getString("level_reason"),
+            proprietes = proprietes.keys().asSequence().map {
+                "%-10s %s".format(it, proprietes.getJSONObject(it).getString("grade"))
+            }.toList(),
+            drapeaux = result.getJSONArray("flags").let {
+                if (it.length() == 0) "aucun" else it.join(", ")
+            },
+            mediaSixMs = scelle.sealed.signLatencyMs,
+            photo = scelle.image?.bytes,
+            largeur = scelle.image?.pixelWidth ?: 0,
+            hauteur = scelle.image?.pixelHeight ?: 0,
+            typeMime = scelle.image?.format?.mimeType ?: CONTENT_TYPE,
+            enveloppe = scelle.sealed.bytes,
+            defiR1 = b64(scelle.sealed.challenge),
+            kid = kid,
+            decomposition = scelle.decomposition,
+        )
+        report("")
+        report("prise n°${prise.index} consignee — ${Historique.compte()} au tableau")
+        report(Historique.dispersion(prise.profil))
+        Handler(Looper.getMainLooper()).post { rafraichirTableau() }
     }
 
     /**
@@ -460,10 +557,7 @@ public class MainActivity : ComponentActivity() {
      * à côte sans le dire a déjà fait conclure à une marge étroite là où elle
      * n'était pas mesurée — l'erreur corrigée côté iOS le 2026-08-15.
      */
-    private fun scellerOctets(
-        sealer: Sealer,
-        nonce: ByteArray,
-    ): Pair<org.probative.core.envelope.SealedEnvelope, ByteArray> {
+    private fun scellerOctets(sealer: Sealer, nonce: ByteArray): Scelle {
         val start = System.nanoTime()
         val sealed = sealer.seal(CONTENT, CONTENT_TYPE, nonce)
         report("")
@@ -473,7 +567,7 @@ public class MainActivity : ComponentActivity() {
             "media[6]       ${sealed.signLatencyMs} ms depuis la remise des octets" +
                 " — seul chiffre confronte au seuil",
         )
-        return sealed to CONTENT
+        return Scelle(sealed, CONTENT, null, null)
     }
 
     /**
@@ -486,10 +580,7 @@ public class MainActivity : ComponentActivity() {
      * après la photo a coûté +4,2 s dans ce champ côté iOS, faisant accuser
      * une latence anormale là où il n'y en avait aucune.
      */
-    private fun scellerPhoto(
-        sealer: Sealer,
-        nonce: ByteArray,
-    ): Pair<org.probative.core.envelope.SealedEnvelope, ByteArray> {
+    private fun scellerPhoto(sealer: Sealer, nonce: ByteArray): Scelle {
         val start = System.nanoTime()
         val capteurs = Sensors.begin(this)
         try {
@@ -548,7 +639,14 @@ public class MainActivity : ComponentActivity() {
                 "media[6]       ${sealed.signLatencyMs} ms depuis l'obturateur" +
                     " — seul chiffre confronte au seuil",
             )
-            return sealed to image.bytes
+            return Scelle(
+                sealed,
+                image.bytes,
+                image,
+                "config %d + session %d + garde %d ms, cadrage %d ms, 3A %d │obturateur│ encodage %d ms".format(
+                    t.configureMs, t.startupMs, t.settleMs, t.idleMs, t.shutterLagMs, t.encodeMs,
+                ),
+            )
         } finally {
             capteurs.stop()
         }
@@ -610,6 +708,103 @@ public class MainActivity : ComponentActivity() {
         // batterie ; elle ne se referme pas toute seule.
         session?.close()
         session = null
+    }
+
+    /**
+     * Le tableau, reconstruit en entier plutôt que mis à jour ligne à ligne.
+     *
+     * Quelques dizaines de prises au plus : la simplicité vaut mieux ici qu'un
+     * adaptateur, et la démonstration doit rester assez pauvre pour qu'on ne
+     * soit jamais tenté d'y loger de la logique.
+     */
+    private fun rafraichirTableau() {
+        tableau.removeAllViews()
+        val prises = Historique.toutes()
+        tableau.addView(
+            TextView(this).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                text = if (prises.isEmpty()) {
+                    "aucune prise"
+                } else {
+                    "${prises.size} prise(s) — toucher une ligne pour la consulter"
+                }
+            },
+        )
+        for (prise in prises.asReversed()) {
+            tableau.addView(
+                TextView(this).apply {
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                    setPadding(0, 12, 0, 12)
+                    text = prise.ligne()
+                    isClickable = true
+                    setOnClickListener { montrerFiche(prise) }
+                },
+            )
+        }
+    }
+
+    /**
+     * La fiche d'une prise : la photo, le verdict, et les octets.
+     *
+     * La vignette est décodée **sous-échantillonnée** — un JPEG de 3264×2448
+     * occuperait une trentaine de mégaoctets une fois décodé. Les octets
+     * conservés, eux, restent intacts : on ne montre jamais autre chose que ce
+     * qui a été scellé, mais on ne le montre pas en pleine résolution.
+     */
+    private fun montrerFiche(prise: Prise) {
+        val contenu = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 96, 48, 48)
+        }
+        contenu.addView(
+            Button(this).apply {
+                text = "← retour au tableau"
+                setOnClickListener { setContentView(racine) }
+            },
+        )
+        prise.photo?.let { octets ->
+            val options = BitmapFactory.Options().apply { inSampleSize = 8 }
+            BitmapFactory.decodeByteArray(octets, 0, octets.size, options)?.let { vignette ->
+                contenu.addView(
+                    ImageView(this).apply { setImageBitmap(vignette) },
+                    LinearLayout.LayoutParams(MATCH_PARENT, 900),
+                )
+            }
+        }
+        contenu.addView(
+            TextView(this).apply {
+                setTextIsSelectable(true)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                text = fiche(prise)
+            },
+        )
+        setContentView(ScrollView(this).apply { addView(contenu) })
+    }
+
+    private fun fiche(prise: Prise): String = buildString {
+        appendLine("prise n°${prise.index} — ${prise.heure}")
+        appendLine()
+        appendLine("niveau         ${prise.niveau}")
+        appendLine("motif          ${prise.motif}")
+        appendLine("profil         ${prise.profil}")
+        for (p in prise.proprietes) appendLine("  $p")
+        appendLine("drapeaux       ${prise.drapeaux}")
+        appendLine()
+        appendLine("media[6]       ${prise.mediaSixMs} ms — seul chiffre confronte au seuil")
+        prise.decomposition?.let { appendLine("acquisition    $it") }
+        appendLine()
+        if (prise.photo != null) {
+            appendLine("media          ${prise.largeur}×${prise.hauteur}, ${prise.typeMime}")
+            appendLine("               ${prise.photo.size} octets, tels que scelles")
+        } else {
+            appendLine("media          octets remis, ${prise.typeMime}")
+        }
+        appendLine("enveloppe      ${prise.enveloppe.size} octets")
+        appendLine("kid            ${prise.kid}")
+        appendLine("defi R1        ${prise.defiR1}")
+        appendLine()
+        appendLine("enveloppe (base64, selectionnable) :")
+        appendLine(b64(prise.enveloppe))
     }
 
     private fun ms(startNanos: Long): Double = (System.nanoTime() - startNanos) / 1_000_000.0

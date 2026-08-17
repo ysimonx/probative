@@ -36,8 +36,18 @@
         android:label="probative demo"
         android:supportsRtl="true">
 
+        <!-- La rotation recree l'activite par defaut, ce qui detruit la session
+             de capture avec elle : « Camera is closed » sur une prise en vol, et
+             une campagne relancee a chaque quart de tour. Constate le
+             2026-08-17, des la premiere campagne avec apercu.
+
+             Une sonde de mesure n'a aucune raison de se relancer parce qu'on a
+             tourne l'appareil. Une application reelle, elle, devra traiter le
+             cas — c'est le prix que la section « consequences » d'ADR-0008
+             annoncait, et il est reel. -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
