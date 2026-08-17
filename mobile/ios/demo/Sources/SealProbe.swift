@@ -115,8 +115,18 @@ enum SealProbe {
 
     /// Exécute la séquence complète. Ne lance jamais : un échec est une ligne
     /// du journal, pas une exception qui masquerait les étapes déjà franchies.
-    static func run(_ mode: Mode = .core) async -> [Line] {
+    /// Ce qu'une campagne rend : son journal, et la prise à consigner.
+    struct Resultat {
+        let lines: [Line]
+        let prise: Prise?
+    }
+
+    /// - Parameter session: la session de l'aperçu, si l'écran en montre un.
+    ///   Absente, l'acquisition ouvre et referme la sienne — le cas éphémère,
+    ///   qui repaie la mise sous tension à chaque photo.
+    static func run(_ mode: Mode = .core, session: CaptureSession? = nil) async -> Resultat {
         var lines: [Line] = []
+        var prise: Prise?
         func ok(_ s: String) {
             lines.append(Line(text: s, failed: false))
             print("[probe] \(s)")
@@ -140,7 +150,7 @@ enum SealProbe {
 
         guard let server = DevServer.fromBundle() else {
             ko("adresse du serveur absente de l'Info.plist — regenerer le projet")
-            return lines
+            return Resultat(lines: lines, prise: prise)
         }
         ok("serveur \(server.baseURL.absoluteString)")
 
@@ -148,7 +158,7 @@ enum SealProbe {
             // Pas de version dégradée : sans assertion, l'enveloppe n'aurait
             // aucune preuve de fraîcheur.
             ko("App Attest indisponible — appareil reel requis")
-            return lines
+            return Resultat(lines: lines, prise: prise)
         }
 
         do {
@@ -166,7 +176,7 @@ enum SealProbe {
                 let profile = issued["profile"] as? String
             else {
                 ko("reponse /nonce inexploitable")
-                return lines
+                return Resultat(lines: lines, prise: prise)
             }
             ok("nonce            \(nonce.count) octets, profil \(profile)")
             // Le profil signé doit être celui du nonce : mieux vaut s'arrêter
@@ -174,7 +184,7 @@ enum SealProbe {
             // cette raison.
             guard profile == mode.profile else {
                 ko("nonce emis pour \(profile), ce sceau produit \(mode.profile)")
-                return lines
+                return Resultat(lines: lines, prise: prise)
             }
 
             // ── 4. Scellement ─────────────────────────────────────────────
@@ -186,6 +196,7 @@ enum SealProbe {
             )
             let sealed: SealedEnvelope
             let media: Data
+            var image: CapturedImage?
             switch mode {
             case .core:
                 let sealStart = DispatchTime.now().uptimeNanoseconds
@@ -201,9 +212,11 @@ enum SealProbe {
                 // La sonde déroule l'acquisition étape par étape plutôt que
                 // d'appeler `capture()`, pour pouvoir chronométrer et
                 // rapporter chacune. Un intégrateur, lui, appelle `capture()`.
-                let (envelope, acquired) = try await acquire(
-                    sealer: sealer, nonce: nonce, previousDigest: precedent, ok: ok
+                let (envelope, acquired, capturee) = try await acquire(
+                    sealer: sealer, nonce: nonce, previousDigest: precedent,
+                    session: session, ok: ok
                 )
+                image = capturee
                 sealed = envelope
                 media = acquired
             }
@@ -240,7 +253,7 @@ enum SealProbe {
             // même empreinte de son côté : c'est leur accord qui vaut
             // vérification, rien n'est déclaré.
             let empreinte = Data(SHA256.hash(data: sealed.bytes))
-            let fin = await MainActor.run { () -> String? in
+            let (fin, serie) = await MainActor.run { () -> (String, Int) in
                 let etat = Etat.partage
                 etat.dernierDigest = empreinte
                 etat.prisesDansSerie += 1
@@ -248,9 +261,47 @@ enum SealProbe {
                 let serie = etat.serie
                 let n = etat.prisesDansSerie
                 let close = etat.cloreSiNecessaire()
-                return "serie \(serie) : \(n) prise(s)" + (close.map { " — " + $0 } ?? "")
+                return ("serie \(serie) : \(n) prise(s)" + (close.map { " — " + $0 } ?? ""), serie)
             }
-            if let fin { ok(fin) }
+            ok(fin)
+
+            // On conserve **les octets**, pas seulement leurs empreintes :
+            // sans eux le verdict sur le contenu ne vaut rien, et aucune
+            // recompression ne les rattrape (ADR-0007 point 5).
+            let proprietes = (result["properties"] as? [String: Any] ?? [:])
+                .sorted { $0.key < $1.key }
+                .map { name, value -> String in
+                    let p = value as? [String: Any] ?? [:]
+                    let evidence = (p["evidence"] as? [String] ?? []).joined(separator: ",")
+                    return "\(name.padding(toLength: 10, withPad: " ", startingAt: 0)) "
+                        + "\(p["grade"] as? String ?? "?")  \(evidence)"
+                }
+            let drapeaux = (result["flags"] as? [String] ?? []).joined(separator: ", ")
+            let index = await MainActor.run { Historique.partage.compte + 1 }
+            prise = Prise(
+                index: index,
+                serie: serie,
+                instant: Date(),
+                profil: result["profile"] as? String ?? mode.profile,
+                niveau: result["level"] as? String ?? "?",
+                motif: result["level_reason"] as? String ?? "",
+                proprietes: proprietes,
+                drapeaux: drapeaux.isEmpty ? "aucun" : drapeaux,
+                mediaSixMs: sealed.signLatencyMs,
+                photo: image?.bytes,
+                largeur: image?.pixelSize.width ?? 0,
+                hauteur: image?.pixelSize.height ?? 0,
+                typeMime: image?.format.mimeType ?? contentType,
+                enveloppe: sealed.bytes,
+                defiR1: sealed.challenge.base64EncodedString(),
+                kid: (try? signingKey.kid().map { String(format: "%02x", $0) }.joined()) ?? "?",
+                decomposition: image.map { i in
+                    let t = i.timings
+                    return "config \(t.configureMs) + session \(t.startupMs) + garde "
+                        + "\(t.settleMs) ms, cadrage \(t.idleMs) ms, 3A \(t.shutterLagMs) "
+                        + "│obturateur│ encodage \(t.encodeMs) ms"
+                }
+            )
         } catch let failure as DevServer.Failure {
             ko("serveur \(failure.description)")
         } catch let described as CustomStringConvertible {
@@ -261,7 +312,7 @@ enum SealProbe {
         } catch {
             ko("\((error as NSError).domain) code \((error as NSError).code) — \(error.localizedDescription)")
         }
-        return lines
+        return Resultat(lines: lines, prise: prise)
     }
 
     /// Enrôle l'appareil, ou rend l'enrôlement déjà fait.
@@ -335,8 +386,9 @@ enum SealProbe {
         sealer: Sealer,
         nonce: Data,
         previousDigest: Data?,
+        session: CaptureSession?,
         ok: (String) -> Void
-    ) async throws -> (SealedEnvelope, Data) {
+    ) async throws -> (SealedEnvelope, Data, CapturedImage) {
         // Position et corroboration courent PENDANT l'acquisition, comme le
         // fait `capture()`. Les enchaîner après l'obturateur gonflait
         // `media[6]` de 4,2 s et faisait tomber `origin` à C : mesuré, puis
@@ -345,7 +397,15 @@ enum SealProbe {
         async let fixTask = Sensors.location()
         async let claimsTask = Sensors.claims()
 
-        let image = try await Camera.capture(format: captureFormat)
+        // Sur un aperçu vivant la session est déjà ouverte et convergée : on
+        // la réutilise, ce qui retire la mise sous tension du chemin ressenti.
+        // Sans aperçu, on retombe sur le cas éphémère.
+        let image: CapturedImage
+        if let session {
+            image = try await session.capture()
+        } else {
+            image = try await Camera.capture(format: captureFormat)
+        }
         ok("capture          \(since(start)) — \(image.bytes.count) octets, "
             + "\(image.pixelSize.width)x\(image.pixelSize.height), \(image.format.mimeType)")
         // Sans cette ligne, une variation d'une demi-seconde entre deux
@@ -384,7 +444,7 @@ enum SealProbe {
             previousDigest: previousDigest
         )
         ok("scellement       \(since(sealStart))")
-        return (sealed, image.bytes)
+        return (sealed, image.bytes, image)
     }
 
     /// Le résultat, propriété par propriété. Ni `level` seul, ni résumé

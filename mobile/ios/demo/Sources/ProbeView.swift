@@ -1,110 +1,129 @@
+import ImageIO
 import SwiftUI
+import UIKit
 
-/// Écran unique : un préambule d'autorisations, puis la sonde.
+/// Écran unique : l'aperçu, le tableau des prises, et la fiche de chacune.
 ///
-/// **La sonde ne part plus au lancement inconditionnellement.** Elle attend
-/// que les autorisations soient acquises, et c'est ce qui rend une campagne
-/// reproductible : sans ce préambule, chaque première exécution consommait ses
-/// délais à afficher des boîtes de dialogue, et rendait un verdict dégradé
-/// pour des raisons qui n'avaient rien à voir avec le format.
+/// Le parcours est celui de la démonstration Android, et il vient d'un constat
+/// d'usage : basculer sur un écran de résultat après le déclenchement retirait
+/// la vue d'aperçu de la fenêtre, donc **détruisait la surface pendant la
+/// capture**. Outre l'aperçu qui s'éteignait, cela faussait la mesure — la
+/// convergence 3A y paraissait quatre fois plus longue qu'elle n'est.
 ///
-/// Une fois tout accordé, l'enchaînement automatique reprend — c'est lui qui
-/// permet de piloter la sonde sans toucher l'écran, via
-/// `devicectl … launch --console`.
+/// Rien ne bouge donc tant que la caméra travaille : le résultat s'annonce sur
+/// une ligne d'état, la ligne s'ajoute au tableau, et le détail se consulte
+/// quand on le veut.
 struct ProbeView: View {
 
-    private enum Probe: String, CaseIterable, Identifiable {
-        case capture = "C4.2 — acquisition photo"
-        case seal = "C4.1 — enveloppe complète"
-        case attest = "C3 — vecteur App Attest"
-        var id: String { rawValue }
-
-        /// Seule l'acquisition touche caméra et position ; les deux autres
-        /// n'ont besoin que du réseau.
-        var needsSensors: Bool { self == .capture }
-    }
-
     @StateObject private var permissions = Permissions()
+    @StateObject private var viseur = Viseur()
+    @StateObject private var historique = Historique.partage
+
     @State private var lines: [SealProbe.Line] = []
     @State private var running = false
-    @State private var fixturePath: String?
-    // La sonde en cours est celle qui part automatiquement.
-    @State private var probe: Probe = .capture
+    @State private var statut = "pret"
+    @State private var fiche: Prise?
+    @State private var journalVisible = false
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    Picker("sonde", selection: $probe) {
-                        ForEach(Probe.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.menu)
-                    .disabled(running)
+            VStack(spacing: 0) {
+                autorisations
+
+                if let session = viseur.session {
+                    CameraPreview(session: session.avSession)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 260)
+                } else if let echec = viseur.echec {
+                    Text("viseur indisponible : \(echec)")
+                        .font(.footnote).foregroundStyle(.red).padding()
+                } else {
+                    ProgressView().frame(height: 260)
                 }
 
-                Section {
-                    row("caméra", permissions.camera)
-                    row("position", permissions.location)
-                    row("mouvement", permissions.motion)
-                    row("réseau local", permissions.localNetwork)
-                    if permissions.requesting {
-                        Text("demande en cours…").font(.footnote)
-                    } else if needsRequest {
-                        Button("Tout autoriser") {
-                            Task {
-                                await permissions.requestAll()
-                                await permissions.probeLocalNetwork()
-                                startIfReady()
-                            }
-                        }
-                    }
-                } header: {
-                    Text("autorisations")
-                } footer: {
-                    if blocked {
-                        // Refusée ne se rattrape pas depuis l'application :
-                        // proposer un bouton qui ne peut rien serait pire que
-                        // de dire où aller.
-                        Text("Une autorisation refusée se rétablit dans "
-                            + "Réglages › probative, pas ici.")
-                            .font(.caption2)
-                    }
+                Button {
+                    lancer(.capture)
+                } label: {
+                    Text("＋  prendre une photo")
+                        .font(.title3).frame(maxWidth: .infinity).padding(.vertical, 10)
                 }
+                .buttonStyle(.borderedProminent)
+                .disabled(running || !permissions.readyForCapture)
+                .padding(.horizontal)
 
-                Section {
-                    ForEach(lines) { line in
-                        Text(line.text)
-                            .font(.system(.footnote, design: .monospaced))
-                            .foregroundStyle(line.failed ? .red : .primary)
-                            .textSelection(.enabled)
-                    }
-                } footer: {
-                    if let fixturePath {
-                        Text("vecteur : \(fixturePath)")
-                            .font(.system(.caption2, design: .monospaced))
-                            .textSelection(.enabled)
-                    }
-                }
+                Text(statut)
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal).padding(.top, 4)
+
+                tableau
             }
             .navigationTitle("probative")
             .toolbar {
-                Button(running ? "en cours…" : "relancer", action: start)
-                    .disabled(running || permissions.requesting)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("journal") { journalVisible = true }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    // La sonde sans caméra reste accessible : elle isole ce qui
+                    // ne dépend pas de l'acquisition.
+                    Button("core") { lancer(.core) }.disabled(running)
+                }
             }
         }
+        .sheet(item: $fiche) { FicheView(prise: $0) }
+        .sheet(isPresented: $journalVisible) { JournalView(lines: lines) }
         .task {
             permissions.refresh()
-            // Le réseau local se sonde toujours en premier : c'est la seule
-            // autorisation qu'aucune interface ne sait interroger, et sa
-            // première tentative échoue par construction. Autant qu'elle
-            // échoue ici plutôt qu'au milieu d'une campagne.
+            // Le réseau local se sonde en premier : c'est la seule autorisation
+            // qu'aucune interface ne sait interroger, et sa première tentative
+            // échoue par construction. Autant qu'elle échoue ici.
             await permissions.probeLocalNetwork()
             if needsRequest {
                 await permissions.requestAll()
                 await permissions.probeLocalNetwork()
             }
-            startIfReady()
+            await viseur.ouvrir()
         }
+        .onDisappear { viseur.fermer() }
+    }
+
+    // -- Blocs ------------------------------------------------------------
+
+    private var autorisations: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(permissions.summary)
+                .font(.system(.caption, design: .monospaced))
+            if blocked {
+                // Refusée ne se rattrape pas depuis l'application : proposer un
+                // bouton qui ne peut rien serait pire que de dire où aller.
+                Text("Une autorisation refusée se rétablit dans Réglages › probative.")
+                    .font(.caption2).foregroundStyle(.red)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal).padding(.bottom, 4)
+    }
+
+    private var tableau: some View {
+        List {
+            Section {
+                if historique.prises.isEmpty {
+                    Text("aucune prise").foregroundStyle(.secondary)
+                }
+                ForEach(historique.prises.reversed()) { prise in
+                    Button { fiche = prise } label: {
+                        Text(prise.ligne)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.primary)
+                    }
+                }
+            } header: {
+                Text(historique.prises.isEmpty
+                     ? "tableau"
+                     : "\(historique.compte) prise(s) — toucher une ligne")
+            }
+        }
+        .listStyle(.plain)
     }
 
     private var needsRequest: Bool {
@@ -117,55 +136,121 @@ struct ProbeView: View {
             .contains(where: \.blocking)
     }
 
-    private func row(_ name: String, _ state: Permissions.State) -> some View {
-        HStack {
-            Text(state.symbol)
-                .foregroundStyle(state == .granted ? .green : (state.blocking ? .red : .secondary))
-            Text(name)
-            Spacer()
-            Text(state.rawValue).font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    /// Ne lance que si la sonde choisie peut réellement aboutir : partir sans
-    /// caméra ni position produirait un échec qui n'apprend rien.
-    private func startIfReady() {
-        guard !probe.needsSensors || permissions.readyForCapture else { return }
-        start()
-    }
-
-    private func start() {
+    /// Lance une campagne **sans quitter l'écran** — voir la note de type.
+    private func lancer(_ mode: SealProbe.Mode) {
         guard !running else { return }
         running = true
-        lines = []
-        fixturePath = nil
+        statut = "campagne en cours…"
         Task {
-            // L'état des autorisations ouvre le journal — et il est *imprimé*,
-            // pas seulement affiché : un extrait rapatrié par `--console` doit
-            // se lire sans l'écran, sinon on ne saura pas distinguer un capteur
-            // muet d'une autorisation manquante.
-            // Relu au moment du lancement, jamais hérité du préambule :
-            // l'autorisation de mouvement se décide pendant que la demande
-            // court, et l'état capturé plus tôt affichait « ? » alors que le
-            // baromètre répondait. Un en-tête faux est pire qu'absent.
+            // L'état des autorisations est relu au lancement, jamais hérité du
+            // préambule : il a pu changer entre-temps, et un en-tête faux est
+            // pire qu'absent.
             permissions.refresh()
             let entete = "autorisations    \(permissions.summary)"
             print("[probe] \(entete)")
-            var log = [SealProbe.Line(text: entete, failed: false)]
-            switch probe {
-            case .capture:
-                log += await SealProbe.run(.capture)
-            case .seal:
-                log += await SealProbe.run(.core)
-            case .attest:
-                let result = await AttestProbe.run()
-                log += result.lines.map { SealProbe.Line(text: $0.text, failed: $0.failed) }
-                if let fixture = result.fixture {
-                    fixturePath = AttestProbe.write(fixture)?.lastPathComponent
-                }
+
+            let resultat = await SealProbe.run(mode, session: viseur.session)
+            lines = [SealProbe.Line(text: entete, failed: false)] + resultat.lines
+            if let prise = resultat.prise {
+                historique.ajouter(prise)
+                statut = "prise n°\(prise.index) : \(prise.profil) — \(prise.niveau), "
+                    + "media[6] \(prise.mediaSixMs) ms"
+            } else {
+                statut = "campagne en échec — voir le journal"
             }
-            lines = log
             running = false
+        }
+    }
+}
+
+/// La fiche d'une prise : la photo, le verdict, et les octets.
+private struct FicheView: View {
+    let prise: Prise
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let vignette = Self.vignette(prise.photo) {
+                        Image(uiImage: vignette)
+                            .resizable().scaledToFit()
+                            .frame(maxWidth: .infinity)
+                    }
+                    Text(texte)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                .padding()
+            }
+            .navigationTitle("prise n°\(prise.index)")
+            .toolbar { Button("fermer") { dismiss() } }
+        }
+    }
+
+    private var texte: String {
+        var s = ""
+        s += "niveau         \(prise.niveau)\n"
+        s += "motif          \(prise.motif)\n"
+        s += "profil         \(prise.profil)\n"
+        for p in prise.proprietes { s += "  \(p)\n" }
+        s += "drapeaux       \(prise.drapeaux)\n\n"
+        s += "media[6]       \(prise.mediaSixMs) ms — seul chiffre confronte au seuil\n"
+        if let d = prise.decomposition { s += "acquisition    \(d)\n" }
+        s += "\n"
+        if let photo = prise.photo {
+            s += "media          \(prise.largeur)×\(prise.hauteur), \(prise.typeMime)\n"
+            s += "               \(photo.count) octets, tels que scelles\n"
+        } else {
+            s += "media          octets remis, \(prise.typeMime)\n"
+        }
+        s += "enveloppe      \(prise.enveloppe.count) octets\n"
+        s += "kid            \(prise.kid)\n"
+        s += "defi R1        \(prise.defiR1)\n\n"
+        s += "enveloppe (base64, selectionnable) :\n"
+        s += prise.enveloppe.base64EncodedString()
+        return s
+    }
+
+    /// Vignette **sous-échantillonnée**. Décoder une image 4032×3024 en pleine
+    /// résolution coûterait une cinquantaine de mégaoctets ; les octets
+    /// conservés, eux, restent intacts — on ne montre jamais autre chose que ce
+    /// qui a été scellé, mais on ne le montre pas en pleine taille.
+    private static func vignette(_ data: Data?) -> UIImage? {
+        guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return nil
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 900,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        else { return nil }
+        return UIImage(cgImage: cg)
+    }
+}
+
+/// Le journal complet de la dernière campagne.
+private struct JournalView: View {
+    let lines: [SealProbe.Line]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(lines) { line in
+                        Text(line.text)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(line.failed ? .red : .primary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("journal")
+            .toolbar { Button("fermer") { dismiss() } }
         }
     }
 }

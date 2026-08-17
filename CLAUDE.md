@@ -406,6 +406,24 @@ survit pas au poste ne vaut rien.
    image 4032×3024. Soit quatre à six fois la tablette d'entrée de gamme. Une
    calibration qui prendrait l'Android pour borne haute serait fausse.
 
+   **Et un aperçu vivant fait *monter* `media[6]`, pas descendre** — mesuré le
+   même jour sur iPhone, et c'est le résultat le moins intuitif de la journée.
+   Avec le viseur, la convergence 3A tombe de 23 ms à **3–6 ms** et la photo de
+   1 890 à **451 ms** ; mais `media[6]` passe de 592 à **1 013 ms**.
+
+   La cause se lit dans la décomposition : l'encodage ne coûte que 445 ms, donc
+   568 ms s'écoulent *après* la livraison des octets. La capture étant devenue
+   rapide, **les capteurs lui survivent** et leur excédent tombe dans le champ
+   noté. C'est la règle déjà écrite à l'inconnue n° 2 — *tout capteur qui
+   survit à la capture verse son excédent dans `media[6]`* — qu'accélérer la
+   photo a rendue vraie.
+
+   Les deux grandeurs sont donc des vases communicants : ce que l'aperçu retire
+   à la latence perçue, il le rend au champ noté. À 1 013 ms contre un seuil de
+   3 000, la marge tient — mais c'est un tiers du budget sur le meilleur
+   appareil du banc, et **cela pèse sur la calibration bien plus que le choix
+   de l'appareil**.
+
    La décomposition dit où passe le reste, et c'est le résultat le plus
    instructif de la journée :
 
