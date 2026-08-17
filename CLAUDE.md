@@ -339,11 +339,12 @@ survit pas au poste ne vaut rien.
      4 certificats, `chaine attestee : true` — ancrage à la racine Google
      exercé en vrai, et non plus contre un vecteur figé. Le `RootOfTrust` de
      la tablette a été lu et noté : `boot-verified-at-enrollment`.
-   - **`STANDARD` est le maximum atteignable sur Android aujourd'hui**, et
-     l'écart avec le `STRONG` de l'iPhone tient à **une seule propriété**.
-     `grade_time` ne monte en A que par `assertion-counter-monotonic`
-     (propre à iOS) ou `envelope-chain-verified`. Drapeau `CHAIN_ABSENT`.
-     C'est l'inconnue n° 3 qui plafonne la plateforme, rien d'autre.
+   - ~~**`STANDARD` est le maximum atteignable sur Android aujourd'hui.**~~
+     **Levé le 2026-08-17 à 16h31 : `STRONG` atteint en profil `core`.** L'écart
+     avec l'iPhone tenait à une seule propriété — `grade_time` ne monte en A que
+     par `assertion-counter-monotonic` (propre à iOS) ou
+     `envelope-chain-verified` — et le chaînage a suffi. **Aucune ligne de
+     format n'a bougé** : il ne manquait qu'un enrôlement stable.
    - **Aucun achat de matériel ne lèverait ce plafond.** La clé est sortie en
      `TRUSTED_ENVIRONMENT`, la SM-X200 n'ayant pas de StrongBox — mais
      `integrity` est déjà en A, et StrongBox ne l'y ferait pas monter plus
@@ -568,8 +569,22 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
    justifie par ce qu'elle prouve — qu'aucune prise ne manque. Si Google relevait ses
    quotas demain, la série resterait justifiée.
 
-   Implémenter fera tomber le plafond de `time` sur Android : `envelope-chain-verified`
-   existe déjà dans `grade_time` et promeut en A.
+   ~~Implémenter fera tomber le plafond de `time` sur Android.~~ **Fait et vérifié sur
+   appareil le 2026-08-17.** Le chaînage ne demandait aucun changement de format : il
+   suffisait d'un enrôlement stable. Une clé neuve par campagne donnait un `kid` neuf,
+   donc un appareil neuf pour le serveur, donc jamais de maillon précédent —
+   `CHAIN_FIRST_LINK_UNKNOWN` traînait dans les journaux comme symptôme sans qu'on le
+   lise.
+
+   Prise 1 : `CHAIN_ABSENT`, `time` en B. Prises suivantes : `envelope-chain-verified`,
+   `time` en **A**, `drapeaux : aucun`. Et en profil `core`, **`STRONG`** — les deux
+   plateformes sont à parité, l'iPhone y étant depuis le 2026-08-13.
+
+   `media[6]` en `core` avec chaînage : **0 à 1 ms**. Le scellement d'octets remis ne
+   coûte plus rien de mesurable.
+
+   Reste de l'ADR : rien. Le point 2 est abandonné par ADR-0010, le chaînage est acquis,
+   et l'interdiction d'un identifiant de session déclaré tenait déjà.
 4. **Horodatage par un tiers, RFC 3161** (spec §9) : ouverte. **Ne relève pas de la
    sécurité** — le nonce encadre déjà la capture des deux côtés, et un jeton
    d'horodatage ne resserre aucune borne. Relève de l'**opposabilité** : l'encadrement
