@@ -324,6 +324,23 @@ survit pas au poste ne vaut rien.
    sur plusieurs minutes de collecte — **aucun test d'hôte ne les couvre**, et
    c'est ce qui les rend fragiles.
 
+0 bis. **DÛ AUSSI — la même chose sur iPhone 16.** `SensorRun` transposé le
+   2026-08-17, construit, 22 tests d'hôte au vert, **jamais exécuté**.
+
+   La cause y était plus nette qu'ailleurs, et ce n'était pas un capteur lent :
+   `motionClaim` **dort 500 ms** par construction — cinq fois cent
+   millisecondes — l'altimètre attend jusqu'à 2 s, le point jusqu'à 15 s.
+   Lancées au déclenchement, ces attentes survivent à une capture devenue rapide
+   (451 ms avec aperçu). Les **568 ms** mesurées entre la livraison des octets
+   et la sérialisation, pour un encodage de 445 ms, s'expliquent d'abord par là.
+
+   Attendu : `media[6]` retombe nettement sous les 1 013 ms mesurés avec aperçu,
+   l'encodage (≈ 445 ms) devenant le terme dominant — ce qu'il devrait être.
+
+   **Un défaut d'Android que iOS n'avait pas**, et qui vaut d'être retenu :
+   l'arbitrage du point y garde depuis toujours le plus **récent**, jamais le
+   plus précis. La symétrie des correctifs s'arrête donc à deux sur trois.
+
 1. ~~**Rejouer C4.2 sur iPhone 16.**~~ **Fait le 2026-08-15.** Les correctifs de
    concurrence du 2026-08-13 — course de données dans `LocationDelegate`, délai
    de garde sur `Camera.capture` — ont tourné sur l'appareil. Résultat conforme
