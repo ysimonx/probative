@@ -269,7 +269,7 @@ promettre une cadence**. Enfin l'échauffement, sur une session qui dure des min
 | Série de captures : structure et rattachement | **Tranché — ADR-0009**, non implémenté |
 | Un nonce d'avance plutôt qu'un lot | Proposé — sans changement de spec |
 | Lot de session noté à la largeur, non au drapeau | **Ouvert en spec § 9** — desserrage, donc ADR |
-| Niveau visé par une série hors ligne | **Ouvert** — exigence, pas technique. Non tranché par ADR-0009 |
+| Niveau visé par une série hors ligne | **Tranché — ADR-0010.** Plus de plafond forfaitaire : la note suit la largeur d'encadrement du nonce, et le hors ligne Android devient possible par `key-attestation` |
 | Le chaînage prend son sens dans une série | **Inconnue n° 3 fermée** — ADR-0009 |
 
 ## Renvois

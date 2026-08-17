@@ -1,6 +1,6 @@
 # ADR-0009 — Serie de captures : tete attestee, maillons chaines, largeur mesuree
 
-**Statut :** accepte, **amende le 2026-08-17** (points 1, 5 et 7)
+**Statut :** accepte, **amende le 2026-08-17** (points 1, 5 et 7) ; **point 2 abandonne** par ADR-0010
 **Date :** 2026-08
 
 ## Contexte
@@ -44,9 +44,14 @@ couvert par la signature. `payload[7]`, lui, est dans la charge utile signee.
    precedent, mais n'est pas une condition de validite. Les maillons portent `payload[7]`
    et rien d'autre.
 
-2. **`freshness` devient optionnel** — `? 200 => freshness` au CDDL. Son absence n'est
-   admissible **que** si `payload[7]` est present et si la chaine se verifie ; sinon,
-   rejet. Jamais de repli silencieux.
+2. ~~**`freshness` devient optionnel**~~ — **ABANDONNE le 2026-08-17, ADR-0010.** Deux
+   mesures du meme jour ont retire a ce desserrage ses deux justifications. Le bridage
+   venait des `prepare` repetes et non des demandes de jeton : la fraicheur par enveloppe
+   tient a la cadence reelle en ligne, ce qui est exactement la clause de reouverture
+   ecrite plus bas. Et le hors ligne, seule justification restante, trouve une meilleure
+   reponse — un **troisieme type** de preuve de fraicheur, `key-attestation`, produit par
+   la puce sans reseau et portant R1 intacte. Le format se resserre au lieu de se
+   desserrer, et `freshness` reste obligatoire.
 
 3. **Un maillon ne transporte pas un jeton qui ne le lie pas.** Reutiliser tel quel le
    jeton de la tete etait l'autre voie : elle est refusee. Un jeton dont le `requestHash`
