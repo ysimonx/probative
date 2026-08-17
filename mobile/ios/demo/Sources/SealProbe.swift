@@ -41,6 +41,55 @@ enum SealProbe {
     /// existe pour mesurer ; ce qu'elle mesure doit être lisible à l'appel.
     private static let captureFormat: CaptureFormat = .jpeg
 
+    /// Ce qui survit d'une campagne à l'autre.
+    ///
+    /// **L'enrôlement est un événement d'installation, pas de capture.** La
+    /// sonde le refaisait à chaque exécution : clé neuve, donc `kid` neuf, donc
+    /// appareil neuf pour le serveur — et **le chaînage devenait impossible par
+    /// construction**. Le défaut a vécu des semaines côté Android sans que
+    /// personne ne le voie, `CHAIN_FIRST_LINK_UNKNOWN` traînant dans les
+    /// journaux comme symptôme ; il était identique ici.
+    @MainActor
+    final class Etat {
+        static let partage = Etat()
+
+        var signingKey: SigningKey?
+        var keyId: String?
+
+        /// Empreinte de l'enveloppe précédente — le maillon à chaîner.
+        var dernierDigest: Data?
+
+        /// Série courante. Clore incrémente : la suivante repart d'une tête.
+        var serie = 1
+        var prisesDansSerie = 0
+        var debutSerie: Date?
+
+        /// Bornes d'une série, au premier des deux atteint. Points de départ,
+        /// à recalibrer comme les seuils du vérificateur.
+        static let maxPrises = 5
+        static let dureeMax: TimeInterval = 120
+
+        func clore() {
+            dernierDigest = nil
+            prisesDansSerie = 0
+            debutSerie = nil
+            serie += 1
+        }
+
+        /// Clôture automatique : l'utilisateur n'a rien à presser. Depuis
+        /// l'amendement d'ADR-0009 elle **resserre** la note, elle ne
+        /// conditionne plus la validité.
+        func cloreSiNecessaire() -> String? {
+            let trop = prisesDansSerie >= Self.maxPrises
+            let vieille = debutSerie.map { Date().timeIntervalSince($0) >= Self.dureeMax } ?? false
+            guard trop || vieille else { return nil }
+            let motif = trop ? "\(Self.maxPrises) prises" : "\(Int(Self.dureeMax)) s"
+            let close = serie
+            clore()
+            return "serie \(close) close automatiquement (\(motif))"
+        }
+    }
+
     struct Line: Identifiable {
         let id = UUID()
         let text: String
@@ -103,43 +152,9 @@ enum SealProbe {
         }
 
         do {
-            // ── 1. Les deux clés ──────────────────────────────────────────
-            SigningKey.delete(tag: signingTag)
-            let start = DispatchTime.now().uptimeNanoseconds
-            let signingKey = try SigningKey.create(tag: signingTag)
-            ok("cle d'enveloppe  enclave: \(signingKey.secureEnclave), \(since(start))")
-
-            let keyStart = DispatchTime.now().uptimeNanoseconds
-            let keyId = try await AppAttest.generateKey()
-            ok("cle App Attest   \(since(keyStart))")
-
-            // ── 2. Enrôlement ─────────────────────────────────────────────
-            //
-            // Le défi d'enrôlement vient du serveur dans une boucle réelle ;
-            // ici il est tiré au sort par l'appareil, comme côté Android. Ce
-            // que le serveur vérifie est la liaison : `clientDataHash` vaut
-            // SHA-256 du défi, et il refait le calcul.
-            var challenge = Data(count: 16)
-            _ = challenge.withUnsafeMutableBytes {
-                SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!)
-            }
-            let attestStart = DispatchTime.now().uptimeNanoseconds
-            let attestation = try await AppAttest.attest(
-                keyId: keyId,
-                clientDataHash: Data(SHA256.hash(data: challenge))
-            )
-            ok("attestation      \(attestation.count) octets, \(since(attestStart))")
-
-            let enrolled = try await server.enroll(
-                publicKeyX962: try signingKey.publicKeyX962(),
-                keyId: Data(base64Encoded: keyId) ?? Data(),
-                attestation: attestation,
-                challenge: challenge
-            )
-            ok("enrolement       kid \(enrolled["kid_hex"] as? String ?? "?")")
-            // `attested: false` signifierait que la clé a été acceptée sur
-            // parole — le mode dégradé du serveur, qui ne prouve rien.
-            ok("                 attestation validee : \(enrolled["attested"] as? Bool ?? false)")
+            // ── 1 et 2. Les deux clés et l'enrôlement — **une seule fois** ──
+            let (signingKey, keyId) = try await enroler(server: server, ok: ok)
+            let precedent = await MainActor.run { Etat.partage.dernierDigest }
 
             // ── 3. Nonce, émis pour le profil ─────────────────────────────
             let issued = try await server.nonce(
@@ -177,7 +192,8 @@ enum SealProbe {
                 sealed = try await sealer.seal(
                     content: content,
                     mimeType: contentType,
-                    nonce: nonce
+                    nonce: nonce,
+                    previousDigest: precedent
                 )
                 media = content
                 ok("scellement       \(since(sealStart))")
@@ -185,7 +201,9 @@ enum SealProbe {
                 // La sonde déroule l'acquisition étape par étape plutôt que
                 // d'appeler `capture()`, pour pouvoir chronométrer et
                 // rapporter chacune. Un intégrateur, lui, appelle `capture()`.
-                let (envelope, acquired) = try await acquire(sealer: sealer, nonce: nonce, ok: ok)
+                let (envelope, acquired) = try await acquire(
+                    sealer: sealer, nonce: nonce, previousDigest: precedent, ok: ok
+                )
                 sealed = envelope
                 media = acquired
             }
@@ -217,6 +235,22 @@ enum SealProbe {
             let result = try await server.verify(envelope: sealed.bytes, media: media)
             ok("verification     \(since(verifyStart))")
             lines.append(contentsOf: report(result))
+
+            // Le maillon suivant chaînera sur celle-ci. Le serveur retient la
+            // même empreinte de son côté : c'est leur accord qui vaut
+            // vérification, rien n'est déclaré.
+            let empreinte = Data(SHA256.hash(data: sealed.bytes))
+            let fin = await MainActor.run { () -> String? in
+                let etat = Etat.partage
+                etat.dernierDigest = empreinte
+                etat.prisesDansSerie += 1
+                if etat.debutSerie == nil { etat.debutSerie = Date() }
+                let serie = etat.serie
+                let n = etat.prisesDansSerie
+                let close = etat.cloreSiNecessaire()
+                return "serie \(serie) : \(n) prise(s)" + (close.map { " — " + $0 } ?? "")
+            }
+            if let fin { ok(fin) }
         } catch let failure as DevServer.Failure {
             ko("serveur \(failure.description)")
         } catch let described as CustomStringConvertible {
@@ -230,6 +264,67 @@ enum SealProbe {
         return lines
     }
 
+    /// Enrôle l'appareil, ou rend l'enrôlement déjà fait.
+    ///
+    /// Deux clés distinctes vivent ici, et les confondre bloque net : celle qui
+    /// signe l'enveloppe, dans la Secure Enclave et désignée par le `kid`, et
+    /// celle d'App Attest, gérée par DeviceCheck et incapable de signer autre
+    /// chose qu'une assertion. C'est la première leçon de la phase D.
+    private static func enroler(
+        server: DevServer,
+        ok: (String) -> Void
+    ) async throws -> (SigningKey, String) {
+        if let deja = await MainActor.run(body: { () -> (SigningKey, String)? in
+            guard let k = Etat.partage.signingKey, let id = Etat.partage.keyId else { return nil }
+            return (k, id)
+        }) {
+            ok("appareil         deja enrole — enrolement une fois par lancement")
+            return deja
+        }
+
+        SigningKey.delete(tag: signingTag)
+        let start = DispatchTime.now().uptimeNanoseconds
+        let signingKey = try SigningKey.create(tag: signingTag)
+        ok("cle d'enveloppe  enclave: \(signingKey.secureEnclave), \(since(start))")
+
+        let keyStart = DispatchTime.now().uptimeNanoseconds
+        let keyId = try await AppAttest.generateKey()
+        ok("cle App Attest   \(since(keyStart))")
+
+        // Le défi d'enrôlement vient du serveur dans une boucle réelle ; ici il
+        // est tiré au sort par l'appareil, comme côté Android. Ce que le serveur
+        // vérifie est la liaison : `clientDataHash` vaut SHA-256 du défi, et il
+        // refait le calcul.
+        var challenge = Data(count: 16)
+        _ = challenge.withUnsafeMutableBytes {
+            SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!)
+        }
+        let attestStart = DispatchTime.now().uptimeNanoseconds
+        let attestation = try await AppAttest.attest(
+            keyId: keyId,
+            clientDataHash: Data(SHA256.hash(data: challenge))
+        )
+        ok("attestation      \(attestation.count) octets, \(since(attestStart))")
+
+        let enrolled = try await server.enroll(
+            publicKeyX962: try signingKey.publicKeyX962(),
+            keyId: Data(base64Encoded: keyId) ?? Data(),
+            attestation: attestation,
+            challenge: challenge
+        )
+        ok("enrolement       kid \(enrolled["kid_hex"] as? String ?? "?")")
+        // `attested: false` signifierait que la clé a été acceptée sur parole —
+        // le mode dégradé du serveur, qui ne prouve rien.
+        ok("                 attestation validee : \(enrolled["attested"] as? Bool ?? false)")
+        ok("                 enrole une fois : c'est ce qui rend le chainage possible")
+
+        await MainActor.run {
+            Etat.partage.signingKey = signingKey
+            Etat.partage.keyId = keyId
+        }
+        return (signingKey, keyId)
+    }
+
     /// L'acquisition, déroulée pour être chronométrée étape par étape.
     ///
     /// Trois mesures qu'aucune autre étape ne donne : le coût de la capture
@@ -239,6 +334,7 @@ enum SealProbe {
     private static func acquire(
         sealer: Sealer,
         nonce: Data,
+        previousDigest: Data?,
         ok: (String) -> Void
     ) async throws -> (SealedEnvelope, Data) {
         // Position et corroboration courent PENDANT l'acquisition, comme le
@@ -284,7 +380,8 @@ enum SealProbe {
 
         let sealStart = DispatchTime.now().uptimeNanoseconds
         let sealed = try await sealer.seal(
-            image: image, position: position, claims: claims, nonce: nonce
+            image: image, position: position, claims: claims, nonce: nonce,
+            previousDigest: previousDigest
         )
         ok("scellement       \(since(sealStart))")
         return (sealed, image.bytes)

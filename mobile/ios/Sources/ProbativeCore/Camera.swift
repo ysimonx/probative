@@ -251,15 +251,21 @@ final class PhotoDelegate: NSObject, AVCapturePhotoCaptureDelegate {
     /// utilisé.
     private let format: CaptureFormat
 
-    init(format: CaptureFormat, stamps: SessionStamps) {
+    /// L'instant de l'appel de la prise de vue, transmis plutôt que relevé
+    /// ici : sur une session gardée ouverte, il est la seule origine qui
+    /// distingue la photo du cadrage qui l'a précédée.
+    private let requested: TimeInterval
+
+    init(format: CaptureFormat, stamps: SessionStamps, requested: TimeInterval) {
         self.format = format
         self.stamps = stamps
+        self.requested = requested
         // Repli si le rappel d'obturateur n'arrive pas : l'instant
         // d'armement est **antérieur** à toute photo possible, donc
         // `media[6]` se trouve surestimé et jamais l'inverse. Une latence
         // trop haute fait rejeter à tort, ce qui se voit ; une latence
         // sous-estimée laisserait passer, ce qui ne se voit pas.
-        self.shutterUptime = stamps.armed
+        self.shutterUptime = requested
     }
 
     var continuation: CheckedContinuation<CapturedImage, Error>? {
@@ -336,6 +342,7 @@ final class PhotoDelegate: NSObject, AVCapturePhotoCaptureDelegate {
                         configured: stamps.configured,
                         running: stamps.running,
                         armed: stamps.armed,
+                        requested: requested,
                         shutter: shutterUptime,
                         delivered: delivered
                     )
