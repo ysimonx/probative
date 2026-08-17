@@ -66,6 +66,16 @@ public struct CaptureTimings: Sendable {
     public let running: TimeInterval
     /// Fin du délai de convergence tenu par le cœur.
     public let armed: TimeInterval
+    /// Appel de la prise de vue — **la borne qu'un aperçu rend nécessaire**.
+    ///
+    /// Sans elle, une session gardée ouverte pendant qu'on cadre ferait compter
+    /// l'attente de l'utilisateur dans la convergence 3A, et le total
+    /// mesurerait la durée de la séance au lieu de celle de la photo. Les deux
+    /// nombres seraient absurdes **sans qu'aucun ne le paraisse** — le mode de
+    /// défaillance que cette décomposition existe pour écarter.
+    ///
+    /// En session éphémère elle suit immédiatement ``armed`` et n'ajoute rien.
+    public let requested: TimeInterval
     /// Obturateur. **L'origine de `media[6]`** : rien de ce qui précède n'y entre.
     public let shutter: TimeInterval
     /// Octets encodés disponibles.
@@ -83,14 +93,33 @@ public struct CaptureTimings: Sendable {
     /// une file était saturée et les autres bornes ne sont pas lisibles.
     public var settleMs: Int { Self.ms(running, armed) }
 
+    /// Temps pendant lequel la session est restée ouverte sans servir — nul en
+    /// régime éphémère, égal au temps de cadrage avec un aperçu vivant.
+    ///
+    /// Ce n'est pas un coût : c'est ce qui **retire** les termes structurels du
+    /// chemin ressenti par l'utilisateur, la session étant déjà sous tension et
+    /// convergée quand il appuie.
+    public var idleMs: Int { Self.ms(armed, requested) }
+
     /// Convergence 3A avant déclenchement, à la main d'AVFoundation. Le terme
     /// qui dépend de la scène : lumière faible, autofocus qui cherche.
-    public var shutterLagMs: Int { Self.ms(armed, shutter) }
+    ///
+    /// Compté depuis l'**appel** et non depuis l'armement de la session : c'est
+    /// ce qui rend le chiffre comparable entre une prise isolée et une prise
+    /// faite sur un aperçu déjà convergé, et c'est le seul terme d'avant
+    /// l'obturateur qu'un aperçu peut réellement faire fondre.
+    public var shutterLagMs: Int { Self.ms(requested, shutter) }
 
     /// Traitement et encodage. **Le seul terme qui pèse dans `media[6]`.**
     public var encodeMs: Int { Self.ms(shutter, delivered) }
 
-    /// Le total — ce que la sonde rapportait seul avant cette décomposition.
+    /// Ce que coûte **cette photo-là**, de l'appel aux octets. La grandeur à
+    /// comparer d'un régime à l'autre : ``totalMs`` engloberait le cadrage.
+    public var photoMs: Int { Self.ms(requested, delivered) }
+
+    /// De l'ouverture de session aux octets. Égal à ``photoMs`` en régime
+    /// éphémère ; avec un aperçu il inclut le cadrage et ne mesure plus une
+    /// photo mais une séance.
     public var totalMs: Int { Self.ms(start, delivered) }
 
     private static func ms(_ from: TimeInterval, _ to: TimeInterval) -> Int {
@@ -177,9 +206,13 @@ public enum Camera {
         }
     }
 
-    /// Prend une photo et rend ses octets bruts. Bloquant côté matériel, donc
-    /// `async` : la configuration de session ne doit pas tenir le fil
-    /// principal, ce dont AVFoundation se plaint bruyamment.
+    /// Prend une photo et rend ses octets bruts — **le cas éphémère**.
+    ///
+    /// Strictement une ``CaptureSession`` dont la vie tient dans l'appel. La
+    /// forme générale est la session, conformément à ADR-0008 ; celle-ci reste
+    /// pour l'appelant qui n'affiche aucun aperçu, et parce qu'elle garde les
+    /// mesures de C4.2 comparables.
+    ///
     /// - Parameter format: encodage demandé au pipeline photo. Le type MIME de
     ///   l'enveloppe en découle, il n'est jamais choisi séparément.
     /// - Parameter timeout: délai de garde du pipeline photo. Il n'interrompt
@@ -189,8 +222,183 @@ public enum Camera {
         format: CaptureFormat = .jpeg,
         timeout: TimeInterval = 20
     ) async throws -> CapturedImage {
+        let session = try await CaptureSession.open(format: format)
+        defer { session.close() }
+        return try await session.capture(timeout: timeout)
+    }
+}
+
+/// Les bornes déjà connues au moment d'armer le délégué.
+///
+/// Groupées plutôt que passées à la file : quatre `TimeInterval`
+/// positionnels de suite, dont deux diffèrent de 400 ms, se seraient
+/// intervertis sans que rien ne le signale — et une décomposition fausse
+/// est pire que pas de décomposition du tout.
+struct SessionStamps {
+    let start, configured, running, armed: TimeInterval
+}
+
+
+final class PhotoDelegate: NSObject, AVCapturePhotoCaptureDelegate {
+    private let lock = NSLock()
+    private var pending: CheckedContinuation<CapturedImage, Error>?
+    var retain: PhotoDelegate?
+    private let stamps: SessionStamps
+    private var shutterUptime: TimeInterval
+
+    /// Le format demandé au pipeline, reporté tel quel dans le résultat :
+    /// c'est ce qui interdit à `media[3]` de diverger du codec réellement
+    /// utilisé.
+    private let format: CaptureFormat
+
+    init(format: CaptureFormat, stamps: SessionStamps) {
+        self.format = format
+        self.stamps = stamps
+        // Repli si le rappel d'obturateur n'arrive pas : l'instant
+        // d'armement est **antérieur** à toute photo possible, donc
+        // `media[6]` se trouve surestimé et jamais l'inverse. Une latence
+        // trop haute fait rejeter à tort, ce qui se voit ; une latence
+        // sous-estimée laisserait passer, ce qui ne se voit pas.
+        self.shutterUptime = stamps.armed
+    }
+
+    var continuation: CheckedContinuation<CapturedImage, Error>? {
+        get { lock.withLock { pending } }
+        set { lock.withLock { pending = newValue } }
+    }
+
+    /// Reprend la continuation **une seule fois**, quoi qu'il arrive.
+    ///
+    /// Sans ce garde-fou, `capture()` pouvait attendre indéfiniment : rien
+    /// n'oblige AVFoundation à rappeler — une session interrompue par un
+    /// appel entrant, par exemple, ne produit ni photo ni erreur. Un
+    /// scellement suspendu sans message est le pire des échecs pour une
+    /// campagne, puisqu'il ne laisse même pas de trace à lire.
+    func finish(_ result: Result<CapturedImage, Error>) {
+        lock.lock()
+        let continuation = pending
+        pending = nil
+        lock.unlock()
+        guard let continuation else { return }
+        retain = nil
+        continuation.resume(with: result)
+    }
+
+    /// Délai de garde. Généreux à dessein : il ne doit jamais interrompre
+    /// une capture lente, seulement une capture morte.
+    func armTimeout(_ seconds: TimeInterval) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { [weak self] in
+            self?.finish(.failure(CameraError.timedOut))
+        }
+    }
+
+    /// L'instant de l'obturateur est celui-ci — pas celui du rappel de
+    /// fin, qui inclut l'encodage. La différence est exactement ce que
+    /// `media[6]` doit mesurer, et c'est aussi par elle qu'un format plus
+    /// lourd se paierait : le coût d'encodage entre dans la latence, pas
+    /// à côté.
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings
+    ) {
+        shutterUptime = ProcessInfo.processInfo.systemUptime
+    }
+
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishProcessingPhoto photo: AVCapturePhoto,
+        error: Error?
+    ) {
+        if let error {
+            finish(.failure(CameraError.failed(error.localizedDescription)))
+            return
+        }
+        // `fileDataRepresentation` rend le conteneur complet, EXIF
+        // compris. C'est ce tampon qui part au serveur et c'est lui qu'on
+        // hache — jamais une image reconstruite.
+        guard let data = photo.fileDataRepresentation() else {
+            finish(.failure(CameraError.noData))
+            return
+        }
+        // Borne posée **après** l'extraction, pas à l'entrée du rappel :
+        // c'est l'instant où les octets existent, et donc le coût réel que
+        // paierait un format plus lourd.
+        let delivered = ProcessInfo.processInfo.systemUptime
+        let dimensions = photo.resolvedSettings.photoDimensions
+        finish(
+            .success(
+                CapturedImage(
+                    bytes: data,
+                    format: format,
+                    pixelSize: (width: Int(dimensions.width), height: Int(dimensions.height)),
+                    timings: CaptureTimings(
+                        start: stamps.start,
+                        configured: stamps.configured,
+                        running: stamps.running,
+                        armed: stamps.armed,
+                        shutter: shutterUptime,
+                        delivered: delivered
+                    )
+                )
+            )
+        )
+    }
+}
+
+/// Session de capture — **possédée par le cœur**, conformément à ADR-0008.
+///
+/// Le cœur détient la session ; une application qui veut afficher un aperçu ne
+/// crée pas la sienne, elle attache une couche de prévisualisation à
+/// ``avSession``. Deux sessions concurrentes se disputeraient la caméra — mode
+/// de défaillance prévisible de toute intégration naïve.
+///
+/// **Le cœur ne dessine rien.** L'affichage — la vue, sa taille, sa place, les
+/// superpositions, le bouton déclencheur — appartient entièrement à
+/// l'application. Le cœur possède la source, l'application possède la fenêtre
+/// ouverte dessus.
+///
+/// Pourquoi de ce côté : le profil `capture` n'affirme qu'une chose — le cœur a
+/// **observé** l'acquisition (spec §2.5). Une session possédée par l'hôte lui
+/// laisserait choisir la sortie, le format, voire la source, et le cœur
+/// signerait des octets dont il n'a pas vu la naissance.
+public final class CaptureSession {
+
+    /// La session AVFoundation, exposée pour qu'une
+    /// `AVCaptureVideoPreviewLayer(session:)` s'y rattache.
+    ///
+    /// C'est la seule chose que le cœur cède à l'affichage : une source à
+    /// consommer. Il n'expose ni vue, ni couche, ni contrôleur — sans quoi il
+    /// devrait importer UIKit et cesserait d'être l'artefact autonome qu'exige
+    /// ADR-0003.
+    public let avSession: AVCaptureSession
+
+    private let output: AVCapturePhotoOutput
+    private let format: CaptureFormat
+    private let stamps: SessionStamps
+
+    private init(
+        avSession: AVCaptureSession,
+        output: AVCapturePhotoOutput,
+        format: CaptureFormat,
+        stamps: SessionStamps
+    ) {
+        self.avSession = avSession
+        self.output = output
+        self.format = format
+        self.stamps = stamps
+    }
+
+    /// Délai de garde après mise sous tension, avant d'autoriser une prise.
+    ///
+    /// En dur, et c'est assumé : c'est un **témoin**, pas un réglage. Sa valeur
+    /// importe moins que sa constance — un `settleMs` qui s'en écarte signale
+    /// une file saturée, donc les autres bornes illisibles.
+    public static let settleSeconds: TimeInterval = 0.4
+
+    /// Ouvre une session et attend qu'elle soit prête à déclencher.
+    public static func open(format: CaptureFormat = .jpeg) async throws -> CaptureSession {
         let start = ProcessInfo.processInfo.systemUptime
-        guard await requestAccess() else { throw CameraError.denied }
+        guard await Camera.requestAccess() else { throw CameraError.denied }
 
         let session = AVCaptureSession()
         session.sessionPreset = .photo
@@ -213,155 +421,57 @@ public enum Camera {
         session.commitConfiguration()
         let configured = ProcessInfo.processInfo.systemUptime
 
-        // Synchrone, et **à froid à chaque photo** faute d'aperçu : capteur mis
-        // sous tension, chaîne de traitement configurée, tampons alloués. C'est
-        // le terme que la question de propriété de session ferait disparaître
-        // (`docs/acquisition-et-liaisons.md` §2), d'où la borne posée ici — un
-        // coût qu'on prétend supprimer se mesure d'abord.
+        // Synchrone : capteur mis sous tension, chaîne de traitement
+        // configurée, tampons alloués. **Payé une fois par session** — c'est le
+        // terme qu'un aperçu vivant retire du chemin ressenti, et la borne
+        // existe pour le mesurer plutôt que de le supposer.
         session.startRunning()
-        defer { session.stopRunning() }
         let running = ProcessInfo.processInfo.systemUptime
 
         // La session met un instant à converger (exposition, mise au point).
         // Déclencher immédiatement rend une image noire sur certains
         // appareils — ce n'est pas une erreur, juste une photo inutilisable.
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        try? await Task.sleep(nanoseconds: UInt64(settleSeconds * 1_000_000_000))
         let armed = ProcessInfo.processInfo.systemUptime
 
-        let settings = AVCapturePhotoSettings(
-            format: [AVVideoCodecKey: format.codec]
-        )
-        let delegate = PhotoDelegate(
+        return CaptureSession(
+            avSession: session,
+            output: output,
             format: format,
             stamps: SessionStamps(
                 start: start, configured: configured, running: running, armed: armed
             )
         )
+    }
+
+    /// Déclenche une photo et rend ses octets.
+    ///
+    /// L'instant de l'appel est estampillé **ici**, et non à l'ouverture : sur
+    /// une session gardée ouverte, tout ce qui précède appartient au cadrage et
+    /// non à la photo.
+    public func capture(timeout: TimeInterval = 20) async throws -> CapturedImage {
+        let requested = ProcessInfo.processInfo.systemUptime
+        let delegate = PhotoDelegate(format: format, stamps: stamps, requested: requested)
         return try await withCheckedThrowingContinuation { continuation in
             delegate.continuation = continuation
             // Le délégué n'est pas retenu par AVFoundation : sans cette
-            // référence forte, il est libéré avant le rappel et la capture
-            // ne rend jamais rien.
+            // référence forte, il est libéré avant le rappel et la capture ne
+            // rend jamais rien.
             delegate.retain = delegate
             delegate.armTimeout(timeout)
-            output.capturePhoto(with: settings, delegate: delegate)
-        }
-    }
-
-    /// Les bornes déjà connues au moment d'armer le délégué.
-    ///
-    /// Groupées plutôt que passées à la file : quatre `TimeInterval`
-    /// positionnels de suite, dont deux diffèrent de 400 ms, se seraient
-    /// intervertis sans que rien ne le signale — et une décomposition fausse
-    /// est pire que pas de décomposition du tout.
-    private struct SessionStamps {
-        let start, configured, running, armed: TimeInterval
-    }
-
-    private final class PhotoDelegate: NSObject, AVCapturePhotoCaptureDelegate {
-        private let lock = NSLock()
-        private var pending: CheckedContinuation<CapturedImage, Error>?
-        var retain: PhotoDelegate?
-        private let stamps: SessionStamps
-        private var shutterUptime: TimeInterval
-
-        /// Le format demandé au pipeline, reporté tel quel dans le résultat :
-        /// c'est ce qui interdit à `media[3]` de diverger du codec réellement
-        /// utilisé.
-        private let format: CaptureFormat
-
-        init(format: CaptureFormat, stamps: SessionStamps) {
-            self.format = format
-            self.stamps = stamps
-            // Repli si le rappel d'obturateur n'arrive pas : l'instant
-            // d'armement est **antérieur** à toute photo possible, donc
-            // `media[6]` se trouve surestimé et jamais l'inverse. Une latence
-            // trop haute fait rejeter à tort, ce qui se voit ; une latence
-            // sous-estimée laisserait passer, ce qui ne se voit pas.
-            self.shutterUptime = stamps.armed
-        }
-
-        var continuation: CheckedContinuation<CapturedImage, Error>? {
-            get { lock.withLock { pending } }
-            set { lock.withLock { pending = newValue } }
-        }
-
-        /// Reprend la continuation **une seule fois**, quoi qu'il arrive.
-        ///
-        /// Sans ce garde-fou, `capture()` pouvait attendre indéfiniment : rien
-        /// n'oblige AVFoundation à rappeler — une session interrompue par un
-        /// appel entrant, par exemple, ne produit ni photo ni erreur. Un
-        /// scellement suspendu sans message est le pire des échecs pour une
-        /// campagne, puisqu'il ne laisse même pas de trace à lire.
-        func finish(_ result: Result<CapturedImage, Error>) {
-            lock.lock()
-            let continuation = pending
-            pending = nil
-            lock.unlock()
-            guard let continuation else { return }
-            retain = nil
-            continuation.resume(with: result)
-        }
-
-        /// Délai de garde. Généreux à dessein : il ne doit jamais interrompre
-        /// une capture lente, seulement une capture morte.
-        func armTimeout(_ seconds: TimeInterval) {
-            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { [weak self] in
-                self?.finish(.failure(CameraError.timedOut))
-            }
-        }
-
-        /// L'instant de l'obturateur est celui-ci — pas celui du rappel de
-        /// fin, qui inclut l'encodage. La différence est exactement ce que
-        /// `media[6]` doit mesurer, et c'est aussi par elle qu'un format plus
-        /// lourd se paierait : le coût d'encodage entre dans la latence, pas
-        /// à côté.
-        func photoOutput(
-            _ output: AVCapturePhotoOutput,
-            willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings
-        ) {
-            shutterUptime = ProcessInfo.processInfo.systemUptime
-        }
-
-        func photoOutput(
-            _ output: AVCapturePhotoOutput,
-            didFinishProcessingPhoto photo: AVCapturePhoto,
-            error: Error?
-        ) {
-            if let error {
-                finish(.failure(CameraError.failed(error.localizedDescription)))
-                return
-            }
-            // `fileDataRepresentation` rend le conteneur complet, EXIF
-            // compris. C'est ce tampon qui part au serveur et c'est lui qu'on
-            // hache — jamais une image reconstruite.
-            guard let data = photo.fileDataRepresentation() else {
-                finish(.failure(CameraError.noData))
-                return
-            }
-            // Borne posée **après** l'extraction, pas à l'entrée du rappel :
-            // c'est l'instant où les octets existent, et donc le coût réel que
-            // paierait un format plus lourd.
-            let delivered = ProcessInfo.processInfo.systemUptime
-            let dimensions = photo.resolvedSettings.photoDimensions
-            finish(
-                .success(
-                    CapturedImage(
-                        bytes: data,
-                        format: format,
-                        pixelSize: (width: Int(dimensions.width), height: Int(dimensions.height)),
-                        timings: CaptureTimings(
-                            start: stamps.start,
-                            configured: stamps.configured,
-                            running: stamps.running,
-                            armed: stamps.armed,
-                            shutter: shutterUptime,
-                            delivered: delivered
-                        )
-                    )
-                )
+            output.capturePhoto(
+                with: AVCapturePhotoSettings(format: [AVVideoCodecKey: format.codec]),
+                delegate: delegate
             )
         }
+    }
+
+    /// Libère la caméra. La session n'est plus utilisable après cet appel.
+    ///
+    /// Une session qui survit à l'écran garde le capteur sous tension et vide
+    /// la batterie ; elle ne se referme pas toute seule.
+    public func close() {
+        avSession.stopRunning()
     }
 }
 
