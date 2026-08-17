@@ -122,6 +122,12 @@ c'est celle-ci : le hors ligne.
    de capacite, structurel, et le taire ferait promettre au produit ce qu'il ne tient pas
    sur la moitie du parc.
 
+   **Largement referme par ADR-0011 le meme jour.** Le hors ligne n'est pas un etat
+   permanent : le produit comporte un moment de **validation**, ou le reseau revient. Un
+   jeton Play Integrity demande a ce moment-la, avec `requestHash` valant le R1 d'une
+   enveloppe deja scellee, rend a Android son `app-recognized`. L'ecart ci-dessus ne
+   subsiste donc que pour une campagne **jamais validee**.
+
 ## Justification
 
 - **Le point 1 renverse la solution d'ADR-0009 point 2, et c'est un progres.** Rendre

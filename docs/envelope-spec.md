@@ -80,6 +80,8 @@ freshness = {
 
 L'absence de signature sur cet en-tête n'est pas une faiblesse : le jeton de fraîcheur se lie lui-même au contenu par la règle de §3. Le modifier invalide la vérification.
 
+**C'est même une capacité, et ADR-0011 s'en sert.** L'en-tête non protégé est le seul endroit d'une enveloppe COSE où l'on peut écrire *après* signature. Une preuve de fraîcheur obtenue plus tard — à la validation d'une campagne capturée hors ligne — s'y ajoute donc sans re-signer, sans enveloppe parallèle, et sans fichier compagnon qu'on pourrait perdre. Elle se lie au contenu par le même recalcul de R1 que les autres.
+
 ### 2.3 Charge utile
 
 ```cddl
