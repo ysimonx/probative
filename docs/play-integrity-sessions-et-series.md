@@ -118,6 +118,72 @@ n'est déclaré.
 **Deux jetons par série, quelle que soit sa longueur.** C'est ce qui met la cadence hors
 de portée du quota.
 
+### Trois photos dans la même minute
+
+Le cas concret, avec ce qui part sur le réseau à chaque geste :
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Utilisateur
+    participant A as Application
+    participant G as Google Play
+    participant S as Serveur
+
+    Note over A,G: au lancement, une seule fois
+    A->>G: prepare
+    G-->>A: fournisseur
+
+    Note over U,S: t = 0 s — TÊTE
+    U->>A: +
+    A->>S: nonce
+    S-->>A: nonce
+    A->>G: jeton pour R1
+    G-->>A: jeton
+    A->>S: enveloppe 1 — jeton, rien à chaîner
+    S-->>A: verdict
+
+    Note over U,S: t = 12 s — MAILLON
+    U->>A: +
+    A->>S: nonce
+    S-->>A: nonce
+    A->>S: enveloppe 2 — empreinte de la 1, sans jeton
+    S-->>A: verdict, integrity plafonné
+
+    Note over U,S: t = 25 s — MAILLON
+    U->>A: +
+    A->>S: nonce
+    S-->>A: nonce
+    A->>S: enveloppe 3 — empreinte de la 2, sans jeton
+    S-->>A: verdict, integrity plafonné
+
+    Note over U,S: t = 40 s — QUEUE
+    U->>A: fini (ou minuterie, ou arrière-plan)
+    A->>S: nonce
+    S-->>A: nonce
+    A->>G: jeton pour R1
+    G-->>A: jeton
+    A->>S: enveloppe 4 — jeton + empreinte de la 3
+    S-->>A: série close, fenêtre bornée
+```
+
+**Deux appels à Google pour toute la minute**, quel que soit le nombre de photos. Les
+nonces, eux, sont demandés à *votre* serveur à chaque enveloppe : aucun quota, et c'est
+ce qui préserve R3 sur chaque prise.
+
+À comparer à ce que fait la démonstration aujourd'hui — un jeton par photo, soit quatre
+appels ici, et cinq suffisent à faire brider.
+
+> **Un point qu'ADR-0009 ne tranche pas, et qui apparaît en dessinant.** On ne sait pas
+> à l'avance quelle photo sera la dernière : la queue ne peut donc pas *être* la dernière
+> photo, puisqu'il faudrait l'attester après coup — R1 porte sur sa propre charge utile,
+> et rien ne se rattrape. La clôture produit donc une **enveloppe supplémentaire**,
+> attestée et chaînée à la dernière prise, comme sur la figure.
+>
+> Reste à décider ce qu'elle scelle. Un contenu trivial suffirait, mais une piste plus
+> intéressante existe : lui faire sceller **la liste des empreintes de la série**, ce qui
+> la rendrait vérifiable d'un bloc. À instruire à l'implémentation.
+
 ### Ce qu'un maillon perd, et qu'il faut dire
 
 La chaîne prouve l'**ordre**, jamais la **santé continue** de l'appareil. Quelqu'un qui
