@@ -324,21 +324,40 @@ survit pas au poste ne vaut rien.
    n'entre dans le profil `core`, et un niveau qui aurait bougé aurait signalé
    que le préambule touche ce qu'il ne devait pas.
 
-   Latences des deux exécutions, même appareil, même code de sonde :
+   **Rejouée en 0.1.6** (code 7), qui remonte `signLatencyMs` sur
+   `SealedEnvelope` et fait enfin imprimer `media[6]` à la sonde. Verdict
+   toujours identique.
 
-   | | 0.1.4 (11:57) | 0.1.5 (12:29) |
-   |---|---|---|
-   | préparation | 671 ms | 493 ms |
-   | clé matérielle | 43 ms | 39 ms |
-   | scellement | **39 ms** | **52 ms** |
-   | vérification | 422 ms | 339 ms |
+   Latences des trois exécutions, même appareil, même code de sonde :
 
-   Le scellement varie de +33 % d'une exécution à l'autre, et la préparation
-   de −27 %. **La variabilité entre deux exécutions identiques est
-   elle-même l'information** — même constat que sur iPhone entre les
-   2 494 ms et 1 904 ms du 2026-08-15. Un seuil calibré sur une seule mesure
-   ne vaudrait rien. À noter aussi : le scellement de l'entrée de gamme
-   (39–52 ms) est du même ordre que celui de l'iPhone 16 (49 ms).
+   | | 0.1.4 (11:57) | 0.1.5 (12:29) | 0.1.6 (13:34) |
+   |---|---|---|---|
+   | préparation | 671 ms | 493 ms | 965 ms |
+   | clé matérielle | 43 ms | 39 ms | 32 ms |
+   | scellement, temps mural | 39 ms | 52 ms | 38 ms |
+   | **`media[6]`** | — | — | **2 ms** |
+   | vérification | 422 ms | 339 ms | 415 ms |
+
+   **`media[6]` vaut 2 ms là où le temps mural en affiche 38 — un facteur
+   19.** C'est la transposition Android de la correction iOS du 2026-08-15,
+   et elle est désormais mesurée et non plus raisonnée. Le seuil est à
+   3 000 ms : la marge est de trois ordres de grandeur, pas « mince ».
+
+   La décomposition tombe juste, ce qui vaut corroboration : 38 − 2 = 36 ms,
+   soit exactement le coût du jeton de fraîcheur déjà mesuré sur cet appareil
+   (36–39 ms, 2026-08-11). Ce qui sort de `media[6]` est bien le jeton et la
+   signature, comme l'affirmait le commentaire de `Sealer`.
+
+   **Attention à ne pas surétendre ce chiffre** : il vaut pour le profil
+   `core`, où `media[6]` court depuis la remise des octets. En `capture` il
+   partira de l'obturateur et englobera l'encodage — c'est A4.2, et cette
+   grandeur-là reste non mesurée sur Android.
+
+   La préparation varie de 493 à 965 ms, presque du simple au double, et le
+   scellement de 38 à 52 ms. **La variabilité entre exécutions identiques est
+   elle-même l'information** — même constat que sur iPhone entre les 2 494 ms
+   et 1 904 ms du 2026-08-15. Un seuil calibré sur un seul relevé ne vaudrait
+   rien.
 
 **Trois contraintes de poste, apprises à l'usage.** L'iPhone se reverrouille
 entre deux campagnes et `devicectl` refuse alors de lancer (« Locked ») :
