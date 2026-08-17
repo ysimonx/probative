@@ -174,15 +174,17 @@ ce qui préserve R3 sur chaque prise.
 À comparer à ce que fait la démonstration aujourd'hui — un jeton par photo, soit quatre
 appels ici, et cinq suffisent à faire brider.
 
-> **Un point qu'ADR-0009 ne tranche pas, et qui apparaît en dessinant.** On ne sait pas
-> à l'avance quelle photo sera la dernière : la queue ne peut donc pas *être* la dernière
-> photo, puisqu'il faudrait l'attester après coup — R1 porte sur sa propre charge utile,
-> et rien ne se rattrape. La clôture produit donc une **enveloppe supplémentaire**,
-> attestée et chaînée à la dernière prise, comme sur la figure.
+> **La queue de la figure n'est pas obligatoire — ADR-0009 amendé le 2026-08-17.**
+> Chaque maillon demande son propre nonce, donc le serveur mesure lui-même la distance
+> qui le sépare de la dernière attestation, avec sa propre horloge. La fenêtre est déjà
+> bornée sans queue ; celle-ci ne fait que **resserrer** la note.
 >
-> Reste à décider ce qu'elle scelle. Un contenu trivial suffirait, mais une piste plus
-> intéressante existe : lui faire sceller **la liste des empreintes de la série**, ce qui
-> la rendrait vérifiable d'un bloc. À instruire à l'implémentation.
+> Ce que cela retire : l'enveloppe de clôture supplémentaire — qui était nécessaire tant
+> qu'on croyait la queue obligatoire, puisqu'on ne sait pas à l'avance quelle photo sera
+> la dernière — et tout geste obligatoire de l'utilisateur.
+>
+> Un attaquant ne gagne donc rien à ne pas clore : sa chaîne s'éloigne de son attestation,
+> et le grade tombe de lui-même.
 
 ### Ce qu'un maillon perd, et qu'il faut dire
 
@@ -194,8 +196,10 @@ D'où deux règles qui ne se négocient pas :
 
 - `integrity` est **plafonné** sur un maillon, sous le grade d'une enveloppe fraîchement
   attestée, avec un motif qui le dit ;
-- une série **sans queue attestée** est signalée : elle reste ouverte par le bas, et rien
-  ne borne la fenêtre de compromission.
+- ~~une série **sans queue attestée** est signalée~~ — **amendé** : il n'y a rien à
+  signaler, la fenêtre étant déjà mesurée. Le plafond d'`integrity` se calcule sur la
+  **largeur observée** depuis la dernière attestation : un maillon à quinze secondes de sa
+  tête ne vaut pas un maillon à trois heures.
 
 `time`, en revanche, garde tout le bénéfice : `envelope-chain-verified` le promeut en A,
 puisque l'ordre est exactement ce que la chaîne établit.
@@ -210,6 +214,10 @@ puisque l'ordre est exactement ce que la chaîne établit.
 | Minuterie — 2 minutes | la série qui traîne | clôt **en retard**, d'au plus un intervalle |
 | Passage en arrière-plan | l'utilisateur qui s'en va | rien si l'application est tuée net |
 | Bouton explicite | tout, **exactement** | suppose que l'utilisateur y pense |
+
+Aucun n'est **obligatoire** depuis l'amendement d'ADR-0009 : tous resserrent la note, aucun
+ne conditionne la validité. Une série qu'on n'a jamais close reste vérifiable ; ses derniers
+maillons sont simplement notés sur une largeur plus grande.
 
 ```mermaid
 stateDiagram-v2

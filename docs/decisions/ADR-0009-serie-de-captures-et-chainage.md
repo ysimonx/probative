@@ -1,6 +1,6 @@
-# ADR-0009 — Serie de captures : tete attestee, maillons chaines, queue attestee
+# ADR-0009 — Serie de captures : tete attestee, maillons chaines, largeur mesuree
 
-**Statut :** accepte
+**Statut :** accepte, **amende le 2026-08-17** (points 1, 5 et 7)
 **Date :** 2026-08
 
 ## Contexte
@@ -37,9 +37,12 @@ couvert par la signature. `payload[7]`, lui, est dans la charge utile signee.
 
 ## Decision
 
-1. **Une serie est une tete attestee, des maillons chaines, et une queue attestee.** La
-   tete et la queue portent une preuve de fraicheur complete, liee a leur propre charge
-   utile par R1. Les maillons intermediaires portent `payload[7]` et rien d'autre.
+1. ~~**Une serie est une tete attestee, des maillons chaines, et une queue attestee.**~~
+   **Amende.** Une serie est une **tete attestee** et des **maillons chaines**. Une
+   enveloppe attestee qui survient ensuite -- « queue » explicite, ou simplement la
+   premiere prise d'une nouvelle serie -- **resserre** la note des maillons qui la
+   precedent, mais n'est pas une condition de validite. Les maillons portent `payload[7]`
+   et rien d'autre.
 
 2. **`freshness` devient optionnel** — `? 200 => freshness` au CDDL. Son absence n'est
    admissible **que** si `payload[7]` est present et si la chaine se verifie ; sinon,
@@ -61,26 +64,77 @@ couvert par la signature. `payload[7]`, lui, est dans la charge utile signee.
    attestee**, avec un motif qui nomme la raison. Le chainage prouve l'ordre, jamais la
    sante continue de l'appareil.
 
+   **Amende :** le plafond n'est pas un palier unique mais une note sur la **largeur
+   observee** -- la distance, mesuree par le serveur sur ses propres emissions de nonce,
+   entre la derniere enveloppe attestee et ce maillon. Un maillon a quinze secondes de sa
+   tete ne vaut pas un maillon a trois heures, et le grade doit suivre continument.
+
 6. **`time` sur un maillon garde le benefice du chainage.** `envelope-chain-verified`
    promeut deja `time` en A, et c'est correct : l'ordre est exactement ce que la chaine
    etablit.
 
-7. **Une serie sans queue attestee est signalee.** Elle reste ouverte par le bas : rien
-   ne borne la fenetre pendant laquelle l'appareil a pu etre compromis apres la tete.
+7. ~~**Une serie sans queue attestee est signalee.**~~ **Amende : il n'y a rien a
+   signaler.** La fenetre est **deja bornee et mesuree**, parce que le serveur emet un
+   nonce **par enveloppe**, y compris pour les maillons. Chaque maillon est donc encadre
+   par la propre horloge du serveur, sans qu'aucune declaration du client n'intervienne.
+   Le point 5 amende note cette largeur ; il n'y a pas de drapeau supplementaire.
+
+## L'amendement du 2026-08-17, et pourquoi
+
+La question posee etait : « puisqu'une serie dure deux minutes au plus, la queue est-elle
+utile ? »
+
+**La reponse par les deux minutes est fausse**, et il faut le dire avant le reste : ce
+plafond est une politique **du client**, et le client est hostile par hypothese. Rien
+n'oblige un attaquant a clore, et le verificateur ne saurait pas qu'une serie « devait »
+s'arreter.
+
+**Mais la conclusion est juste, par un autre chemin.** Le serveur emet un nonce par
+enveloppe, maillons compris. Un nonce donne un encadrement bilateral -- la capture est
+posterieure a son emission, anterieure a sa reception. Le serveur **mesure donc lui-meme**
+la distance entre la derniere attestation et chaque maillon, avec sa propre horloge et
+sans rien croire du client.
+
+La queue n'etait donc pas necessaire pour borner la fenetre : elle l'etait deja. Ce que la
+queue apporte est un **second controle de sante**, utile mais pas indispensable -- donc un
+resserrement, pas une exigence.
+
+**C'est exactement la correction deja faite ailleurs.** Le 2026-08-15, `grade_time` notait
+sur `offline: bool`, un mode *declare*, et fut remplace par `max_nonce_window_ms`, qui note
+sur la largeur *observee*. La justification tenait en une phrase : un seuil sur une duree
+de vie declaree aurait puni un lot consomme aussitot. Ici, « serie close ou non » etait le
+drapeau declare ; « distance depuis la derniere attestation » est la grandeur mesuree.
+
+Trois choses tombent avec cet amendement :
+
+- **l'enveloppe de cloture supplementaire.** Elle etait rendue necessaire par le fait
+  qu'on ne sait pas a l'avance quelle photo sera la derniere -- une queue ne pouvant pas
+  etre attestee apres coup, R1 portant sur sa propre charge utile. La question de ce
+  qu'elle aurait scelle est sans objet ;
+- **le geste obligatoire.** Bouton, minuterie et passage en arriere-plan deviennent des
+  moyens de *resserrer* la note, jamais des conditions de validite ;
+- **le benefice pour l'attaquant de ne pas clore.** Il n'y en a aucun : sa chaine s'eloigne
+  de son attestation et le grade tombe de lui-meme.
 
 ## Justification
 
 - **Le point 1 est l'encadrement bilateral, applique a une serie.** C'est la meme figure
   que le nonce donne deja au temps : la charge utile le contient donc la capture lui est
-  posterieure, le serveur l'a recue avant expiration donc elle lui est anterieure. Deux
-  points attestes et une chaine entre eux bornent la serie des deux cotes — rien ne peut
-  y etre insere, retire, ni reordonne, et R2 continue de prouver **quel appareil** a
+  posterieure, le serveur l'a recue avant expiration donc elle lui est anterieure. La
+  chaine ajoute a cet encadrement, valable enveloppe par enveloppe, l'impossibilite
+  d'inserer, de retirer ou de reordonner — et R2 continue de prouver **quel appareil** a
   chaque maillon.
+
+  *Amende : la redaction d'origine parlait de « deux points attestes bornant la serie des
+  deux cotes ». C'etait vrai mais superflu — chaque maillon porte deja son propre nonce,
+  donc son propre encadrement. La borne ne vient pas de la queue.*
 
 - **Le point 5 est ce qui rend le point 2 acceptable plutot que complaisant.** Un
   attaquant qui obtient une tete attestee puis compromet l'appareil peut produire des
   maillons suivants : la chaine ne s'en apercevra pas. C'est la faiblesse exacte de cette
-  decision, et elle est payee par le grade, pas dissimulee. Le point 7 la borne.
+  decision, et elle est payee par le grade, pas dissimulee. Ce qui la borne n'est pas une
+  queue mais la **mesure** : le serveur sait de combien ce maillon s'est eloigne de la
+  derniere attestation, et note en consequence.
 
 - **Le point 3 refuse la solution qui aurait ete la plus simple a coder.** Un jeton
   reutilise passerait les controles de forme et echouerait a R1, ce qui obligerait le

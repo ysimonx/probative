@@ -526,8 +526,12 @@ l'isoler dans un module séparé si elle gêne un jour les liaisons.
      pas y vivre.
    - **`integrity` est plafonné sur un maillon**, sous le grade d'une enveloppe
      fraîchement attestée. La chaîne prouve l'ordre, jamais la santé continue : qui
-     obtient une tête attestée puis compromet l'appareil peut prolonger la chaîne. La
-     queue attestée borne cette fenêtre, et une série sans queue est signalée.
+     obtient une tête attestée puis compromet l'appareil peut prolonger la chaîne.
+     **Amendé le 2026-08-17** : le plafond se note sur la **largeur observée** depuis la
+     dernière attestation, et non sur la présence d'une queue. Chaque maillon portant son
+     propre nonce, le serveur mesure cette distance sur sa propre horloge — la queue
+     resserre, elle n'est pas exigée. Même correction que `offline: bool` →
+     `max_nonce_window_ms` : une grandeur mesurée plutôt qu'un mode déclaré.
 
    **Le bridage Play Integrity n'est pas la justification**, et le distinguo est le cœur
    de l'ADR : un quota est de l'exploitation, il change sans préavis. La série se
