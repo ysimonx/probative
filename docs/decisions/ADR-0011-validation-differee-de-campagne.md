@@ -66,6 +66,52 @@ apres coup sans invalider l'enveloppe.**
    verifiable sur sa seule attestation de cle, au niveau qu'ADR-0010 lui donne. La
    validation **enrichit** ; elle ne conditionne pas.
 
+9. **Une campagne s'ouvre en obtenant son lot de nonces, et sans lot il n'y a pas de
+   capture possible.** La regle est de securite, pas d'ergonomie : un nonce obtenu *apres*
+   la prise ne prouverait rien, la borne basse de l'encadrement s'effondrant. L'enveloppe
+   n'attesterait plus que « quelque part avant la remise ». Interdire la capture sans lot
+   est ce qui fait tenir R3 hors ligne, et c'est aussi ce qui retire la tentation du
+   « on capture maintenant, on regularise apres ».
+
+10. **Les jetons se rattachent des que le reseau revient, pas seulement a la validation.**
+    Le label 201 vivant dans l'en-tete non protege, rien n'oblige a attendre la fin de la
+    campagne.
+
+    **Mais ce qui resserre l'encadrement est la _remise_, pas le rattachement.** La largeur
+    notee court de l'emission du nonce au **jugement**, et le serveur ne juge qu'a la
+    reception. Une enveloppe enrichie de son jeton mais gardee trois jours dans l'appareil
+    est notee sur trois jours.
+
+    D'ou la regle d'exploitation : **remettre tot et souvent** des que le reseau le permet,
+    plutot que de tout garder pour la validation. La validation devient alors le sort de ce
+    qui reste, non le passage oblige de tout.
+
+11. **Le dimensionnement du lot est un arbitrage de terrain, et il n'est pas tranche ici.**
+    Deux forces s'opposent, et il faut les nommer plutot que de choisir un chiffre :
+
+    - **la securite operationnelle** veut un lot genereux — tomber a court de nonces au
+      milieu d'un constat bloque l'operateur, sans reseau pour se reapprovisionner ;
+    - **la largeur d'encadrement** veut un lot pris au plus tard et consomme vite — chaque
+      heure d'attente d'un nonce est une heure d'encadrement, donc une note qui baisse.
+
+    Le pire scenario n'est donc pas le manque de nonces mais **le lot pris trop tot** : il
+    fait sortir en `DEGRADED` des captures par ailleurs impeccables, pour une raison
+    purement logistique. Taille maximale, duree de vie et seuil de largeur acceptable se
+    decident sur le terrain vise — combien de photos, combien de temps sans reseau — et
+    aucun de ces trois chiffres ne s'invente depuis un depot.
+
+12. **`creationDateTime` ne resserre pas l'encadrement, et il ne faut pas essayer.** Le tag
+    701 de l'attestation de cle porte l'instant de generation — verifie sur le vecteur
+    `keystore-a3-sm-x200.json`, ou il lit `2026-08-11T16:10:30`, exactement l'instant de
+    capture. La tentation est evidente : s'en servir comme borne haute de la capture, donc
+    resserrer.
+
+    **Elle est interdite par l'invariant 8.** Ce champ vit dans `softwareEnforced` : il est
+    declare par le systeme, et un champ declaratif ne peut servir qu'a **abaisser** un
+    grade. L'utiliser pour ameliorer une note reviendrait a laisser le client s'octroyer un
+    encadrement qu'il affirme lui-meme. Il reste utilisable dans l'autre sens : un
+    `creationDateTime` tres eloigne de l'emission du nonce est un aveu exploitable.
+
 ## Justification
 
 - **Le point 2 est ce qui rend la decision peu couteuse, et il tenait dans une propriete
@@ -124,10 +170,9 @@ apres coup sans invalider l'enveloppe.**
   demander leurs jetons, les inserer dans l'en-tete non protege. Elle ne touche pas au
   chemin de capture, et c'est ce qui la rend sans risque pour `media[6]`.
 
-- **La question du lot de nonces revient, et elle est maintenant la seule qui reste.**
-  Capturer hors ligne suppose des nonces pre-delivres ; leur largeur d'encadrement est
-  desormais notee (ADR-0010 point 7) plutot que plafonnee, mais le dimensionnement du lot
-  — combien, pour combien de temps — n'est pas tranche.
+- **Le dimensionnement du lot reste la seule question ouverte du chantier hors ligne.**
+  Le mecanisme est decide (points 9 a 12) ; les trois chiffres — taille maximale, duree de
+  vie, seuil de largeur acceptable — appartiennent au terrain vise.
 
 ## Ce qui ferait revenir sur cette decision
 
