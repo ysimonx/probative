@@ -449,14 +449,25 @@ survit pas au poste ne vaut rien.
    monte un peu en prises rapprochées (96–157 ms, l'encodage passant de 82 à
    145 ms), et reste à vingt fois sous le seuil.
 
-   **Play Integrity bride une série rapide.** Cinq campagnes en vingt secondes
-   ont suffi : `Standard Integrity API error (-8) — too many requests […]
-   throttled, or exceeded its daily request quota`, puis huit échecs d'affilée.
-   Le serveur, lui, répondait 200 à tout : rien de cassé côté format. C'est la
-   question de cadence que `acquisition-et-liaisons.md` §4 gardait ouverte
-   pour la série de captures, et elle cesse d'être théorique — **une série
-   Android ne peut pas demander un jeton par prise à cadence libre**. À
-   instruire avec le chaînage, dont elle est le cas d'usage.
+   ~~**Play Integrity bride une série rapide.**~~ **Cause identifiée le
+   2026-08-17, et ce n'était pas les jetons.** Cinq campagnes en vingt secondes
+   avaient déclenché `Standard Integrity API error (-8)` puis huit échecs
+   d'affilée. La sonde appelait alors `PlayIntegrity.prepare` **au début de
+   chaque campagne** — or Google applique à la mise en route du fournisseur un
+   quota bien plus strict qu'aux demandes de jeton.
+
+   La 0.3.1 ne prépare qu'une fois par lancement : **quatre captures en sept
+   secondes passent sans le moindre `-8`**, soit une cadence trois fois plus
+   dense que celle qui bridait. La demande de jeton par enveloppe n'est donc
+   pas le problème.
+
+   **Ce que cela change, et ce que cela ne change pas.** L'argument *pratique*
+   en faveur de la série — « on ne peut pas demander un jeton par prise » —
+   tombe largement. ADR-0009 tient sans lui : il refusait explicitement de se
+   justifier par un quota, au motif qu'une contrainte commerciale change sans
+   préavis. C'est exactement ce qui vient d'arriver, à ceci près que c'est
+   notre propre code qui la déclenchait. La série reste justifiée par ce
+   qu'elle prouve — qu'aucune prise ne manque.
 
    Le point de position est venu du fournisseur **`network`** (13 m, âge
    1 892 ms), pas du GNSS — campagne en intérieur. `position` sort tout de même
