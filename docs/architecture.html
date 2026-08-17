@@ -1079,6 +1079,12 @@
         que la dépendance sortante apparaît.
       </p>
       <p>
+        Cette dépendance a un débit, et il se mesure : <strong>cinq captures en vingt secondes
+        suffisent à faire brider l'application par Play Integrity</strong>, qui refuse ensuite de
+        délivrer des jetons pendant quelques minutes. Sans conséquence pour une prise isolée, c'est
+        dimensionnant pour une série — voir la question sur les prises successives.
+      </p>
+      <p>
         Un vérificateur qui interrogerait Google ou Apple <em>avant</em> d'avoir vérifié la
         signature offrirait gratuitement un amplificateur de déni de service : n'importe qui
         pourrait lui faire émettre des requêtes sortantes avec des octets aléatoires.
@@ -1549,9 +1555,50 @@
             de la même façon, et le résultat doit le dire.
           </p>
           <div class="faq-note">
-            Point encore ouvert : obtenir un jeton Play Integrity suppose une connexion, alors
-            qu'iOS fabrique son assertion localement. La capture hors ligne n'a donc pas la même
-            valeur sur les deux plateformes. À trancher pendant le spike natif.
+            L'asymétrie entre les deux plateformes est désormais établie, et ce n'est pas un
+            choix d'implémentation : obtenir un jeton Play Integrity suppose <strong>un appel à
+            Google pour chaque enveloppe</strong>, le déchiffrement local étant fermé à toute
+            application qui n'est pas distribuée par le Play Store. iOS, lui, fabrique son
+            assertion localement et se vérifie entièrement hors ligne. Ce qui reste ouvert n'est
+            donc plus le constat mais l'exigence : quel niveau une série hors ligne doit-elle
+            viser. C'est un assouplissement, donc une décision à écrire, pas à prendre en
+            passant.
+          </div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">Peut-on prendre plusieurs photos à la suite ?</div>
+        <div class="faq-a">
+          <p>
+            Oui, et une <strong>série</strong> vaut mieux qu'une suite de photos indépendantes :
+            elle prouve deux choses de plus, l'<strong>ordre</strong> des prises et le fait
+            qu'<strong>aucune ne manque</strong>. Un constat de terrain dont on aurait retiré la
+            photo gênante ne vaudrait rien, et rien dans une suite de captures isolées ne
+            l'empêche.
+          </p>
+          <p>
+            La forme retenue est celle-ci : la première photo porte une preuve de fraîcheur
+            complète, les suivantes portent l'empreinte de celle qui précède, et la dernière
+            porte à nouveau une preuve complète. <strong>Attestée aux deux bouts, chaînée au
+            milieu.</strong> Rien ne peut y être inséré, retiré ni réordonné, et chaque maillon
+            continue d'être signé par la clé matérielle de l'appareil.
+          </p>
+          <p>
+            Ce qu'un maillon perd, il faut le dire : la <strong>fraîcheur</strong> du verdict
+            d'appareil. La chaîne prouve l'ordre, pas que l'appareil est resté sain — quelqu'un
+            qui obtiendrait une première photo attestée puis compromettrait le téléphone pourrait
+            prolonger la chaîne. Le niveau rendu sur ces maillons est donc plafonné, avec un
+            motif qui le dit, et la photo finale attestée borne la fenêtre.
+          </p>
+          <div class="faq-note">
+            Une mesure a rendu la question concrète plutôt que théorique : sur Android, cinq
+            captures en vingt secondes suffisent à faire <strong>brider</strong> l'application par
+            Play Integrity, qui refuse ensuite de délivrer des jetons. Une preuve de fraîcheur par
+            photo n'est donc pas tenable à cadence libre. Attention toutefois à l'ordre des
+            raisons : ce quota est une contrainte commerciale, qui peut changer demain. Il ne
+            justifie pas le format — la série se justifie par ce qu'elle prouve, et resterait
+            justifiée si le quota disparaissait. Décidé, pas encore implémenté.
           </div>
         </div>
       </div>
