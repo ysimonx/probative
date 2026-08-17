@@ -353,8 +353,19 @@ public class MainActivity : Activity() {
         start = System.nanoTime()
         val sealed = sealer.seal(CONTENT, CONTENT_TYPE, nonce)
         report("")
-        report("scellement     %.0f ms".format(ms(start)))
+        // Deux chiffres, et **ils ne mesurent pas la même chose**. Le premier
+        // est du temps mural, chronométré par la sonde autour de l'appel :
+        // il englobe le jeton de fraîcheur et la signature. Le second est
+        // celui que le cœur a scellé, et le seul que `max_sign_latency_ms`
+        // confronte. Les afficher côte à côte sans le dire a déjà fait
+        // conclure à une marge étroite là où elle n'était pas mesurée —
+        // l'erreur corrigée côté iOS le 2026-08-15.
+        report("scellement     %.0f ms de temps mural".format(ms(start)))
         report("charge utile   ${sealed.payloadBytes.size} octets")
+        report(
+            "media[6]       ${sealed.signLatencyMs} ms depuis la remise des octets" +
+                " — seul chiffre confronte au seuil",
+        )
         report("defi R1        ${b64(sealed.challenge)}")
         report("enveloppe      ${sealed.bytes.size} octets")
 

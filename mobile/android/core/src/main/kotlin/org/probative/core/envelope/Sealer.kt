@@ -22,6 +22,21 @@ class SealedEnvelope(
     val payloadBytes: ByteArray,
     val challenge: ByteArray,
     val mediaDigest: ByteArray,
+    /**
+     * La valeur de `media[6]` **telle qu'elle a été scellée**, en
+     * millisecondes.
+     *
+     * Remontée plutôt que laissée enfouie dans la charge utile pour la même
+     * raison que [challenge] : une sonde n'avait aucun moyen de la dire, et
+     * la recalculer avec son propre chronomètre en rendrait une *autre* —
+     * plus grande, puisqu'elle engloberait l'appel lui-même, et fausse.
+     *
+     * C'est le seul chiffre de latence que le vérificateur confronte à
+     * `max_sign_latency_ms`. Tous les autres qu'une sonde rapporte sont du
+     * temps mural, qui ne se compare à rien. Confondre les deux a déjà coûté
+     * une conclusion erronée côté iOS, corrigée le 2026-08-15.
+     */
+    val signLatencyMs: Long,
 )
 
 /**
@@ -121,6 +136,7 @@ class Sealer(
             payloadBytes = payloadBytes,
             challenge = challenge,
             mediaDigest = mediaDigest,
+            signLatencyMs = latencyMs,
         )
     }
 
