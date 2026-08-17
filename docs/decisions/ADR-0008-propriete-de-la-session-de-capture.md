@@ -37,6 +37,23 @@ maintenant plutot qu'apres.
    coeur detient la liaison `ProcessCameraProvider` et lie lui-meme `Preview` et
    `ImageCapture` ; la vue ne fournit qu'un `SurfaceProvider`.
 
+   **Le coeur ne dessine rien, et ne le peut pas.** « Previsualisation » recouvre deux
+   choses qu'il faut separer : la **session** — ouvrir le capteur, le configurer, produire
+   le flux, declencher, horodater l'obturateur — qui revient au coeur ; et l'**affichage**
+   — la vue, sa taille, sa place, le cadre, les superpositions, le bouton declencheur —
+   qui revient entierement a l'application. Le coeur possede la source, l'application
+   possede la fenetre ouverte dessus.
+
+   Ce n'est pas un partage de confort : un coeur qui dessinerait devrait importer UIKit,
+   SwiftUI ou `android.view`, et cesserait d'etre l'artefact autonome sans dependance a un
+   framework qu'exige ADR-0003. La propriete de la session et la propriete du dessin
+   tombent donc de deux cotes opposes, pour deux raisons differentes, et les confondre
+   casse l'un ou l'autre ADR.
+
+   **Ce que cela change pour l'application tient en une phrase :** elle ne cree pas sa
+   propre session pour afficher un apercu, elle demande la sienne au coeur et s'y
+   rattache.
+
 2. **Un seul proprietaire, deux points d'entree.** Une session **ephemere** pour une prise
    isolee — l'existant, inchange, et les mesures de C4.2 restent valides — et une session
    **longue** a laquelle un apercu se rattache. La seconde n'est pas un mode different :
