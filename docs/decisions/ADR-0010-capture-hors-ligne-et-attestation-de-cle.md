@@ -81,6 +81,25 @@ c'est celle-ci : le hors ligne.
    l'obturateur**, donc dans `media[6]`, sur appareil froid ; et la verification que
    `attestationApplicationId` identifie bien l'application de maniere exploitable.
 
+   **La troisieme est faite, le 2026-08-17, et elle est concluante.** Decodee sur le
+   vecteur `keystore-a3-sm-x200.json` deja versionne, sans appareil : le tag 709 de
+   `softwareEnforced` porte le nom de paquet, sa version, et l'empreinte de signature.
+   Celle-ci vaut `63:14:CF:92:…`, **exactement** ce qu'un calcul independant depuis
+   `~/.android/debug.keystore` avait donne le meme jour -- deux chemins qui se recoupent.
+
+   Deux consequences, et la seconde n'etait pas prevue :
+
+   - **le champ vit dans `softwareEnforced`**, donc affirme par le systeme et non par le
+     TEE. Il ne vaut que ce que vaut le demarrage verifie -- ce que `RootOfTrust`, lui
+     **hardware-enforced**, etablit precisement. La dependance est propre : une assertion
+     logicielle adossee a une preuve materielle de l'integrite du systeme qui l'emet ;
+   - **hors ligne, `origin` ne peut pas atteindre `app-recognized`.** Ce verdict signifie
+     « ce binaire est celui que Play distribue », et aucune attestation locale ne peut le
+     dire. Ce que le champ 709 etablit -- ce paquet, signe par cette cle -- correspond
+     exactement au cas que `GradingPolicy.deployment_signed_app_grade` note deja, **C par
+     defaut**. Une capture hors ligne sortira donc en `DEGRADED` a politique inchangee,
+     et c'est coherent : elle prouve moins.
+
 ## Justification
 
 - **Le point 1 renverse la solution d'ADR-0009 point 2, et c'est un progres.** Rendre
