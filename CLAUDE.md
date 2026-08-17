@@ -231,7 +231,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type appDataContainer
 | Vecteurs d'or | Trois jeux : `android`, `ios` (profil `capture`) et `core` (profil noyau). Reproduits octet à octet par Kotlin **et** Swift |
 | Vecteurs d'appareil | Android (chaîne à 4 certificats, SM-X200) et iOS (App Attest, iPhone 16) versionnés dans `tests/device-vectors/` |
 | Cœur natif Android | A1–A3, **A5, A4.1 et A4.2 faites, validées sur SM-X200** (2026-08-17). `seal(bytes)` en `core` et `seal(image)` en `capture`, tous deux épinglés aux vecteurs d'or par des tests d'hôte et **acceptés par le vérificateur depuis l'appareil**. Session possédée par le cœur (ADR-0008), collecte lancée avant l'obturateur, chaînage actif. **`STRONG` atteint en profil `core`** — toutes propriétés en A, aucun drapeau : **symétrie complète avec iOS** |
-| Cœur natif iOS | C1–C3, **C4.1 et C4.2 faites** (iPhone 16, iOS 26.6, 2026-08-13). **Critère de sortie du spike atteint** en `core` (`STRONG`), puis **une photo réelle scellée** en `capture` : `STANDARD`, `integrity`/`position`/`time` au grade A, `origin` à B par le seul plafond de recapture — le maximum de la v0.1. Reste : chemin de production, chaînage |
+| Cœur natif iOS | C1–C3, **C4.1 et C4.2 faites** (iPhone 16, iOS 26.6). `CaptureSession` posée le 2026-08-17 (ADR-0008), enrôlement stable et **chaînage vérifié sur appareil** — `assertion-counter-monotonic` *et* `envelope-chain-verified` ensemble. `capture` rend `STANDARD`, `origin` à B par le seul plafond de recapture : le maximum de la v0.1. Reste : chemin de production, et l'interface (aperçu, tableau) que la démo Android a |
 | Liaisons Flutter / React Native | Non commencées, **mais débloquées** : ADR-0008 fixe la forme du pont — le cœur possède la session, la vue de plateforme n'en est que consommatrice. Couture et commandes de prise de vue instruites dans `docs/acquisition-et-liaisons.md` |
 | Banc de triche | Non commencé |
 
@@ -399,6 +399,12 @@ survit pas au poste ne vaut rien.
 
    **`media[6]` vaut 97 ms** — première mesure du champ noté en `capture` sur
    Android, contre un seuil à 3 000 ms. Marge d'un facteur 31.
+
+   **Mais la SM-X200 n'est pas le pire cas pour ce champ**, contrairement à ce
+   que le plan du spike supposait. Mesuré le 2026-08-17 sur iPhone 16 :
+   `media[6]` y vaut **534 à 592 ms**, l'encodage coûtant 423 à 487 ms pour une
+   image 4032×3024. Soit quatre à six fois la tablette d'entrée de gamme. Une
+   calibration qui prendrait l'Android pour borne haute serait fausse.
 
    La décomposition dit où passe le reste, et c'est le résultat le plus
    instructif de la journée :
