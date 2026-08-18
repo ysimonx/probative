@@ -329,12 +329,39 @@ survit pas au poste ne vaut rien.
    rafraîchit toutes les 15–20 s : le point vieillit entre deux, et c'est
    exactement le régime que le filtre rendait impraticable.
 
-   **Reste non vérifié : l'arbitrage du point.** Le correctif qui garde le plus
-   *récent* plutôt que le plus *précis* n'a rien démontré ici — la sonde
-   n'imprime ni latitude ni longitude, seulement fournisseur, précision et âge.
-   La précision a dérivé de 12 à 14 m, ce qui *suggère* des points différents
-   sans le prouver. **Le vérifier demande d'imprimer les coordonnées**, une
-   petite modification pour un prochain téléversement.
+   ~~**Reste non vérifié : l'arbitrage du point.**~~ **Vérifié le 2026-08-18 en
+   0.3.6**, une fois les coordonnées imprimées — et **en extérieur**, ce qui
+   change tout le reste :
+
+   ```
+   43,47207  5,49097 — gnss, 15 m, age 183 ms, 8 satellites
+   43,47206  5,49094 — gnss, 15 m, age 321 ms, 8 satellites
+   43,47209  5,49068 — gnss, 15 m, age 216 ms, 9 satellites
+   ```
+
+   La longitude se déplace de 0,00029°, soit **environ 24 m** à cette latitude :
+   le point suit le déplacement, l'arbitrage tient. `media[6]` reste à
+   110–226 ms.
+
+   **Et c'est la campagne extérieure qui manquait avant toute calibration.**
+   L'écart avec l'intérieur est d'un autre ordre que ce qu'on supposait :
+
+   | | intérieur | extérieur |
+   |---|---|---|
+   | fournisseur | `network` | **`gnss`** |
+   | satellites | 0 | **8 – 9** |
+   | âge du point | 2 400 – 20 778 ms | **183 – 321 ms** |
+   | précision | 12 – 14 m | 15 m |
+
+   L'âge chute de deux ordres de grandeur, le GNSS se rafraîchissant en
+   continu. **En extérieur, `position` ne tombera jamais en C pour ancienneté**
+   — le problème qui dominait toutes les campagnes d'intérieur disparaît. La
+   précision, elle, ne s'améliore pas : 15 m contre 12–14 m en réseau.
+
+   *(Verdicts `REJECTED` sur ces trois prises : elles étaient en mode hors
+   ligne, `key-attestation` étant encore inconnu du vérificateur. Sans
+   importance — les lignes mesurées s'impriment avant la vérification, et le
+   quota Play Integrity de la journée était épuisé.)*
 
    *Ce que la 0.3.3 portait, pour mémoire :*
 
