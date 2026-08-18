@@ -920,8 +920,15 @@ public class MainActivity : ComponentActivity() {
             checkNotNull(position) {
                 "aucun point de position exploitable : le profil capture l'exige"
             }
+            // Les coordonnées sont imprimées à **cinq décimales**, soit environ
+            // un mètre : c'est le seul moyen de voir qu'un point suit un
+            // déplacement. Sans elles, la campagne du 2026-08-18 n'a pas pu
+            // vérifier l'arbitrage « le plus récent plutôt que le plus précis ».
+            // Affordance de sonde : une application réelle n'a aucune raison
+            // d'écrire une position dans un journal système.
             report(
-                "position       %s, %.0f m, age %d ms%s".format(
+                "position       %.5f, %.5f — %s, %.0f m, age %d ms%s".format(
+                    position.latitude, position.longitude,
                     position.provider.label, position.horizontalAccuracy, position.fixAgeMs,
                     position.satellites?.let { ", $it satellites" } ?: "",
                 ),

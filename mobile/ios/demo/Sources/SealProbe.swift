@@ -443,7 +443,12 @@ enum SealProbe {
         }
         ok("corroboration    \(since(start)) cumule — "
             + (claims.isEmpty ? "aucune" : claims.map(\.type).joined(separator: ", ")))
-        ok("position         \(since(start)) cumule — \(position.provider.rawValue), "
+        // Coordonnées à cinq décimales, soit environ un mètre : sans elles on
+        // ne peut pas vérifier qu'un point suit un déplacement. Affordance de
+        // sonde — une application réelle n'écrit pas de position en journal.
+        ok("position         \(since(start)) cumule — "
+            + String(format: "%.5f, %.5f — ", position.latitude, position.longitude)
+            + "\(position.provider.rawValue), "
             + String(format: "%.0f m, age %d ms", position.horizontalAccuracy, position.fixAgeMs))
         // Sur iOS, l'absence d'indicateur de position simulée est
         // structurelle : sans `motion` ni `steps`, le vérificateur plafonne
