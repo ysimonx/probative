@@ -89,6 +89,79 @@ Cette distinction n'est pas académique. Si c'est `prepare`, le remède est de l
 une fois et de le réutiliser — et la contrainte sur la cadence des captures tombe presque
 entièrement.
 
+### Le blocage du 2026-08-18, et ce qu'il faut en faire
+
+**Le bridage est revenu alors que `prepare` n'était plus appelé qu'une fois par
+lancement.** Il a frappé `prepare` lui-même, dans un processus neuf, sans qu'aucune
+demande de jeton ne l'ait précédé :
+
+```
+-8 : The calling app has made too many requests to the API and has been throttled,
+     or your app has exceeded its daily request quota.
+     Retry with an exponential backoff. Request an increase to your daily request
+     quota if you're at your daily request limit.
+```
+
+Ce jour-là : douze vérifications abouties, plus les campagnes de la veille, plus un
+`prepare` à chaque relance de l'application — et il y en a eu beaucoup, chaque
+téléversement de piste interne en imposant une.
+
+**Le message confond deux limites et ne dit pas laquelle a mordu** : une cadence
+instantanée, et un quota journalier. Le client ne peut pas les distinguer. C'est la
+première chose à lever, et elle ne coûte rien.
+
+#### Ce qui n'est pas su, et qui se vérifie
+
+- **Quelle limite a été atteinte.** La Play Console (*Protégé avec Play → API Play
+  Integrity*) et la console Cloud du projet lié affichent la consommation. À regarder
+  avant toute conclusion — la veille, une hypothèse plausible (`prepare` répété) s'est
+  révélée exacte, mais elle ne l'est plus aujourd'hui.
+- **La valeur du quota journalier** par défaut, et si le compte l'a relevé. Non vérifié à
+  ce jour ; **ne pas se fier à un chiffre de mémoire**, la documentation de Google ayant
+  changé plusieurs fois.
+- **Le coût d'un `prepare`** dans ce quota — compte-t-il comme une requête, ou relève-t-il
+  d'une limite propre ? Le comportement observé suggère une limite propre et plus stricte,
+  sans que ce soit établi.
+
+#### Ce que ça dimensionne, et c'est le vrai sujet
+
+**Le verdict d'appareil de Google a un coût unitaire et un plafond journalier.** Un
+déploiement de *N* appareils prenant *M* captures par jour fait *N × M* appels : il existe
+donc un nombre maximal de captures vérifiables par jour, indépendamment de tout le reste.
+
+Ce n'est pas une contrainte d'exploitation qu'on absorbe en réglant un paramètre. C'est une
+borne qui décide si l'architecture tient à l'échelle visée, et elle doit être connue avant
+de promettre quoi que ce soit.
+
+**C'est aussi ce qui donne à ADR-0010 et ADR-0011 une portée qu'ils n'avaient pas.**
+Écrits pour le hors ligne, ils sont les deux seules voies qui ne se heurtent pas au quota :
+
+- `key-attestation` (ADR-0010) ne demande **rien** à Google. C'est ce qui a permis de
+  finir la campagne du 2026-08-18 après épuisement du quota ;
+- le jeton par campagne (ADR-0011 point 5, repli) divise le nombre d'appels par le nombre
+  de prises.
+
+#### Pistes, dans l'ordre où les instruire
+
+1. **Lire la consommation réelle** en Play Console et en console Cloud. Gratuit, et sans
+   cela tout le reste est de la conjecture.
+2. **Demander une augmentation de quota** si la limite journalière est bien celle
+   atteinte. Google prévoit un formulaire ; disproportionné pour un banc, nécessaire pour
+   un déploiement.
+3. **Implanter un repli exponentiel**, que le message de Google recommande explicitement.
+   La sonde n'en fait aucun : elle échoue et rapporte. Acceptable pour une sonde, pas pour
+   une application de terrain.
+4. **Nommer le cas dans la sonde.** Aujourd'hui elle rapporte `ExecutionException` et le
+   message brut ; elle devrait dire « bridé par Google » et **suggérer le mode hors
+   ligne**, qui est déjà là.
+5. **Réduire structurellement les appels** — c'est ADR-0011, et le quota lui ajoute un
+   argument que son auteur n'avait pas prévu.
+
+**Un piège de raisonnement à éviter ici**, et c'est le même qu'au § suivant : le quota ne
+doit pas devenir la justification de la série. Il change sans préavis, et l'argument tomberait
+avec lui. La série se justifie par ce qu'elle prouve ; le quota est une raison de plus de
+l'implémenter tôt, pas une raison d'exister.
+
 ---
 
 ## 3. Ce qu'une série prouve, et ce qu'elle coûte

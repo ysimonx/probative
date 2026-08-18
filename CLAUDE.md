@@ -615,6 +615,27 @@ n'est pas trouvé et l'attestation retombe silencieusement sur le substitut. Et
 `en1` — la commande de la section iOS suppose un poste où en0 est l'interface
 active, ce qui n'est pas universel. Balayer les interfaces plutôt que présumer.
 
+### Un point à faire : le quota Play Integrity
+
+**Bloqué le 2026-08-18** malgré le correctif de la veille — `prepare` n'est plus appelé
+qu'une fois par lancement, et le bridage a frappé `prepare` lui-même dans un processus
+neuf. Le message de Google confond une cadence instantanée et un quota journalier, et le
+client ne peut pas les distinguer.
+
+Ce n'est pas qu'une gêne de banc. **Le verdict d'appareil a un coût unitaire et un plafond
+journalier** : *N* appareils × *M* captures par jour font autant d'appels, donc il existe
+un nombre maximal de captures vérifiables par jour. C'est une borne d'architecture, à
+connaître avant de promettre une échelle.
+
+Analyse, inconnues et cinq pistes classées dans
+`docs/play-integrity-sessions-et-series.md` §2. La première ne coûte rien : **lire la
+consommation réelle en Play Console**, faute de quoi tout le reste est conjecture.
+
+À noter au passage : c'est le mode `key-attestation` d'ADR-0010, écrit pour le hors ligne,
+qui a permis de finir la campagne une fois le quota épuisé. Les deux ADR du hors ligne sont
+aussi les deux seules voies qui ne se heurtent pas au quota — portée qu'ils n'avaient pas
+en étant écrits.
+
 ### Le cadre
 
 **Spike d'attestation natif** — plan détaillé et phases dans
