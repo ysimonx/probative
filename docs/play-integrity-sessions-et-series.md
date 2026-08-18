@@ -141,10 +141,43 @@ de promettre quoi que ce soit.
 - le jeton par campagne (ADR-0011 point 5, repli) divise le nombre d'appels par le nombre
   de prises.
 
+#### Une piste fermée, et elle l'est par la plateforme
+
+L'idée vient naturellement : puisque `prepare` porte le quota strict, ne l'appeler
+qu'**une fois par visite**, voire **une fois par jour**. Elle ne marche pas, et la raison
+vaut d'être écrite pour ne pas la reproposer.
+
+**`StandardIntegrityTokenProvider` est un objet vivant en mémoire.** Il n'a aucune forme
+sérialisée : on ne peut ni l'écrire sur disque, ni le restaurer. Il meurt avec le
+processus. Toute politique plus lâche que « un `prepare` par processus » suppose un
+processus immortel, ce qu'Android ne garantit à personne — une application en arrière-plan
+est tuée sous pression mémoire, et une visite de plusieurs heures en verra probablement
+plusieurs.
+
+**Le plancher atteignable est donc le processus, et non la visite.** Deux conséquences
+pratiques, appliquées le 2026-08-18 :
+
+- le fournisseur passe à la **portée du processus** (compagnon) et non de l'activité, pour
+  qu'une recréation non couverte par `configChanges` ne le reperde pas ;
+- il n'est **plus préparé du tout en mode hors ligne**, où la fraîcheur vient de
+  l'attestation de clé et où il n'était jamais lu. C'était un appel brûlé à chaque
+  lancement, sur l'appel au quota le plus strict, dans le mode conçu pour se passer de
+  Google.
+
+Il est aussi **préchauffé à l'ouverture du viseur** plutôt qu'à la première photo : 332 à
+1 313 ms qui n'ont rien à faire sur le chemin critique d'une capture.
+
+**Mais il ne faut pas surestimer ce gain.** `prepare` est en O(sessions), la demande de
+jeton en O(photos) : si c'est le quota **journalier partagé** qui a mordu, les `prepare`
+n'en sont qu'une décimale et seule la réduction structurelle des jetons compte. Le
+départage est le point 1 ci-dessous, et il n'a toujours pas été fait.
+
 #### Pistes, dans l'ordre où les instruire
 
 1. **Lire la consommation réelle** en Play Console et en console Cloud. Gratuit, et sans
-   cela tout le reste est de la conjecture.
+   cela tout le reste est de la conjecture — y compris savoir si `prepare` relève d'une
+   limite propre ou du quota journalier partagé, ce qui décide si le travail ci-dessus a
+   un effet mesurable ou décoratif.
 2. **Demander une augmentation de quota** si la limite journalière est bien celle
    atteinte. Google prévoit un formulaire ; disproportionné pour un banc, nécessaire pour
    un déploiement.

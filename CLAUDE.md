@@ -633,6 +633,17 @@ Analyse, inconnues et cinq pistes classées dans
 `docs/play-integrity-sessions-et-series.md` §2. La première ne coûte rien : **lire la
 consommation réelle en Play Console**, faute de quoi tout le reste est conjecture.
 
+**Une piste fermée par la plateforme, à ne pas reproposer** : `prepare` une fois par visite
+ou par jour est irréalisable. `StandardIntegrityTokenProvider` est un objet vivant en
+mémoire, sans forme sérialisée, qui meurt avec le processus — **le plancher est le
+processus**, et une visite de plusieurs heures en verra plusieurs. Trois conséquences
+appliquées en 0.3.8 : fournisseur à la portée du processus et non de l'activité ; **plus
+aucun `prepare` en mode hors ligne**, où il était brûlé sans jamais être lu ; et
+préchauffage à l'ouverture du viseur, hors du chemin critique de la première photo.
+
+Ne pas surestimer ce gain : `prepare` est en O(sessions), le jeton en O(photos). Si c'est le
+quota journalier partagé qui mord, seule la réduction structurelle des jetons compte.
+
 À noter au passage : c'est le mode `key-attestation` d'ADR-0010, écrit pour le hors ligne,
 qui a permis de finir la campagne une fois le quota épuisé. Les deux ADR du hors ligne sont
 aussi les deux seules voies qui ne se heurtent pas au quota — portée qu'ils n'avaient pas
@@ -674,6 +685,25 @@ Quatre corrections en decoulent, faites :
 
 **Cout assume** : la chaine imposant un ordre d'arrivee, une visite se remet dans l'ordre de
 ses campagnes.
+
+**Et une consequence qu'il a fallu tirer : ce qui ne survit pas au processus ne survit pas a
+la visite.** Android tue une application en arriere-plan sous pression memoire, donc une
+visite de plusieurs heures verra plusieurs processus. Deux etats etaient concernes, tous
+deux persistes en 0.3.9 (`Persistance.kt`) :
+
+- **l'alias de la cle enrolee.** La sonde engendrait `probative-session-<horloge>` a chaque
+  lancement : `kid` neuf, appareil neuf pour le serveur, chaine repartant d'une tete. C'est
+  exactement l'erreur corrigee le 2026-08-17 au niveau de la capture, **d'un cran au-dessus**,
+  avec le meme symptome `CHAIN_FIRST_LINK_UNKNOWN`. L'enrolement est un evenement
+  d'installation ;
+- **l'etat de la visite** — dernier condensat, numero, compteur, instant d'ouverture.
+
+Rattrapage prevu : un `kid` que le serveur ne connait plus (registre en memoire, redemarrage
+du serveur de dev) fait reenroler **une fois**, et clot la visite en cours plutot que de la
+poursuivre — elle est chainee a des enveloppes que le serveur a perdues.
+
+*Cinquieme occurrence de la lecon transverse : ce qui est couteux et reutilisable n'a rien a
+faire dans le chemin par capture — ni, desormais, dans le chemin par lancement.*
 
 ### Le cadre
 
@@ -921,6 +951,7 @@ symptôme désignait autre chose :
 | Ce qui était par capture | Symptôme | Ce que c'était vraiment |
 |---|---|---|
 | l'**enrôlement** | `CHAIN_FIRST_LINK_UNKNOWN` à chaque prise | `kid` neuf à chaque fois : chaînage impossible par construction |
+| l'**enrôlement**, encore | `CHAIN_FIRST_LINK_UNKNOWN` à chaque **lancement** | même cause d'un cran au-dessus : la chaîne ne survivait pas au processus, donc pas à la visite |
 | la **session caméra** | 3A à 1 100–1 500 ms | capteur remis sous tension à chaque photo |
 | la **collecte de capteurs** | `media[6]` à 6 485 ms, au-dessus du seuil | aucun point acquis : `position()` attendait après l'obturateur |
 

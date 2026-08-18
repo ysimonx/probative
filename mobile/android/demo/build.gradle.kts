@@ -71,8 +71,8 @@ android {
         applicationId = "org.probative.demo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21
-        versionName = "0.3.7"
+        versionCode = 23
+        versionName = "0.3.9"
         buildConfigField("long", "CLOUD_PROJECT_NUMBER", "${cloudProjectNumber}L")
         buildConfigField("String", "DEVSERVER_URL", "\"$devserverUrl\"")
         buildConfigField("boolean", "REHEARSAL", "$rehearsal")

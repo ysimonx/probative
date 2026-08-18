@@ -99,6 +99,12 @@ public class MainActivity : ComponentActivity() {
          * Décidé le 2026-08-18 sur le terrain visé ; ADR-0011 point 11 laissait
          * ces chiffres ouverts, en nommant les deux forces qui s'opposent.
          */
+        /**
+         * Le fournisseur, à l'échelle du processus — voir `fournisseur`. Seule
+         * portée qui corresponde à la durée de vie réelle de l'objet Google.
+         */
+        private var fournisseurDuProcessus: PlayIntegrity.Provider? = null
+
         const val MAX_PRISES_PAR_VISITE = 500
         const val DUREE_MAX_VISITE_MS = 43_200_000L   // douze heures
     }
@@ -161,7 +167,9 @@ public class MainActivity : ComponentActivity() {
      * observé le 2026-08-17.
      */
     private var alias: String? = null
-    private var provider: PlayIntegrity.Provider? = null
+
+    /** Ce qui survit au processus : l'enrôlement et l'état de la visite. */
+    private lateinit var etat: Persistance
 
     /** Empreinte de l'enveloppe précédente — le maillon à chaîner. */
     private var dernierDigest: ByteArray? = null
@@ -217,6 +225,13 @@ public class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         permissions = Permissions(this)
+        etat = Persistance(this)
+        // Une visite reprise, et non recommencée : le processus a pu mourir en
+        // plein constat sans que l'opérateur y soit pour rien.
+        dernierDigest = etat.dernierDigest
+        visite = etat.visite
+        prisesDansVisite = etat.prises
+        debutVisiteMs = etat.debutMs
         construireEcrans()
 
         montrerTableau()
@@ -411,6 +426,14 @@ public class MainActivity : ComponentActivity() {
                     report("capteurs       demarres avec le viseur — un point sera pret au declenchement")
                 }
                 sessionOuverte()
+                // Préchauffage : `prepare` coûte 332 à 1 313 ms sur SM-X200 et
+                // n'a rien à faire sur le chemin de la première photo. Ouvrir
+                // le viseur est le moment sûr — l'opérateur cadre déjà. Un
+                // échec ici n'est pas fatal : la prise le retentera.
+                if (!horsLigne) {
+                    runCatching { fournisseur(BuildConfig.CLOUD_PROJECT_NUMBER) }
+                        .onFailure { report("prepare        differe : ${it.message}") }
+                }
             } catch (e: Exception) {
                 report("ECHEC ouverture du viseur : ${e.message}")
             }
@@ -489,10 +512,19 @@ public class MainActivity : ComponentActivity() {
         reinitialiserVisite()
     }
 
+    /** L'état de la visite, écrit à chaque mutation — voir [Persistance]. */
+    private fun sauverVisite() {
+        etat.dernierDigest = dernierDigest
+        etat.visite = visite
+        etat.prises = prisesDansVisite
+        etat.debutMs = debutVisiteMs
+    }
+
     private fun reinitialiserVisite() {
         dernierDigest = null
         prisesDansVisite = 0
         debutVisiteMs = 0L
+        sauverVisite()
         visite += 1
     }
 
@@ -727,20 +759,28 @@ public class MainActivity : ComponentActivity() {
      * par son `kid`. La démonstration s'en écartait, et cet écart interdisait
      * le chaînage.
      */
-    private fun preparerAppareil(cloudProjectNumber: Long): Pair<String, PlayIntegrity.Provider> {
-        alias?.let { a -> provider?.let { p -> return a to p } }
+    private fun preparerAppareil(): String {
+        alias?.let { return it }
 
-        report("projet cloud   $cloudProjectNumber")
-        var start = System.nanoTime()
-        val p = PlayIntegrity.prepare(this, cloudProjectNumber)
-        report("prepare        %.0f ms — une fois par lancement".format(ms(start)))
+        // L'enrôlement est un événement d'installation, pas de lancement. Une
+        // clé encore présente au Keystore est celle que le serveur connaît :
+        // la régénérer donnerait un `kid` neuf et romprait la chaîne d'une
+        // visite qu'un redémarrage de processus a coupée en deux.
+        etat.alias?.let { memorise ->
+            if (KeystoreKeys.exists(memorise)) {
+                alias = memorise
+                report("enrolement     reutilise — kid inchange depuis l'installation")
+                return memorise
+            }
+            report("enrolement     clef disparue du Keystore : nouvel enrolement")
+        }
 
         // Le défi d'enrôlement doit survivre à la génération : le serveur le
         // confronte à celui que le TEE a inscrit dans l'extension
         // d'attestation. Le perdre rendrait la chaîne invérifiable.
         val a = "probative-session-${System.currentTimeMillis()}"
         val enrollChallenge = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
-        start = System.nanoTime()
+        val start = System.nanoTime()
         KeystoreKeys.generate(a, enrollChallenge)
         report("cle materielle ${KeystoreKeys.securityLevel(a)} en %.0f ms".format(ms(start)))
 
@@ -759,19 +799,75 @@ public class MainActivity : ComponentActivity() {
         report("               enrole une fois : c'est ce qui rend le chainage possible")
 
         alias = a
-        provider = p
-        return a to p
+        etat.alias = a
+        return a
+    }
+
+    /**
+     * Repart d'un enrôlement neuf — le seul cas légitime étant un serveur qui
+     * ne connaît plus ce `kid`.
+     *
+     * Arrive en développement dès que le serveur redémarre : son registre
+     * d'appareils est en mémoire. En production ce serait un signal, pas une
+     * routine, et c'est pourquoi la visite en cours est close plutôt que
+     * poursuivie : elle est chaînée à des enveloppes que le serveur a perdues.
+     */
+    private fun reenroler(): String {
+        alias = null
+        etat.alias = null
+        reinitialiserVisite()
+        report("enrolement     kid inconnu du serveur : visite close, nouvel enrolement")
+        return preparerAppareil()
+    }
+
+    /**
+     * Le fournisseur Play Integrity — **un `prepare` par processus, et
+     * seulement si une capture en ligne l'exige**.
+     *
+     * Deux propriétés, chacune payée par une observation.
+     *
+     * **Il vit à l'échelle du processus, non de l'activité.**
+     * `StandardIntegrityTokenProvider` est un objet vivant en mémoire : il n'a
+     * aucune forme sérialisée et meurt avec le processus. Un `prepare` par
+     * visite ou par jour est donc hors d'atteinte — le plancher *est* le
+     * processus, et c'est ce plancher qu'on vise. Le tenir sur l'activité le
+     * perdait à chaque recréation que `configChanges` ne couvre pas. Aucune
+     * fuite : `PlayIntegrity.prepare` retient `context.applicationContext`.
+     *
+     * **Il n'est plus préparé en mode hors ligne.** La fraîcheur y vient de
+     * l'attestation de clé et le fournisseur n'était jamais lu — un appel brûlé
+     * à chaque lancement, sur l'appel précisément soumis au quota le plus
+     * strict, et dans le mode conçu pour se passer de Google.
+     */
+    private fun fournisseur(cloudProjectNumber: Long): PlayIntegrity.Provider {
+        fournisseurDuProcessus?.let { return it }
+        report("projet cloud   $cloudProjectNumber")
+        val start = System.nanoTime()
+        val p = PlayIntegrity.prepare(this, cloudProjectNumber)
+        report("prepare        %.0f ms — une fois par processus".format(ms(start)))
+        fournisseurDuProcessus = p
+        return p
     }
 
     private fun sequence(cloudProjectNumber: Long) {
         val server = DevServer(BuildConfig.DEVSERVER_URL)
-        val (alias, provider) = preparerAppareil(cloudProjectNumber)
+        var alias = preparerAppareil()
         var start: Long
 
         // ── 3. Nonce, émis pour le profil ─────────────────────────────────
         val attendu =
             if (probe == Probe.CAPTURE) CapturePayload.PROFILE else CorePayload.PROFILE
-        val issued = server.nonce(KeystoreKeys.kid(alias), attendu)
+        // Un `kid` que le serveur ne connaît plus n'est pas une erreur du
+        // client : le registre du serveur de développement est en mémoire et
+        // ne survit pas à son redémarrage. On réenrôle une fois, jamais en
+        // boucle — un second refus est un vrai défaut, qu'il faut voir.
+        val issued = try {
+            server.nonce(KeystoreKeys.kid(alias), attendu)
+        } catch (refus: DevServer.Refused) {
+            if (refus.status != 400 || !refus.detail.contains("kid inconnu")) throw refus
+            alias = reenroler()
+            server.nonce(KeystoreKeys.kid(alias), attendu)
+        }
         val nonce = Base64.decode(issued.getString("nonce_b64"), Base64.NO_WRAP)
         val profile = issued.getString("profile")
         report("")
@@ -795,7 +891,7 @@ public class MainActivity : ComponentActivity() {
             freshness = if (horsLigne) {
                 KeyAttestationFreshness()
             } else {
-                PlayIntegrityFreshness(provider)
+                PlayIntegrityFreshness(fournisseur(cloudProjectNumber))
             },
         )
         // Le maillon précédent, s'il existe. Première prise d'une visite : rien
@@ -868,6 +964,7 @@ public class MainActivity : ComponentActivity() {
         )
         prisesDansVisite += 1
         if (debutVisiteMs == 0L) debutVisiteMs = System.currentTimeMillis()
+        sauverVisite()
         report("")
         report("prise n°${prise.index} consignee — ${Historique.compte()} au tableau")
         report("visite $visite : $prisesDansVisite prise(s)")
