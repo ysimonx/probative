@@ -185,6 +185,22 @@ public class MainActivity : ComponentActivity() {
      * chemin par capture.**
      */
     private var capteurs: SensorRun? = null
+
+    /**
+     * Le déclencheur, barré tant qu'aucun point n'est arrivé.
+     *
+     * **On barre sur la présence, jamais sur la qualité.** Un point à 500 m
+     * passe et le serveur le note en C : c'est son travail, pas celui du
+     * client (invariant 1). Mais sans aucun point, le profil `capture` ne peut
+     * pas être produit — un bouton grisé qui dit pourquoi vaut mieux qu'une
+     * acquisition qui échoue après l'obturateur.
+     *
+     * Ce qu'il supprime au passage : le dernier endroit où l'attente d'un
+     * capteur entrait dans `media[6]`. `position()` bloquait jusqu'à 8 s en
+     * aval de l'obturateur quand aucun point n'était encore là.
+     */
+    private lateinit var boutonDeclencher: Button
+    private val rafraichisseur = Handler(Looper.getMainLooper())
     private var prisesDansSerie = 0
     private var debutSerieMs = 0L
 
@@ -253,14 +269,11 @@ public class MainActivity : ComponentActivity() {
             addView(permissionsView, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(action, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
             addView(viseur, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1.4f))
-            addView(
-                Button(this@MainActivity).apply {
-                    text = "+   prendre une photo"
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-                    setOnClickListener { lancer(Probe.CAPTURE) }
-                },
-                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT),
-            )
+            boutonDeclencher = Button(this@MainActivity).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+                setOnClickListener { lancer(Probe.CAPTURE) }
+            }
+            addView(boutonDeclencher, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(statut, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(
                 ScrollView(this@MainActivity).apply { addView(tableau) },
@@ -357,6 +370,14 @@ public class MainActivity : ComponentActivity() {
         rafraichirTableau()
         afficher(ecranTableau)
         ouvrirViseurSiPossible()
+        rafraichirDeclencheur()
+        rafraichisseur.removeCallbacksAndMessages(null)
+        rafraichisseur.post(object : Runnable {
+            override fun run() {
+                rafraichirDeclencheur()
+                rafraichisseur.postDelayed(this, 1_000)
+            }
+        })
     }
 
     /**
@@ -402,6 +423,10 @@ public class MainActivity : ComponentActivity() {
         }
         if (choix == Probe.CAPTURE && !permissions.readyForCapture()) {
             statut.text = "camera ou position manquante : acquisition impossible"
+            return
+        }
+        if (choix == Probe.CAPTURE && capteurs?.aUnPoint != true) {
+            statut.text = "aucun point de position : le profil capture l'exige"
             return
         }
         probe = choix
@@ -549,6 +574,23 @@ public class MainActivity : ComponentActivity() {
                 action.visibility = View.VISIBLE
             }
             else -> action.visibility = View.GONE
+        }
+    }
+
+    /**
+     * Remet le déclencheur à l'état de ce qu'on sait faire.
+     *
+     * Rafraîchi à la seconde tant que l'écran vit : le point arrive de façon
+     * asynchrone, et rien d'autre ne préviendrait.
+     */
+    private fun rafraichirDeclencheur() {
+        val pret = permissions.readyForCapture()
+        val point = capteurs?.aUnPoint == true
+        boutonDeclencher.isEnabled = pret && point && !enCours
+        boutonDeclencher.text = when {
+            !pret -> "camera ou position non autorisee"
+            !point -> "en attente d'un point de position…"
+            else -> "+   prendre une photo"
         }
     }
 
@@ -962,6 +1004,7 @@ public class MainActivity : ComponentActivity() {
         // batterie ; elle ne se referme pas toute seule.
         session?.close()
         session = null
+        rafraichisseur.removeCallbacksAndMessages(null)
         // Un écouteur de position oublié vide la batterie et survit à l'écran.
         capteurs?.stop()
         capteurs = null

@@ -224,6 +224,17 @@ class SensorRun internal constructor(
     }
 
     /**
+     * Un point est-il disponible ?
+     *
+     * Sert à **barrer le déclencheur**, jamais à juger la qualité du point. La
+     * distinction est celle de l'invariant 1 : l'absence relève du format — le
+     * profil `capture` exige `position`, sans elle il n'y a pas de photo à
+     * faire, seulement une photo à jeter — tandis que la précision et l'âge
+     * relèvent du serveur, qui les note et dit pourquoi.
+     */
+    val aUnPoint: Boolean get() = meilleurPoint != null
+
+    /**
      * Attend un point exploitable et le convertit, **l'obturateur servant
      * d'origine**.
      *
