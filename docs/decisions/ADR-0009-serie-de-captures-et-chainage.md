@@ -165,13 +165,35 @@ Trois choses tombent avec cet amendement :
 
 Le terrain visé a répondu à une question que cet ADR n'avait pas posée : **une visite de
 chantier est constituee de plusieurs campagnes de prises de photos**, et non d'une seule.
-Trois consequences, dont une lacune.
+Trois consequences.
 
-13. **Une serie = une campagne, jamais une visite.** Une campagne au sens d'ADR-0011 : un
-    lot de nonces, une chaine, un ensemble valide ensemble. L'operateur en ouvre une par
-    sujet ou par zone, et la clot en changeant. Les bornes automatiques — compteur, duree —
-    sont donc des **filets de securite** qui ne doivent pas se declencher en usage normal,
-    et non des unites de decoupe. Portees a 100 prises et deux heures cote sonde.
+*Les points 13 et 15 ont ete ecrits, puis corriges dans la journee : la premiere redaction
+faisait de la campagne l'unite chainee. Le bouton « j'ai fini mes prises de vues » l'a
+dementie — il designe la fin d'une **visite**. La redaction initiale est barree plutot
+qu'effacee, l'erreur etant instructive : on avait pris l'unite d'approvisionnement pour
+l'unite de preuve.*
+
+13. ~~**Une serie = une campagne, jamais une visite.**~~ **Corrige le jour meme, et c'est
+    l'inverse : la chaine couvre la visite entiere.** L'arbitrage est venu du bouton — « j'ai
+    fini mes prises de vues » designe la fin d'une **visite**, pas d'une campagne. Donc :
+
+    - une **photo** est une enveloppe ; elle se verifie seule ;
+    - une **campagne** est un lot de nonces — l'unite d'**approvisionnement** et de
+      **validation** (ADR-0011 points 9 et 10) ;
+    - une **visite** est la chaine — l'unite de ce qui est **prouve ensemble**.
+
+    **Une campagne ne rompt pas la chaine.** La premiere enveloppe d'une nouvelle campagne
+    porte l'empreinte de la derniere de la precedente, bien qu'elle soit couverte par un
+    autre lot de nonces. Une campagne decoupe ce qui *se valide*, jamais ce qui *se prouve*.
+
+    Les bornes automatiques — compteur, duree — sont des **filets de securite** qui ne
+    doivent pas se declencher en usage normal, et non des unites de decoupe. Portees a 500
+    prises et douze heures cote sonde : une journee de travail passe dessous sans les
+    toucher.
+
+    Le cout assume : la chaine imposant un ordre d'arrivee, une visite se remet **dans
+    l'ordre de ses campagnes**. La consequence « une serie qu'on voudrait verifier hors
+    ordre d'arrivee demanderait davantage » cesse donc d'etre theorique.
 
 14. **La mise en veille ne clot rien.** Elle avait ete traitee comme le geste implicite
     « j'ai fini ». C'est faux : sur un chantier, l'operateur met son telephone en veille
@@ -179,23 +201,19 @@ Trois consequences, dont une lacune.
     l'ait voulu, et l'absence de retrait ne vaudrait plus que sur chaque morceau. Un
     evenement systeme n'est pas une intention ; seul le bouton l'est.
 
-15. **Rien ne relie deux campagnes d'une meme visite — c'est une lacune, et elle est
-    assumee pour l'instant.** L'absence de retrait tient *a l'interieur* d'une campagne.
-    Retirer une campagne entiere du dossier de visite est **invisible** : aucune empreinte
-    ne franchit la frontiere. C'est le meme defaut de forme que la fragilite du repli
-    d'ADR-0011 point 5, un cran au-dessus.
+15. ~~**Rien ne relie deux campagnes d'une meme visite — lacune assumee.**~~ **Fermee le
+    jour meme par le point 13 corrige.** La lacune etait reelle : l'absence de retrait ne
+    tenant qu'*a l'interieur* d'une campagne, retirer une campagne entiere d'un dossier
+    aurait ete **invisible**, chaque morceau restant parfaitement coherent.
 
-    Deux facons de le fermer, si le terrain l'exige : chainer les campagnes entre elles —
-    la premiere enveloppe d'une campagne portant l'empreinte de la derniere de la
-    precedente, ce que `DeviceRecord.last_envelope_digest` sait deja faire sans rien
-    changer au format — ou tenir la liste des campagnes au niveau du dossier, hors
-    enveloppe, ce qui deplace la confiance vers le serveur metier.
+    Le remede retenu est celui qui ne coute rien au format : **ne pas reinitialiser
+    `dernierDigest` entre deux campagnes**. `DeviceRecord.last_envelope_digest` sait deja
+    le faire, aucun champ n'est ajoute, aucune ligne de CDDL ne bouge.
 
-    **La premiere est presque gratuite et se contente de ne pas reinitialiser un champ.**
-    Elle n'est pas retenue ici parce qu'elle a un cout reel : elle rend une visite
-    indivisible, donc impossible a remettre par morceaux, et fait dependre chaque campagne
-    de la bonne reception de la precedente. Cela se tranche quand on saura si le dossier
-    opposable est la visite ou la campagne — question de produit, pas de format.
+    **Ce qu'il fallait trancher avant de le faire — et le terrain l'a tranche — est de
+    savoir si le dossier opposable est la visite ou la campagne.** C'est la visite. La
+    question etait de produit, jamais de format, et c'est pour cela qu'elle ne pouvait pas
+    se decider depuis le depot.
 
 ## Consequences
 

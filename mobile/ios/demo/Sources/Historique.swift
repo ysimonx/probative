@@ -20,8 +20,8 @@ import Foundation
 struct Prise: Identifiable {
     let id = UUID()
     let index: Int
-    /// Numéro de série. Une série close, la suivante repart d'une tête.
-    let serie: Int
+    /// Numéro de visite. Une visite close, la suivante repart d'une tête.
+    let visite: Int
     let instant: Date
     let profil: String
     let niveau: String
@@ -52,7 +52,7 @@ struct Prise: Identifiable {
     /// Une ligne de tableau : ce qui distingue une prise d'une autre au premier
     /// coup d'œil.
     var ligne: String {
-        var s = String(format: "%02d  s%d  %@  %@  %@", index, serie, heure,
+        var s = String(format: "%02d  s%d  %@  %@  %@", index, visite, heure,
                        profil.padding(toLength: 8, withPad: " ", startingAt: 0),
                        niveau.padding(toLength: 9, withPad: " ", startingAt: 0))
         s += String(format: "media[6] %4d ms", mediaSixMs)

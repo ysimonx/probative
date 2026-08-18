@@ -59,42 +59,43 @@ enum SealProbe {
         /// Empreinte de l'enveloppe précédente — le maillon à chaîner.
         var dernierDigest: Data?
 
-        /// Série courante. Clore incrémente : la suivante repart d'une tête.
-        var serie = 1
-        var prisesDansSerie = 0
-        var debutSerie: Date?
+        /// Visite courante. Clore incrémente : la suivante repart d'une tête.
+        var visite = 1
+        var prisesDansVisite = 0
+        var debutVisite: Date?
 
-        /// Bornes d'une série — des **filets de sécurité**, pas des cibles.
+        /// Bornes d'une visite — des **filets de sécurité**, pas des cibles.
         ///
-        /// Une série couvre **une campagne**, au sens d'ADR-0011 : un lot de
-        /// nonces, une chaîne, un ensemble validé ensemble. Une visite de
-        /// chantier en compte plusieurs. Ces bornes ne doivent pas se
-        /// déclencher en usage normal — la clôture attendue est le bouton — et
-        /// ne bornent qu'une campagne oubliée. Rien ne relie deux campagnes
-        /// d'une même visite : voir ADR-0009, « la visite ».
+        /// **La chaîne couvre la visite entière**, et c'est le bouton qui la
+        /// clôt. Une visite est faite de plusieurs campagnes au sens
+        /// d'ADR-0011 — un lot de nonces, un ensemble validé ensemble — mais
+        /// une campagne **ne rompt pas la chaîne** : elle découpe ce qui se
+        /// valide, pas ce qui se prouve. Ces bornes n'existent que pour qu'une
+        /// visite oubliée ne coure pas indéfiniment ; une journée de travail
+        /// passe dessous sans les toucher.
         ///
         /// Décidé le 2026-08-18 sur le terrain visé (ADR-0011 point 11).
-        static let maxPrises = 100
-        static let dureeMax: TimeInterval = 7_200
+        static let maxPrises = 500
+        static let dureeMax: TimeInterval = 43_200
 
         func clore() {
             dernierDigest = nil
-            prisesDansSerie = 0
-            debutSerie = nil
-            serie += 1
+            prisesDansVisite = 0
+            debutVisite = nil
+            visite += 1
         }
 
         /// Clôture automatique : l'utilisateur n'a rien à presser. Depuis
         /// l'amendement d'ADR-0009 elle **resserre** la note, elle ne
         /// conditionne plus la validité.
         func cloreSiNecessaire() -> String? {
-            let trop = prisesDansSerie >= Self.maxPrises
-            let vieille = debutSerie.map { Date().timeIntervalSince($0) >= Self.dureeMax } ?? false
+            let trop = prisesDansVisite >= Self.maxPrises
+            let vieille = debutVisite.map { Date().timeIntervalSince($0) >= Self.dureeMax } ?? false
             guard trop || vieille else { return nil }
             let motif = trop ? "\(Self.maxPrises) prises" : "\(Int(Self.dureeMax)) s"
-            let close = serie
+            let close = visite
             clore()
-            return "serie \(close) close automatiquement (\(motif))"
+            return "visite \(close) close automatiquement (\(motif))"
         }
     }
 
@@ -265,15 +266,15 @@ enum SealProbe {
             // même empreinte de son côté : c'est leur accord qui vaut
             // vérification, rien n'est déclaré.
             let empreinte = Data(SHA256.hash(data: sealed.bytes))
-            let (fin, serie) = await MainActor.run { () -> (String, Int) in
+            let (fin, visite) = await MainActor.run { () -> (String, Int) in
                 let etat = Etat.partage
                 etat.dernierDigest = empreinte
-                etat.prisesDansSerie += 1
-                if etat.debutSerie == nil { etat.debutSerie = Date() }
-                let serie = etat.serie
-                let n = etat.prisesDansSerie
+                etat.prisesDansVisite += 1
+                if etat.debutVisite == nil { etat.debutVisite = Date() }
+                let visite = etat.visite
+                let n = etat.prisesDansVisite
                 let close = etat.cloreSiNecessaire()
-                return ("serie \(serie) : \(n) prise(s)" + (close.map { " — " + $0 } ?? ""), serie)
+                return ("visite \(visite) : \(n) prise(s)" + (close.map { " — " + $0 } ?? ""), visite)
             }
             ok(fin)
 
@@ -292,7 +293,7 @@ enum SealProbe {
             let index = await MainActor.run { Historique.partage.compte + 1 }
             prise = Prise(
                 index: index,
-                serie: serie,
+                visite: visite,
                 instant: Date(),
                 profil: result["profile"] as? String ?? mode.profile,
                 niveau: result["level"] as? String ?? "?",

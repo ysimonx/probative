@@ -66,7 +66,7 @@ les renvois des ADR.*
 
 | Fichier | Rôle |
 |---|---|
-| `docs/architecture.html` | Vue d'ensemble illustrée du mécanisme, séquences et FAQ. Point d'entrée pour comprendre ; ne fait pas autorité. Les deux diagrammes de séquence sont générés par `tools/gen_sequences.py` — ne pas les éditer à la main. |
+| `docs/architecture.html` | Vue d'ensemble illustrée du mécanisme, séquences et FAQ. Point d'entrée pour comprendre ; ne fait pas autorité. Les **trois** diagrammes de séquence — enrôlement, capture, **visite** — sont générés par `tools/gen_sequences.py` : ne pas les éditer à la main, et régénérer après toute modification du script. |
 | `docs/threat-model.md` | Spécification de référence. Toute fonctionnalité doit répondre à une menace identifiée. |
 | `docs/envelope-spec.md` | Format `probative/0.1`, noyau et profils (§2.5), règles de liaison R1/R2/R3, ordre de vérification |
 | `docs/decisions/` | ADR. Les compléter plutôt que revenir silencieusement sur un choix. |
@@ -640,24 +640,40 @@ en étant écrits.
 
 ### Ce que le terrain a tranche le 2026-08-18
 
-**Une visite de chantier est faite de plusieurs campagnes**, chacune etant un lot de
-nonces, une chaine, un ensemble valide ensemble. Consigne en ADR-0009, amendement
-« la visite », points 13 a 15. Deux corrections en decoulent, faites :
+**Trois echelles s'emboitent, et les confondre est l'erreur la plus couteuse du
+mecanisme.** ADR-0009, amendement « la visite », points 13 a 15 :
 
-- **la mise en veille ne clot plus la serie.** Elle avait ete prise pour le geste
-  « j'ai fini » ; c'est une pause, et clore la fragmentait la chaine entre deux points du
-  meme constat. `onResume` remet en marche le viseur, la collecte et le rafraichisseur —
+| | ce que c'est | unite de |
+|---|---|---|
+| **photo** | une enveloppe | ce qui se verifie seul |
+| **campagne** | un lot de nonces | **approvisionnement** et **validation** |
+| **visite** | la chaine | **ce qui est prouve ensemble** |
+
+**Une campagne ne rompt pas la chaine.** La premiere enveloppe d'une campagne porte
+l'empreinte de la derniere de la precedente, bien qu'elle soit couverte par un autre lot.
+Une campagne decoupe ce qui *se valide*, jamais ce qui *se prouve* — sans quoi retirer une
+campagne entiere d'un dossier serait invisible.
+
+*L'arbitrage est venu du bouton.* « J'ai fini mes prises de vues » designe la fin d'une
+**visite** : le dossier opposable est donc la visite. La premiere redaction de l'amendement
+disait l'inverse — on avait pris l'unite d'approvisionnement pour l'unite de preuve — et
+elle est barree dans l'ADR plutot qu'effacee.
+
+Quatre corrections en decoulent, faites :
+
+- **la mise en veille ne clot plus rien.** Elle avait ete prise pour le geste « j'ai fini » ;
+  c'est une pause. `onResume` remet en marche le viseur, la collecte et le rafraichisseur —
   rien n'est plus suppose vivant ;
-- **les bornes automatiques sont des filets, pas des unites de decoupe** : 100 prises et
-  deux heures des deux cotes. La cloture attendue est le bouton.
+- **les bornes sont des filets, pas des unites de decoupe** : 500 prises et douze heures des
+  deux cotes, une journee de travail passant dessous. La cloture attendue est le bouton ;
+- **le vocabulaire est aligne** : `serie` renomme `visite` des deux cotes, et « campagne » ne
+  designe plus une seule prise dans la sonde Android ;
+- **`docs/architecture.html` porte un troisieme diagramme de sequence**, `sequence-visite`,
+  qui montre la chaine franchissant la frontiere de campagne. Genere par
+  `tools/gen_sequences.py` comme les deux autres.
 
-**Une lacune ouverte, a ne pas reperdre** : rien ne relie deux campagnes d'une meme visite.
-Retirer une campagne entiere du dossier est invisible. Le chainage inter-campagnes serait
-presque gratuit — ne pas reinitialiser `dernierDigest` — mais rend la visite indivisible.
-Se tranche quand on saura si le dossier opposable est la visite ou la campagne.
-
-**Et une collision de vocabulaire** : `MainActivity` appelle encore « campagne » *une seule
-prise*, la ou ADR-0011 appelle campagne *le lot*. Consigne, pas corrige.
+**Cout assume** : la chaine imposant un ordre d'arrivee, une visite se remet dans l'ordre de
+ses campagnes.
 
 ### Le cadre
 

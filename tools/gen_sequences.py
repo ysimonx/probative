@@ -256,7 +256,57 @@ CAPTURE = build(
     "remet l'enveloppe puis les octets du contenu au serveur.",
 )
 
-FIGURES = {"sequence-enrolement": ENROLEMENT, "sequence-capture": CAPTURE}
+# --- diagramme : visite, campagnes, photos ------------------------------
+
+VISITE = build(
+    1000,
+    [("Opérateur", "sur le chantier", 150, 170),
+     ("Application", "code considéré hostile", 470, 190),
+     ("Serveur", "seul juge", 855, 160)],
+    [
+        phase("Ouverture de la visite · sans nonces, aucune capture"),
+        msg(0, 1, "Arrive sur le site", "l'enrôlement a déjà eu lieu, une fois pour toutes"),
+        msg(1, 2, "Demande un lot de nonces", "en indiquant son kid"),
+        msg(2, 1, "Lot de nonces, usage unique",
+            "sans lot, le déclencheur reste barré — ADR-0011 point 9"),
+        band_open("Campagne 1 — le bâtiment nord, hors réseau"),
+        msg(0, 1, "Prend une photo"),
+        selfmsg(1, "Scelle · aucun maillon précédent",
+                "premier maillon de la visite : payload[7] absent", accent=True),
+        msg(0, 1, "Prend une photo"),
+        selfmsg(1, "Scelle · payload[7] = empreinte(05)",
+                "chaque maillon désigne son prédécesseur", accent=True),
+        band_close(),
+        msg(0, 1, "Met l'appareil en veille",
+            "trajet vers l'autre bâtiment — la veille ne clôt rien"),
+        band_open("Campagne 2 — le bâtiment sud, le réseau est revenu"),
+        msg(1, 2, "Demande un nouveau lot de nonces", "une campagne = un lot"),
+        msg(2, 1, "Lot de nonces"),
+        msg(0, 1, "Prend une photo"),
+        selfmsg(1, "Scelle · payload[7] = empreinte(07)",
+                "la chaîne franchit la frontière de campagne", accent=True),
+        band_close(),
+        phase("Validation · par campagne, dès que le réseau le permet"),
+        msg(1, 2, "Enveloppes de la campagne 1, enrichies",
+            "jeton différé en en-tête non protégé, label 201", dashed=True),
+        msg(2, 1, "Verdict par propriété", "avec son motif, obligatoire"),
+        phase("Clôture de la visite · le seul geste qui porte une intention"),
+        msg(0, 1, "« j\u2019ai fini ma visite »",
+            "facultatif : ne pas clore n'invalide aucune enveloppe"),
+        msg(1, 2, "Dernière enveloppe, attestée",
+            "resserre l'encadrement, ne conditionne pas la validité"),
+        selfmsg(2, "La chaîne est continue de bout en bout",
+                "aucune photo ne manque, et aucune campagne non plus", accent=True),
+    ],
+    "Séquence d'une visite de chantier : l'opérateur obtient un lot de nonces, prend des photos "
+    "au sein d'une première campagne hors réseau, met l'appareil en veille sans rompre la chaîne, "
+    "ouvre une seconde campagne avec un nouveau lot de nonces dont le premier maillon désigne la "
+    "dernière photo de la campagne précédente, fait valider la première campagne dès le retour du "
+    "réseau, puis clôt la visite d'un geste facultatif.",
+)
+
+FIGURES = {"sequence-enrolement": ENROLEMENT, "sequence-capture": CAPTURE,
+           "sequence-visite": VISITE}
 
 
 def remplacer(html: str, nom: str, svg: str) -> str:

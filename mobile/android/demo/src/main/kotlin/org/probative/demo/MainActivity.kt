@@ -83,35 +83,24 @@ public class MainActivity : ComponentActivity() {
         const val REQUEST_PERMISSIONS = 1
 
         /**
-         * Bornes d'une série — des **filets de sécurité**, pas des cibles.
+         * Bornes d'une visite — des **filets de sécurité**, pas des cibles.
          *
-         * Une série couvre **une campagne**, au sens d'ADR-0011 : un lot de
-         * nonces, une chaîne, un ensemble validé ensemble. Une visite de
-         * chantier en compte **plusieurs** — l'opérateur ouvre une campagne par
-         * sujet ou par zone, et la clôt en changeant.
+         * **La chaîne couvre la visite entière**, et c'est le bouton qui la
+         * clôt. Une visite de chantier est faite de plusieurs campagnes au sens
+         * d'ADR-0011 — un lot de nonces, un ensemble validé ensemble — mais
+         * une campagne **ne rompt pas la chaîne** : elle découpe ce qui se
+         * valide, pas ce qui se prouve. C'est ce qui fait tenir « aucune photo
+         * n'a été retirée de cette visite », y compris entre deux campagnes.
          *
-         * C'est à l'intérieur d'une campagne, et là seulement, que tient
-         * « aucune photo n'a été retirée ». Des bornes serrées la
-         * découperaient, et la propriété ne vaudrait plus que sur chaque
-         * fragment — sans que l'opérateur l'ait voulu.
-         *
-         * Elles ne doivent donc **pas se déclencher en usage normal** : la
-         * clôture attendue est le bouton. Elles bornent une série oubliée,
-         * rien de plus.
+         * Ces bornes ne doivent donc **pas se déclencher en usage normal** :
+         * elles n'existent que pour qu'une visite oubliée ne coure pas
+         * indéfiniment. Une journée de travail passe dessous sans les toucher.
          *
          * Décidé le 2026-08-18 sur le terrain visé ; ADR-0011 point 11 laissait
          * ces chiffres ouverts, en nommant les deux forces qui s'opposent.
-         *
-         * **Ce que ces bornes ne couvrent pas** : rien ne relie deux campagnes
-         * d'une même visite. Retirer une campagne entière du dossier reste
-         * invisible. Voir ADR-0009, « la visite ».
-         *
-         * Attention au vocabulaire : ailleurs dans ce fichier, « campagne »
-         * désigne encore **une seule prise**. Cet écart avec ADR-0011 est
-         * consigné, pas encore corrigé.
          */
-        const val MAX_PRISES_PAR_SERIE = 100
-        const val DUREE_MAX_SERIE_MS = 7_200_000L   // deux heures
+        const val MAX_PRISES_PAR_VISITE = 500
+        const val DUREE_MAX_VISITE_MS = 43_200_000L   // douze heures
     }
 
     private lateinit var view: TextView
@@ -135,7 +124,7 @@ public class MainActivity : ComponentActivity() {
     private lateinit var viseur: PreviewView
     private var session: CaptureSession? = null
 
-    /** Le tableau des prises, reconstruit après chaque campagne. */
+    /** Le tableau des prises, reconstruit après chacune. */
     private lateinit var tableau: LinearLayout
     private lateinit var statut: TextView
     private lateinit var ecranTableau: LinearLayout
@@ -155,20 +144,20 @@ public class MainActivity : ComponentActivity() {
         val decomposition: String?,
     )
 
-    /** Une campagne occupe la caméra : une seule à la fois. */
+    /** Une prise occupe la caméra : une seule à la fois. */
     @Volatile private var enCours = false
 
     /**
      * L'appareil, enrôlé **une fois par lancement** et non par capture.
      *
-     * Ce n'était pas qu'un gaspillage : une clé neuve à chaque campagne donne
+     * Ce n'était pas qu'un gaspillage : une clé neuve à chaque prise donne
      * un `kid` neuf, donc un appareil neuf pour le serveur, donc jamais de
      * maillon précédent. **Le chaînage était impossible par construction**, et
      * le drapeau `CHAIN_FIRST_LINK_UNKNOWN` en était le symptôme.
      *
      * `prepare` est ici pour la même raison, plus une seconde : Google applique
      * à la mise en route du fournisseur un quota plus strict qu'aux demandes de
-     * jeton. La répéter à chaque prise est une piste sérieuse pour le bridage
+     * jeton. La répéter à chaque prise est une piste visiteuse pour le bridage
      * observé le 2026-08-17.
      */
     private var alias: String? = null
@@ -177,8 +166,8 @@ public class MainActivity : ComponentActivity() {
     /** Empreinte de l'enveloppe précédente — le maillon à chaîner. */
     private var dernierDigest: ByteArray? = null
 
-    /** Série courante. Clore incrémente : la suivante repart d'une tête. */
-    private var serie = 1
+    /** Visite courante. Clore incrémente : la suivante repart d'une tête. */
+    private var visite = 1
 
     /**
      * Mode hors ligne — la fraîcheur vient de la puce, pas de Google.
@@ -221,8 +210,8 @@ public class MainActivity : ComponentActivity() {
      */
     private lateinit var boutonDeclencher: Button
     private val rafraichisseur = Handler(Looper.getMainLooper())
-    private var prisesDansSerie = 0
-    private var debutSerieMs = 0L
+    private var prisesDansVisite = 0
+    private var debutVisiteMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -243,7 +232,7 @@ public class MainActivity : ComponentActivity() {
      * Trois écrans, et un seul chemin entre eux.
      *
      * Le tableau est la page d'accueil et il peut être vide — c'est même son
-     * état initial. « + » conduit au viseur, le déclencheur lance la campagne,
+     * état initial. « + » conduit au viseur, le déclencheur lance la prise,
      * le résultat s'affiche, et le refermer ramène au tableau **augmenté d'une
      * ligne**. Chaque écran ne montre qu'une chose : l'empilement précédent
      * mêlait préambule, viseur, journal et tableau sur une seule page, où le
@@ -301,7 +290,7 @@ public class MainActivity : ComponentActivity() {
             )
             addView(
                 Button(this@MainActivity).apply {
-                    text = "journal de la derniere campagne"
+                    text = "journal de la derniere prise"
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                     setOnClickListener { afficher(ecranResultat) }
                 },
@@ -311,7 +300,7 @@ public class MainActivity : ComponentActivity() {
             // isoler ce qui ne dépend pas de l'acquisition.
             addView(
                 Button(this@MainActivity).apply {
-                    text = "j'ai fini mes prises de vues (facultatif)"
+                    text = "j'ai fini ma visite (facultatif)"
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                     setOnClickListener { clore() }
                 },
@@ -429,7 +418,7 @@ public class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Lance une campagne **sans quitter le tableau**.
+     * Lance une prise **sans quitter le tableau**.
      *
      * Basculer d'écran retirait la `PreviewView` de la fenêtre, donc détruisait
      * la surface d'aperçu *pendant* la capture. Outre l'aperçu qui s'éteignait
@@ -443,7 +432,7 @@ public class MainActivity : ComponentActivity() {
      */
     private fun lancer(choix: Probe) {
         if (enCours) {
-            report("campagne deja en cours : appui ignore")
+            report("prise deja en cours : appui ignore")
             return
         }
         if (choix == Probe.CAPTURE && !permissions.readyForCapture()) {
@@ -458,7 +447,7 @@ public class MainActivity : ComponentActivity() {
         header.text = identity()
         lines.setLength(0)
         view.text = ""
-        statut.text = "campagne en cours…"
+        statut.text = "prise en cours…"
         enCours = true
         thread {
             try {
@@ -475,21 +464,12 @@ public class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Clôt la série : la prochaine prise repartira d'une tête.
-     *
-     * Le geste est nécessaire, et pas seulement confortable. ADR-0009 fait
-     * d'une série un objet borné aux deux bouts ; une série qu'on abandonne
-     * reste **ouverte par le bas**, et rien ne dit alors jusqu'où l'appareil
-     * est resté sain. Une application réelle devra donc offrir ce geste, pas
-     * seulement un bouton « photo suivante ».
-     */
-    /**
-     * Clôt la série d'elle-même — au bout de [MAX_PRISES_PAR_SERIE] prises ou
-     * de [DUREE_MAX_SERIE_MS], au premier des deux.
+     * Clôt la visite d'elle-même — au bout de [MAX_PRISES_PAR_VISITE] prises ou
+     * de [DUREE_MAX_VISITE_MS], au premier des deux.
      *
      * **Ce que cela apporte aujourd'hui, et ce que non.** Tant que `freshness`
      * est obligatoire au format, *toutes* les enveloppes portent un jeton :
-     * la série est donc attestée en chacun de ses points, et la segmenter ne
+     * la visite est donc attestée en chacun de ses points, et la segmenter ne
      * change rien à ce qui est prouvé. Ce mécanisme est la **politique**, pas
      * encore son effet — il décidera où se placent les points attestés le jour
      * où les maillons cesseront d'en porter (ADR-0009 point 2). Le dire
@@ -497,41 +477,33 @@ public class MainActivity : ComponentActivity() {
      * pas encore.
      *
      * Ce qu'il apporte déjà : l'utilisateur n'a plus rien à presser, et le
-     * tableau montre des séries plutôt qu'une liste plate.
+     * tableau montre des visites plutôt qu'une liste plate.
      */
     private fun clotureAutomatique() {
-        val trop = prisesDansSerie >= MAX_PRISES_PAR_SERIE
-        val vieille = debutSerieMs != 0L &&
-            System.currentTimeMillis() - debutSerieMs >= DUREE_MAX_SERIE_MS
+        val trop = prisesDansVisite >= MAX_PRISES_PAR_VISITE
+        val vieille = debutVisiteMs != 0L &&
+            System.currentTimeMillis() - debutVisiteMs >= DUREE_MAX_VISITE_MS
         if (!trop && !vieille) return
-        val motif = if (trop) "$MAX_PRISES_PAR_SERIE prises" else "${DUREE_MAX_SERIE_MS / 60_000} min"
-        report("serie $serie close automatiquement ($motif)")
-        reinitialiserSerie()
+        val motif = if (trop) "$MAX_PRISES_PAR_VISITE prises" else "${DUREE_MAX_VISITE_MS / 3_600_000} h"
+        report("visite $visite close automatiquement ($motif)")
+        reinitialiserVisite()
     }
 
-    private fun reinitialiserSerie() {
+    private fun reinitialiserVisite() {
         dernierDigest = null
-        prisesDansSerie = 0
-        debutSerieMs = 0L
-        serie += 1
+        prisesDansVisite = 0
+        debutVisiteMs = 0L
+        visite += 1
     }
 
     /**
-     * Passage en arrière-plan : la série se clôt.
-     *
-     * C'est le geste implicite « j'ai fini », et il rattrape le cas que la
-     * minuterie manque — l'utilisateur qui pose l'appareil ou quitte
-     * l'application juste après sa dernière photo, sans qu'aucun tic ne vienne
-     * jamais.
-     */
-    /**
-     * **La veille ne clôt pas la série.**
+     * **La veille ne clôt pas la visite.**
      *
      * Le passage en arrière-plan a d'abord été traité comme le geste implicite
      * « j'ai fini ». C'est faux pour l'usage visé : sur un chantier, l'opérateur
      * met son téléphone en veille **entre deux points du même constat**. Clore
      * là découperait le constat en fragments, et l'absence de retrait — la
-     * propriété que la série existe pour établir — ne vaudrait plus que sur
+     * propriété que la visite existe pour établir — ne vaudrait plus que sur
      * chacun d'eux.
      *
      * Ce qui clôt reste : le bouton, le compteur, et la durée. Une veille
@@ -544,20 +516,33 @@ public class MainActivity : ComponentActivity() {
         rafraichisseur.removeCallbacksAndMessages(null)
     }
 
+    /**
+     * Le seul geste qui clôt une visite — et le seul qui porte une intention.
+     *
+     * ADR-0009 fait de la chaîne un objet borné aux deux bouts. Une visite
+     * abandonnée reste **ouverte par le bas** : rien ne dit jusqu'où l'appareil
+     * est resté sain. Les bornes automatiques rattrapent l'oubli ; elles ne le
+     * remplacent pas, une borne atteinte ne signifiant rien de la volonté de
+     * l'opérateur.
+     *
+     * Facultatif à dessein : ne pas clore ne rend aucune enveloppe invalide.
+     * La note suit la largeur mesurée depuis la dernière attestation, jamais un
+     * drapeau « close ou non » — ADR-0009 amendé, invariant 8.
+     */
     private fun clore() {
         if (enCours) {
-            statut.text = "campagne en cours : clôture refusée"
+            statut.text = "prise en cours : clôture refusée"
             return
         }
         if (dernierDigest == null) {
-            statut.text = "aucune série ouverte"
+            statut.text = "aucune visite ouverte"
             return
         }
-        reinitialiserSerie()
-        statut.text = "série close — la prochaine prise ouvrira la série $serie"
+        reinitialiserVisite()
+        statut.text = "visite close — la prochaine prise ouvrira la visite $visite"
     }
 
-    /** Ce que la dernière campagne a donné, en une ligne. */
+    /** Ce que la dernière prise a donné, en une ligne. */
     private fun resume(): String {
         val derniere = Historique.toutes().lastOrNull() ?: return "aucune prise — voir le journal"
         return "prise n°%d : %s — %s, media[6] %d ms".format(
@@ -565,7 +550,6 @@ public class MainActivity : ComponentActivity() {
         )
     }
 
-    /** Retour des Réglages : l'état a pu changer sans passer par la demande. */
     /**
      * Retour au premier plan — après les Réglages, ou après une veille.
      *
@@ -814,7 +798,7 @@ public class MainActivity : ComponentActivity() {
                 PlayIntegrityFreshness(provider)
             },
         )
-        // Le maillon précédent, s'il existe. Première prise d'une série : rien
+        // Le maillon précédent, s'il existe. Première prise d'une visite : rien
         // à chaîner, et le serveur le signale par `CHAIN_FIRST_LINK_UNKNOWN`.
         val precedent = dernierDigest
         val scelle = if (probe == Probe.CAPTURE) {
@@ -852,7 +836,7 @@ public class MainActivity : ComponentActivity() {
     private fun consigner(result: JSONObject, scelle: Scelle, kid: String) {
         val proprietes = result.getJSONObject("properties")
         val prise = Historique.ajouter(
-            serie = serie,
+            visite = visite,
             profil = result.getString("profile"),
             niveau = result.getString("level"),
             motif = result.getString("level_reason"),
@@ -882,11 +866,11 @@ public class MainActivity : ComponentActivity() {
             kid = kid,
             decomposition = scelle.decomposition,
         )
-        prisesDansSerie += 1
-        if (debutSerieMs == 0L) debutSerieMs = System.currentTimeMillis()
+        prisesDansVisite += 1
+        if (debutVisiteMs == 0L) debutVisiteMs = System.currentTimeMillis()
         report("")
         report("prise n°${prise.index} consignee — ${Historique.compte()} au tableau")
-        report("serie $serie : $prisesDansSerie prise(s)")
+        report("visite $visite : $prisesDansVisite prise(s)")
         report(Historique.dispersion(prise.profil))
         Handler(Looper.getMainLooper()).post { rafraichirTableau() }
     }

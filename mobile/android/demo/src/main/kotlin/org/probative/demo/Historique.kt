@@ -26,8 +26,8 @@ import java.util.Locale
  */
 internal class Prise(
     val index: Int,
-    /** Numéro de série. Une série close, la suivante repart d'une tête attestée. */
-    val serie: Int,
+    /** Numéro de visite. Une visite close, la suivante repart d'une tête attestée. */
+    val visite: Int,
     val instantMs: Long,
     val profil: String,
     val niveau: String,
@@ -52,7 +52,7 @@ internal class Prise(
 
     /** Une ligne de tableau : ce qui distingue une prise d'une autre au premier coup d'œil. */
     fun ligne(): String = buildString {
-        append("%02d  s%d  %s  %-8s %-9s".format(index, serie, heure, profil, niveau))
+        append("%02d  v%d  %s  %-8s %-9s".format(index, visite, heure, profil, niveau))
         append("media[6] %4d ms".format(mediaSixMs))
         if (photo != null) append("  %d×%d  %d ko".format(largeur, hauteur, photo.size / 1024))
     }
@@ -72,7 +72,7 @@ internal object Historique {
 
     @Synchronized
     fun ajouter(
-        serie: Int,
+        visite: Int,
         profil: String,
         niveau: String,
         motif: String,
@@ -90,7 +90,7 @@ internal object Historique {
     ): Prise {
         val prise = Prise(
             index = prises.size + 1,
-            serie = serie,
+            visite = visite,
             instantMs = System.currentTimeMillis(),
             profil = profil,
             niveau = niveau,
