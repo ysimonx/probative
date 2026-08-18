@@ -301,9 +301,42 @@ Les exécutions dues sur matériel réel sont notées ici et non dans un carnet
 extérieur : ce dépôt est destiné à être repris, et un état de campagne qui ne
 survit pas au poste ne vaut rien.
 
-0. **DÛ EN PREMIER — éprouver la 0.3.3 sur SM-X200.** Construite et poussée le
-   2026-08-17, **jamais exécutée**. Elle porte trois changements dont deux sont
-   des correctifs de justesse, pas de confort :
+0. ~~**DÛ EN PREMIER — éprouver la 0.3.3 sur SM-X200.**~~ **Fait le 2026-08-18,
+   en 0.3.4.** Huit prises, **zéro échec**, et les deux objectifs atteints.
+
+   **`media[6]` : min 62, max 153, médiane 147 ms** — contre 1 786 et 6 485 ms
+   la veille. Plus aucun pic : la collecte de campagne fait ce qu'on attendait
+   d'elle, et l'attente du point est sortie du champ noté.
+
+   **Un défaut introduit la veille a dû être retiré en cours de campagne.**
+   `position()` rendait `null` au-delà de 10 s d'âge : le client jugeait et
+   jetait, faisant échouer l'acquisition entière. Violation de l'invariant 1,
+   invisible tant que la collecte durait une capture — tout point reçu était
+   frais par construction. Deux échecs sur trois en régime long. Retiré en
+   0.3.4 ; le cœur iOS énonçait pourtant la bonne règle depuis toujours :
+   *« attendre n'est pas filtrer »*.
+
+   **Et la campagne démontre le principe de bout en bout**, mieux qu'un texte :
+
+   | point | âge | `position` | niveau |
+   |---|---|---|---|
+   | frais | 2,4 – 12 s | **A** | `STANDARD` |
+   | vieux | 17,5 – 20,8 s | **C** | `DEGRADED` |
+
+   Motif rendu : « point de position vieux de 20 778 ms au déclenchement ».
+   Même appareil, mêmes conditions, et le verdict suit une **grandeur mesurée**
+   avec un motif qui nomme le nombre. Le fournisseur `network` en intérieur se
+   rafraîchit toutes les 15–20 s : le point vieillit entre deux, et c'est
+   exactement le régime que le filtre rendait impraticable.
+
+   **Reste non vérifié : l'arbitrage du point.** Le correctif qui garde le plus
+   *récent* plutôt que le plus *précis* n'a rien démontré ici — la sonde
+   n'imprime ni latitude ni longitude, seulement fournisseur, précision et âge.
+   La précision a dérivé de 12 à 14 m, ce qui *suggère* des points différents
+   sans le prouver. **Le vérifier demande d'imprimer les coordonnées**, une
+   petite modification pour un prochain téléversement.
+
+   *Ce que la 0.3.3 portait, pour mémoire :*
 
    - la **collecte de capteurs court depuis l'ouverture du viseur** au lieu de
      démarrer à chaque capture. C'est ce qui doit faire disparaître les pics de
