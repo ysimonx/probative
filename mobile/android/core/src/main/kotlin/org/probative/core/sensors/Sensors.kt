@@ -248,7 +248,15 @@ class SensorRun internal constructor(
         // Un point postérieur à l'obturateur arrive : la collecte court pendant
         // l'acquisition, c'est même le but. Son âge est alors nul, pas négatif.
         val ageMs = if (age < 0) 0L else age
-        if (ageMs > Sensors.MAX_FIX_AGE_MS) return null
+        // **Attendre n'est pas filtrer.** Le point est rendu avec son âge
+        // réel, si vieux soit-il, et c'est le serveur qui en juge
+        // (invariant 1). Un filtre à 10 s vivait ici : inoffensif tant que la
+        // collecte durait une capture — tout point reçu était frais par
+        // construction — et bloquant dès qu'elle dure la campagne, le point
+        // réseau en intérieur se rafraîchissant rarement. Il faisait échouer
+        // l'acquisition entière là où le serveur aurait noté `position` en C.
+        // Retiré le 2026-08-18, après une campagne où plus aucune photo ne
+        // passait.
 
         return Position(
             latitude = point.latitude,
