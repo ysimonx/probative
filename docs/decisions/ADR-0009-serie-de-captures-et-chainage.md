@@ -1,6 +1,6 @@
 # ADR-0009 — Serie de captures : tete attestee, maillons chaines, largeur mesuree
 
-**Statut :** accepte, **amende le 2026-08-17** (points 1, 5 et 7) ; **point 2 abandonne** par ADR-0010
+**Statut :** accepte, **amende le 2026-08-17** (points 1, 5 et 7) et **le 2026-08-18** (« la visite ») ; **point 2 abandonne** par ADR-0010
 **Date :** 2026-08
 
 ## Contexte
@@ -160,6 +160,42 @@ Trois choses tombent avec cet amendement :
   immediate** : si Google relevait ses quotas demain, la serie resterait justifiee. Si
   elle avait ete concue pour les contourner, elle deviendrait un residu qu'on n'oserait
   plus retirer.
+
+## Amendement du 2026-08-18 — la visite, et ce qu'une serie ne couvre pas
+
+Le terrain visé a répondu à une question que cet ADR n'avait pas posée : **une visite de
+chantier est constituee de plusieurs campagnes de prises de photos**, et non d'une seule.
+Trois consequences, dont une lacune.
+
+13. **Une serie = une campagne, jamais une visite.** Une campagne au sens d'ADR-0011 : un
+    lot de nonces, une chaine, un ensemble valide ensemble. L'operateur en ouvre une par
+    sujet ou par zone, et la clot en changeant. Les bornes automatiques — compteur, duree —
+    sont donc des **filets de securite** qui ne doivent pas se declencher en usage normal,
+    et non des unites de decoupe. Portees a 100 prises et deux heures cote sonde.
+
+14. **La mise en veille ne clot rien.** Elle avait ete traitee comme le geste implicite
+    « j'ai fini ». C'est faux : sur un chantier, l'operateur met son telephone en veille
+    **entre deux points de la meme campagne**. Clore la fragmenterait la chaine sans qu'il
+    l'ait voulu, et l'absence de retrait ne vaudrait plus que sur chaque morceau. Un
+    evenement systeme n'est pas une intention ; seul le bouton l'est.
+
+15. **Rien ne relie deux campagnes d'une meme visite — c'est une lacune, et elle est
+    assumee pour l'instant.** L'absence de retrait tient *a l'interieur* d'une campagne.
+    Retirer une campagne entiere du dossier de visite est **invisible** : aucune empreinte
+    ne franchit la frontiere. C'est le meme defaut de forme que la fragilite du repli
+    d'ADR-0011 point 5, un cran au-dessus.
+
+    Deux facons de le fermer, si le terrain l'exige : chainer les campagnes entre elles —
+    la premiere enveloppe d'une campagne portant l'empreinte de la derniere de la
+    precedente, ce que `DeviceRecord.last_envelope_digest` sait deja faire sans rien
+    changer au format — ou tenir la liste des campagnes au niveau du dossier, hors
+    enveloppe, ce qui deplace la confiance vers le serveur metier.
+
+    **La premiere est presque gratuite et se contente de ne pas reinitialiser un champ.**
+    Elle n'est pas retenue ici parce qu'elle a un cout reel : elle rend une visite
+    indivisible, donc impossible a remettre par morceaux, et fait dependre chaque campagne
+    de la bonne reception de la precedente. Cela se tranche quand on saura si le dossier
+    opposable est la visite ou la campagne — question de produit, pas de format.
 
 ## Consequences
 

@@ -83,15 +83,35 @@ public class MainActivity : ComponentActivity() {
         const val REQUEST_PERMISSIONS = 1
 
         /**
-         * Bornes d'une série, au premier des deux atteint.
+         * Bornes d'une série — des **filets de sécurité**, pas des cibles.
          *
-         * Assez lâches pour ne pas rappeler le quota Play Integrity, assez
-         * serrées pour que la fenêtre pendant laquelle l'appareil a pu être
-         * compromis reste courte. Ce sont des points de départ, à recalibrer
-         * comme les seuils du vérificateur : ils n'ont rien d'une vérité.
+         * Une série couvre **une campagne**, au sens d'ADR-0011 : un lot de
+         * nonces, une chaîne, un ensemble validé ensemble. Une visite de
+         * chantier en compte **plusieurs** — l'opérateur ouvre une campagne par
+         * sujet ou par zone, et la clôt en changeant.
+         *
+         * C'est à l'intérieur d'une campagne, et là seulement, que tient
+         * « aucune photo n'a été retirée ». Des bornes serrées la
+         * découperaient, et la propriété ne vaudrait plus que sur chaque
+         * fragment — sans que l'opérateur l'ait voulu.
+         *
+         * Elles ne doivent donc **pas se déclencher en usage normal** : la
+         * clôture attendue est le bouton. Elles bornent une série oubliée,
+         * rien de plus.
+         *
+         * Décidé le 2026-08-18 sur le terrain visé ; ADR-0011 point 11 laissait
+         * ces chiffres ouverts, en nommant les deux forces qui s'opposent.
+         *
+         * **Ce que ces bornes ne couvrent pas** : rien ne relie deux campagnes
+         * d'une même visite. Retirer une campagne entière du dossier reste
+         * invisible. Voir ADR-0009, « la visite ».
+         *
+         * Attention au vocabulaire : ailleurs dans ce fichier, « campagne »
+         * désigne encore **une seule prise**. Cet écart avec ADR-0011 est
+         * consigné, pas encore corrigé.
          */
-        const val MAX_PRISES_PAR_SERIE = 5
-        const val DUREE_MAX_SERIE_MS = 120_000L
+        const val MAX_PRISES_PAR_SERIE = 100
+        const val DUREE_MAX_SERIE_MS = 7_200_000L   // deux heures
     }
 
     private lateinit var view: TextView
@@ -370,6 +390,11 @@ public class MainActivity : ComponentActivity() {
         rafraichirTableau()
         afficher(ecranTableau)
         ouvrirViseurSiPossible()
+        demarrerRafraichisseur()
+    }
+
+    private fun demarrerRafraichisseur() {
+        if (!::boutonDeclencher.isInitialized) return
         rafraichirDeclencheur()
         rafraichisseur.removeCallbacksAndMessages(null)
         rafraichisseur.post(object : Runnable {
@@ -479,7 +504,7 @@ public class MainActivity : ComponentActivity() {
         val vieille = debutSerieMs != 0L &&
             System.currentTimeMillis() - debutSerieMs >= DUREE_MAX_SERIE_MS
         if (!trop && !vieille) return
-        val motif = if (trop) "$MAX_PRISES_PAR_SERIE prises" else "${DUREE_MAX_SERIE_MS / 1000} s"
+        val motif = if (trop) "$MAX_PRISES_PAR_SERIE prises" else "${DUREE_MAX_SERIE_MS / 60_000} min"
         report("serie $serie close automatiquement ($motif)")
         reinitialiserSerie()
     }
@@ -499,12 +524,24 @@ public class MainActivity : ComponentActivity() {
      * l'application juste après sa dernière photo, sans qu'aucun tic ne vienne
      * jamais.
      */
+    /**
+     * **La veille ne clôt pas la série.**
+     *
+     * Le passage en arrière-plan a d'abord été traité comme le geste implicite
+     * « j'ai fini ». C'est faux pour l'usage visé : sur un chantier, l'opérateur
+     * met son téléphone en veille **entre deux points du même constat**. Clore
+     * là découperait le constat en fragments, et l'absence de retrait — la
+     * propriété que la série existe pour établir — ne vaudrait plus que sur
+     * chacun d'eux.
+     *
+     * Ce qui clôt reste : le bouton, le compteur, et la durée. Une veille
+     * longue est déjà couverte par la seconde, sans avoir à deviner l'intention
+     * de l'utilisateur à partir d'un événement système.
+     */
     override fun onStop() {
         super.onStop()
-        if (dernierDigest != null) {
-            report("serie $serie close : passage en arriere-plan")
-            reinitialiserSerie()
-        }
+        // Le ticker n'a rien à faire hors de l'écran.
+        rafraichisseur.removeCallbacksAndMessages(null)
     }
 
     private fun clore() {
@@ -529,9 +566,22 @@ public class MainActivity : ComponentActivity() {
     }
 
     /** Retour des Réglages : l'état a pu changer sans passer par la demande. */
+    /**
+     * Retour au premier plan — après les Réglages, ou après une veille.
+     *
+     * Tout est remis en marche plutôt que supposé vivant : la collecte de
+     * position s'interrompt en arrière-plan avec une autorisation « pendant
+     * l'utilisation », et le point en cache peut être vieux de plusieurs
+     * heures. Il sera remplacé dès qu'un nouveau arrive — `arbitrer` préfère le
+     * récent au-delà de dix secondes — et d'ici là le serveur notera son âge
+     * réel. Le déclencheur, lui, reste ouvert : on barre sur la présence d'un
+     * point, jamais sur sa qualité.
+     */
     override fun onResume() {
         super.onResume()
         refreshPermissions()
+        ouvrirViseurSiPossible()
+        demarrerRafraichisseur()
     }
 
     // `ComponentActivity` déclare ce rappel avec `Array<String>`, non

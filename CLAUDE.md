@@ -638,6 +638,27 @@ qui a permis de finir la campagne une fois le quota épuisé. Les deux ADR du ho
 aussi les deux seules voies qui ne se heurtent pas au quota — portée qu'ils n'avaient pas
 en étant écrits.
 
+### Ce que le terrain a tranche le 2026-08-18
+
+**Une visite de chantier est faite de plusieurs campagnes**, chacune etant un lot de
+nonces, une chaine, un ensemble valide ensemble. Consigne en ADR-0009, amendement
+« la visite », points 13 a 15. Deux corrections en decoulent, faites :
+
+- **la mise en veille ne clot plus la serie.** Elle avait ete prise pour le geste
+  « j'ai fini » ; c'est une pause, et clore la fragmentait la chaine entre deux points du
+  meme constat. `onResume` remet en marche le viseur, la collecte et le rafraichisseur —
+  rien n'est plus suppose vivant ;
+- **les bornes automatiques sont des filets, pas des unites de decoupe** : 100 prises et
+  deux heures des deux cotes. La cloture attendue est le bouton.
+
+**Une lacune ouverte, a ne pas reperdre** : rien ne relie deux campagnes d'une meme visite.
+Retirer une campagne entiere du dossier est invisible. Le chainage inter-campagnes serait
+presque gratuit — ne pas reinitialiser `dernierDigest` — mais rend la visite indivisible.
+Se tranche quand on saura si le dossier opposable est la visite ou la campagne.
+
+**Et une collision de vocabulaire** : `MainActivity` appelle encore « campagne » *une seule
+prise*, la ou ADR-0011 appelle campagne *le lot*. Consigne, pas corrige.
+
 ### Le cadre
 
 **Spike d'attestation natif** — plan détaillé et phases dans

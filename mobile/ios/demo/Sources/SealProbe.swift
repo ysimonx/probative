@@ -64,10 +64,18 @@ enum SealProbe {
         var prisesDansSerie = 0
         var debutSerie: Date?
 
-        /// Bornes d'une série, au premier des deux atteint. Points de départ,
-        /// à recalibrer comme les seuils du vérificateur.
-        static let maxPrises = 5
-        static let dureeMax: TimeInterval = 120
+        /// Bornes d'une série — des **filets de sécurité**, pas des cibles.
+        ///
+        /// Une série couvre **une campagne**, au sens d'ADR-0011 : un lot de
+        /// nonces, une chaîne, un ensemble validé ensemble. Une visite de
+        /// chantier en compte plusieurs. Ces bornes ne doivent pas se
+        /// déclencher en usage normal — la clôture attendue est le bouton — et
+        /// ne bornent qu'une campagne oubliée. Rien ne relie deux campagnes
+        /// d'une même visite : voir ADR-0009, « la visite ».
+        ///
+        /// Décidé le 2026-08-18 sur le terrain visé (ADR-0011 point 11).
+        static let maxPrises = 100
+        static let dureeMax: TimeInterval = 7_200
 
         func clore() {
             dernierDigest = nil
