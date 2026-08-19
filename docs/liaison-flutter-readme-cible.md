@@ -126,6 +126,9 @@ pip install probative-verifier   # name TBC
 probative-verifier serve --port 8765
 ```
 
+You can also skip the standalone server and mount the same three routes inside
+an existing Python backend — the verifier is a library first, a server second.
+
 It exposes three routes: device enrollment, nonce issuance, and envelope
 verification. Authentication between your app and this server is your
 deployment's business (a session token, mTLS, anything): the envelope

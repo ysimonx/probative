@@ -75,6 +75,8 @@ les renvois des ADR.*
 | `docs/play-integrity-sessions-et-series.md` | **Exploitation** : les trois appels qu'on confond (`prepare`, demande de jeton, déchiffrement serveur), le bridage mesuré et ses quotas, ce qu'une série prouve et coûte, la politique de clôture, et l'état d'implémentation. À lire avant de toucher à la cadence des captures. La décision, elle, est en ADR-0009 |
 | `docs/etat-de-l-art.md` | Solutions voisines (Approov, Guardsquare, Truepic, C2PA, ProofMode) et ce qui distingue réellement ce dépôt. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier les faits avant de s'en servir. |
 | `docs/certification-anssi.md` | Piste de certification : pourquoi une cible de sécurité propre au produit plutôt qu'un profil de protection, et pourquoi elle ne remplace pas la piste réglementaire européenne de la spec §9. À relire avant tout arbitrage de feuille de route ; **daté**, revérifier référentiels et coûts avant de s'en servir. |
+| `docs/liaison-flutter-readme-cible.md` | Le README pub.dev de la future liaison, écrit **avant** le plugin : l'API cible traduite des ADR-0003/0008, et l'étalon de complexité d'intégration. Si l'implémentation ne peut pas le tenir, c'est une décision à instruire. À lire avant d'ouvrir le chantier des liaisons. |
+| `docs/deploiement-du-verificateur.md` | Les trois formes d'hébergement du vérificateur — bibliothèque embarquée, self-host, mutualisé —, la délégation d'identifiants Google qui est la seule vraie adhérence, et l'opposabilité comme axe réel de différenciation. À relire avant tout arbitrage d'offre ; ne touche pas le format. |
 
 ## Structure
 
